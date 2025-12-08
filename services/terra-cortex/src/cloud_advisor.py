@@ -19,14 +19,20 @@ class CloudAdvisor:
     """
     
     def __init__(self):
-        """Initialize OpenAI client"""
+        """Initialize OpenAI client (supports both OpenAI and Ollama)"""
         self.api_key = os.getenv("OPENAI_API_KEY")
-        self.model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")  # Cost-effective model
+        self.model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")  # Default model
+        self.base_url = os.getenv("OPENAI_BASE_URL")  # For Ollama: http://host.docker.internal:11434/v1
         self.enabled = bool(self.api_key)
         
         if self.enabled:
-            self.client = AsyncOpenAI(api_key=self.api_key)
-            logger.info(f"✅ Cloud Advisor enabled with model: {self.model}")
+            # Initialize client with optional base_url (for Ollama)
+            if self.base_url:
+                self.client = AsyncOpenAI(api_key=self.api_key, base_url=self.base_url)
+                logger.info(f"✅ Cloud Advisor enabled with LOCAL LLM: {self.model} (base_url: {self.base_url})")
+            else:
+                self.client = AsyncOpenAI(api_key=self.api_key)
+                logger.info(f"✅ Cloud Advisor enabled with OpenAI: {self.model}")
         else:
             self.client = None
             logger.warning("⚠️ Cloud Advisor disabled (OPENAI_API_KEY not set)")
@@ -66,20 +72,16 @@ class CloudAdvisor:
                 messages=[
                     {
                         "role": "system",
-                        "content": (
-                            "You are an expert agricultural AI assistant specialized in smart farm management. "
-                            "Provide concise, actionable recommendations for farmers when sensor anomalies are detected. "
-                            "Focus on immediate actions, root causes, and preventive measures. "
-                            "Keep responses under 200 words."
-                        )
+                        "content": "You are an expert Agronomist for a Smart Farm. Be concise."
                     },
                     {
                         "role": "user",
-                        "content": prompt
+                        "content": f"Sensor {sensor_data.sensorType} value is {sensor_data.value}. This is an ANOMALY. Suggest immediate action in 1 sentence."
                     }
                 ],
                 temperature=0.7,
-                max_tokens=300
+                max_tokens=150,
+                timeout=10.0  # 10 second timeout for Ollama
             )
             
             recommendation = response.choices[0].message.content.strip()
@@ -90,7 +92,8 @@ class CloudAdvisor:
         
         except Exception as e:
             logger.error(f"❌ Cloud Advisor API error: {e}", exc_info=True)
-            return None
+            # Return fallback error message
+            return "AI Error: Check Local LLM connection. Ensure Ollama is running on host machine."
     
     def _build_prompt(self, sensor_data: SensorData, local_insight: Insight) -> str:
         """

@@ -199,10 +199,13 @@ services:
       KAFKA_INPUT_TOPIC: raw-sensor-data
       KAFKA_OUTPUT_TOPIC: processed-insights
       # Hybrid AI Configuration
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}  # Set via .env file or export OPENAI_API_KEY=sk-...
-      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}  # Cost-effective model, can override to gpt-4o
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-ollama}  # For Ollama use "ollama", for OpenAI use real key
+      OPENAI_MODEL: ${OPENAI_MODEL:-llama3.1}  # For Ollama: llama3.1, mistral, etc. For OpenAI: gpt-4o-mini
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-http://host.docker.internal:11434/v1}  # Ollama endpoint (use host.docker.internal for local Ollama)
     ports:
       - "8082:8082"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # Allow Docker to access host machine (for local Ollama)
     networks:
       - terraneuron-net
 
