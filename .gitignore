@@ -41,7 +41,31 @@ Thumbs.db
 # Database
 *.db
 *.sqlite
+*.sqlite3
+*.bin
 
 # Logs
 logs/
 *.log
+
+# ===========================
+# TerraNeuron / Microservices
+# ===========================
+
+# Java build output
+**/bin/
+**/out/
+
+# Terra-Cortex: ChromaDB vector store (auto-generated)
+services/terra-cortex/data/chroma_db/
+services/terra-cortex/data/chroma_db/**
+
+# Terra-Cortex: raw document storage (user-provided PDFs)
+services/terra-cortex/data/knowledge_base/
+
+# Test reports
+test_report_*.html
+
+# Runtime or temp files
+*.pid
+*.cache

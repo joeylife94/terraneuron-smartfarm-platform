@@ -194,6 +194,10 @@ services:
     container_name: terra-cortex
     depends_on:
       - kafka
+    volumes:
+      - ./services/terra-cortex/src:/app/src
+      # 호스트의 data 폴더(PDF 넣을 곳)를 컨테이너 내부의 /app/data로 연결
+      - ./services/terra-cortex/data:/app/data  
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       KAFKA_INPUT_TOPIC: raw-sensor-data
