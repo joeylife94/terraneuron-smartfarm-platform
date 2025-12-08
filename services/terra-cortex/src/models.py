@@ -27,6 +27,7 @@ class Insight(BaseModel):
     confidence: float
     detectedAt: datetime
     rawValue: float
+    llmRecommendation: Optional[str] = None  # Cloud LLM recommendation (only for ANOMALY)
     
     class Config:
         populate_by_name = True

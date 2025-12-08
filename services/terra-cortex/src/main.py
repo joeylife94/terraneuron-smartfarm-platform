@@ -1,6 +1,8 @@
 """
 Terra-Cortex AI Analysis Microservice
-Main FastAPI application with async Kafka consumer/producer
+Hybrid AI Architecture: Local Edge AI + Cloud LLM
+- Local Analyzer: Fast rule-based detection (always runs)
+- Cloud Advisor: Detailed LLM recommendations (only for ANOMALY)
 """
 import asyncio
 import json
@@ -11,7 +13,8 @@ from typing import Dict, Any
 from fastapi import FastAPI
 from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
 
-from src.logic import analyze_sensor_data
+from src.local_analyzer import LocalAnalyzer
+from src.cloud_advisor import CloudAdvisor
 from src.models import SensorData, Insight
 
 # Logging configuration
@@ -32,6 +35,10 @@ CONSUMER_GROUP = "terra-cortex-group"
 consumer: AIOKafkaConsumer = None
 producer: AIOKafkaProducer = None
 kafka_task = None
+
+# Global AI components (Hybrid Architecture)
+local_analyzer: LocalAnalyzer = None
+cloud_advisor: CloudAdvisor = None
 
 
 async def start_kafka():
@@ -101,8 +108,15 @@ async def stop_kafka():
 
 
 async def consume_messages():
-    """Async loop to consume messages from Kafka"""
-    logger.info("🔄 Starting Kafka consumer loop...")
+    """
+    Async loop to consume messages from Kafka.
+    Implements Hybrid AI Architecture:
+    1. Local Analyzer runs first (fast, always)
+    2. Cloud Advisor runs only for ANOMALY (detailed, conditional)
+    """
+    logger.info("🔄 Starting Kafka consumer loop with Hybrid AI...")
+    logger.info("   - Local Analyzer: Always active (Edge AI)")
+    logger.info(f"   - Cloud Advisor: {cloud_advisor.enabled and 'Enabled (triggers on ANOMALY)' or 'Disabled (no API key)'}")
     
     try:
         async for message in consumer:
@@ -113,10 +127,22 @@ async def consume_messages():
                 
                 logger.info(f"📥 Received: {sensor_data.farmId} - {sensor_data.sensorType}: {sensor_data.value}")
                 
-                # Analyze with AI logic
-                insight = analyze_sensor_data(sensor_data)
+                # STEP 1: Local Edge AI Analysis (always runs, fast)
+                insight = local_analyzer.analyze(sensor_data)
+                logger.info(f"   🔍 Local Analyzer: {insight.status} ({insight.severity})")
                 
-                # Send result to output topic
+                # STEP 2: Cloud LLM Advisory (only for ANOMALY, smart trigger)
+                if insight.status == "ANOMALY" and cloud_advisor.enabled:
+                    logger.info(f"   🤖 Triggering Cloud Advisor for ANOMALY...")
+                    llm_recommendation = await cloud_advisor.get_recommendation(sensor_data, insight)
+                    
+                    if llm_recommendation:
+                        insight.llmRecommendation = llm_recommendation
+                        logger.info(f"   ✅ Cloud LLM recommendation added ({len(llm_recommendation)} chars)")
+                    else:
+                        logger.warning("   ⚠️ Cloud LLM recommendation failed, using local analysis only")
+                
+                # Send combined insight to output topic
                 await send_insight(insight)
                 
             except Exception as e:
@@ -148,18 +174,31 @@ async def send_insight(insight: Insight):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager"""
-    logger.info("🧠 Terra-Cortex AI Engine starting...")
+    global local_analyzer, cloud_advisor
+    
+    logger.info("🧠 Terra-Cortex Hybrid AI Engine starting...")
+    
+    # Initialize AI components
+    local_analyzer = LocalAnalyzer()
+    cloud_advisor = CloudAdvisor()
+    
+    logger.info("   ✅ Local Analyzer initialized (Edge AI)")
+    logger.info(f"   {'✅' if cloud_advisor.enabled else '⚠️'} Cloud Advisor {'enabled' if cloud_advisor.enabled else 'disabled (set OPENAI_API_KEY to enable)'}")
+    
+    # Start Kafka
     await start_kafka()
+    
     yield
-    logger.info("🛑 Terra-Cortex AI Engine shutting down...")
+    
+    logger.info("🛑 Terra-Cortex Hybrid AI Engine shutting down...")
     await stop_kafka()
 
 
 # FastAPI application
 app = FastAPI(
-    title="Terra-Cortex AI Engine",
-    version="1.0.0",
-    description="🧠 AI-powered anomaly detection for smart farm sensor data",
+    title="Terra-Cortex Hybrid AI Engine",
+    version="2.0.0",
+    description="🧠 Hybrid AI: Local Edge Analyzer + Cloud LLM Advisor",
     lifespan=lifespan
 )
 
@@ -169,9 +208,12 @@ async def root() -> Dict[str, Any]:
     """Root endpoint"""
     return {
         "service": "terra-cortex",
-        "version": "1.0.0",
+        "version": "2.0.0",
+        "architecture": "hybrid-ai",
         "status": "running",
-        "description": "AI Analysis Engine for TerraNeuron Platform"
+        "description": "Hybrid AI Analysis Engine: Local Edge AI + Cloud LLM",
+        "local_analyzer": local_analyzer.get_stats() if local_analyzer else {},
+        "cloud_advisor": cloud_advisor.get_stats() if cloud_advisor else {}
     }
 
 
@@ -189,20 +231,34 @@ async def health() -> Dict[str, Any]:
 
 @app.get("/info")
 async def info() -> Dict[str, Any]:
-    """Service information"""
+    """Service information with hybrid AI details"""
     return {
         "service": "terra-cortex",
-        "description": "AI-powered sensor anomaly detection",
+        "architecture": "hybrid-ai",
+        "description": "Hybrid AI-powered sensor anomaly detection",
         "kafka": {
             "bootstrap_servers": KAFKA_BOOTSTRAP_SERVERS,
             "input_topic": INPUT_TOPIC,
             "output_topic": OUTPUT_TOPIC,
             "consumer_group": CONSUMER_GROUP
         },
-        "logic": {
-            "temperature_threshold": 30,
-            "humidity_threshold": 40,
-            "detection_mode": "rule-based (MVP)"
+        "ai_pipeline": {
+            "stage_1": {
+                "name": "Local Edge Analyzer",
+                "type": "rule-based",
+                "speed": "instant (<1ms)",
+                "cost": "free",
+                "always_runs": True,
+                "stats": local_analyzer.get_stats() if local_analyzer else {}
+            },
+            "stage_2": {
+                "name": "Cloud LLM Advisor",
+                "type": "llm-powered",
+                "model": cloud_advisor.model if cloud_advisor and cloud_advisor.enabled else None,
+                "trigger": "ANOMALY only",
+                "enabled": cloud_advisor.enabled if cloud_advisor else False,
+                "stats": cloud_advisor.get_stats() if cloud_advisor else {}
+            }
         }
     }
 
