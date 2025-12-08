@@ -8,10 +8,10 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.Instant;
-import java.util.Map;
 
 /**
- * Kafka에서 수신하는 인사이트 DTO
+ * DTO for Insight data received from Kafka
+ * Maps to processed-insights topic from terra-cortex
  */
 @Data
 @Builder
@@ -19,23 +19,28 @@ import java.util.Map;
 @AllArgsConstructor
 public class InsightDto {
 
-    @JsonProperty("sensorId")
-    private String sensorId;
+    @JsonProperty("farmId")
+    private String farmId;
+    
+    @JsonProperty("sensorType")
+    private String sensorType;
 
-    @JsonProperty("insightType")
-    private String insightType;
-
+    @JsonProperty("status")
+    private String status;
+    
+    @JsonProperty("severity")
     private String severity;
 
+    @JsonProperty("message")
     private String message;
-
-    @JsonProperty("confidenceScore")
-    private Double confidenceScore;
+    
+    @JsonProperty("confidence")
+    private Double confidence;
+    
+    @JsonProperty("rawValue")
+    private Double rawValue;
 
     @JsonProperty("detectedAt")
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss.SSSSSS'Z'", timezone = "UTC")
-    private Instant detectedAt;
-
-    @JsonProperty("rawData")
-    private Map<String, Object> rawData;
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss.SSSSSS", timezone = "UTC")
+    private Instant timestamp;
 }

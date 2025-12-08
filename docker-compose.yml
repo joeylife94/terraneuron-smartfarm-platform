@@ -33,8 +33,9 @@ services:
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
@@ -45,8 +46,8 @@ services:
     image: mysql:8.0
     container_name: terraneuron-mysql
     environment:
-      MYSQL_ROOT_PASSWORD: terra2025
-      MYSQL_DATABASE: terra_ops
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: terra_db
       MYSQL_USER: terra
       MYSQL_PASSWORD: terra2025
     ports:
@@ -137,7 +138,7 @@ services:
     image: prom/mysqld-exporter:latest
     container_name: terraneuron-mysql-exporter
     environment:
-      DATA_SOURCE_NAME: "terra:terra2025@(mysql:3306)/terra_ops"
+      DATA_SOURCE_NAME: "terra:terra2025@(mysql:3306)/terra_db"
     ports:
       - "9104:9104"
     depends_on:
@@ -175,7 +176,7 @@ services:
       - influxdb
       - mosquitto
     environment:
-      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       MQTT_BROKER_URL: tcp://mosquitto:1883
       INFLUXDB_URL: http://influxdb:8086
       INFLUXDB_TOKEN: terra-token-2025
@@ -194,7 +195,7 @@ services:
     depends_on:
       - kafka
     environment:
-      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       KAFKA_INPUT_TOPIC: raw-sensor-data
       KAFKA_OUTPUT_TOPIC: processed-insights
     ports:
@@ -211,8 +212,8 @@ services:
       - kafka
       - mysql
     environment:
-      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/terra_ops
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/terra_db
       SPRING_DATASOURCE_USERNAME: terra
       SPRING_DATASOURCE_PASSWORD: terra2025
     ports:

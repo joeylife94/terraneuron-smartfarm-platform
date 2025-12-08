@@ -9,8 +9,8 @@ import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Service;
 
 /**
- * Kafka Consumer 서비스
- * AI 분석 결과를 수신하여 데이터베이스에 저장
+ * Kafka Consumer Service
+ * Consumes processed insights from terra-cortex AI analysis
  */
 @Slf4j
 @Service
@@ -19,29 +19,27 @@ public class KafkaConsumerService {
 
     private final InsightRepository insightRepository;
 
-    @KafkaListener(topics = "${kafka.topic.processed-insights}", groupId = "${spring.kafka.consumer.group-id}")
+    @KafkaListener(topics = "processed-insights", groupId = "${spring.kafka.consumer.group-id}")
     public void consumeInsight(InsightDto insightDto) {
         try {
-            log.info("📥 Kafka 수신: sensorId={}, type={}, severity={}", 
-                    insightDto.getSensorId(), 
-                    insightDto.getInsightType(), 
-                    insightDto.getSeverity());
+            log.info("📥 Kafka Received: farmId={}, status={}, message={}", 
+                    insightDto.getFarmId(), 
+                    insightDto.getStatus(), 
+                    insightDto.getMessage());
 
-            // DTO -> Entity 변환 및 저장
+            // DTO -> Entity mapping and save
             Insight insight = Insight.builder()
-                    .sensorId(Long.parseLong(insightDto.getSensorId().replaceAll("[^0-9]", "")))
-                    .insightType(insightDto.getInsightType())
-                    .severity(insightDto.getSeverity())
+                    .farmId(insightDto.getFarmId())
+                    .status(insightDto.getStatus())
                     .message(insightDto.getMessage())
-                    .confidenceScore(insightDto.getConfidenceScore())
-                    .detectedAt(insightDto.getDetectedAt())
+                    .timestamp(insightDto.getTimestamp())
                     .build();
 
             insightRepository.save(insight);
-            log.info("✅ 인사이트 저장 완료: ID={}", insight.getInsightId());
+            log.info("✅ Insight saved: ID={}", insight.getId());
 
         } catch (Exception e) {
-            log.error("❌ Kafka 메시지 처리 실패: {}", e.getMessage(), e);
+            log.error("❌ Kafka message processing failed: {}", e.getMessage(), e);
         }
     }
 }

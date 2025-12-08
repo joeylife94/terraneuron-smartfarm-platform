@@ -10,11 +10,13 @@ import java.util.List;
 @Repository
 public interface InsightRepository extends JpaRepository<Insight, Long> {
     
-    List<Insight> findBySensorId(Long sensorId);
+    List<Insight> findByFarmId(String farmId);
     
-    List<Insight> findBySeverity(String severity);
+    List<Insight> findByStatus(String status);
     
-    List<Insight> findByDetectedAtBetween(Instant start, Instant end);
+    List<Insight> findByTimestampBetween(Instant start, Instant end);
     
-    List<Insight> findBySensorIdAndSeverityOrderByDetectedAtDesc(Long sensorId, String severity);
+    List<Insight> findByFarmIdAndStatusOrderByTimestampDesc(String farmId, String status);
+    
+    List<Insight> findAllByOrderByTimestampDesc();
 }

@@ -1,9 +1,7 @@
 package com.terraneuron.ops.controller;
 
 import com.terraneuron.ops.entity.Insight;
-import com.terraneuron.ops.entity.Sensor;
 import com.terraneuron.ops.repository.InsightRepository;
-import com.terraneuron.ops.repository.SensorRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -14,7 +12,7 @@ import java.util.Map;
 
 /**
  * Dashboard API Controller
- * 프론트엔드를 위한 REST API 제공
+ * Provides REST API for frontend consumption
  */
 @RestController
 @RequestMapping("/api/v1")
@@ -22,7 +20,6 @@ import java.util.Map;
 public class DashboardController {
 
     private final InsightRepository insightRepository;
-    private final SensorRepository sensorRepository;
 
     @GetMapping("/health")
     public ResponseEntity<?> health() {
@@ -33,45 +30,56 @@ public class DashboardController {
         ));
     }
 
-    @GetMapping("/sensors")
-    public ResponseEntity<List<Sensor>> getAllSensors() {
-        return ResponseEntity.ok(sensorRepository.findAll());
+    /**
+     * GET /api/v1/dashboard/insights
+     * Returns all insights ordered by timestamp descending
+     */
+    @GetMapping("/dashboard/insights")
+    public ResponseEntity<List<Insight>> getDashboardInsights() {
+        return ResponseEntity.ok(insightRepository.findAllByOrderByTimestampDesc());
     }
 
-    @GetMapping("/sensors/{farmId}")
-    public ResponseEntity<List<Sensor>> getSensorsByFarm(@PathVariable Long farmId) {
-        return ResponseEntity.ok(sensorRepository.findByFarmId(farmId));
-    }
-
+    /**
+     * GET /api/v1/insights
+     * Returns all insights
+     */
     @GetMapping("/insights")
     public ResponseEntity<List<Insight>> getAllInsights() {
         return ResponseEntity.ok(insightRepository.findAll());
     }
 
-    @GetMapping("/insights/sensor/{sensorId}")
-    public ResponseEntity<List<Insight>> getInsightsBySensor(@PathVariable Long sensorId) {
-        return ResponseEntity.ok(insightRepository.findBySensorId(sensorId));
+    /**
+     * GET /api/v1/insights/farm/{farmId}
+     * Returns insights for a specific farm
+     */
+    @GetMapping("/insights/farm/{farmId}")
+    public ResponseEntity<List<Insight>> getInsightsByFarm(@PathVariable String farmId) {
+        return ResponseEntity.ok(insightRepository.findByFarmId(farmId));
     }
 
-    @GetMapping("/insights/severity/{severity}")
-    public ResponseEntity<List<Insight>> getInsightsBySeverity(@PathVariable String severity) {
-        return ResponseEntity.ok(insightRepository.findBySeverity(severity));
+    /**
+     * GET /api/v1/insights/status/{status}
+     * Returns insights filtered by status
+     */
+    @GetMapping("/insights/status/{status}")
+    public ResponseEntity<List<Insight>> getInsightsByStatus(@PathVariable String status) {
+        return ResponseEntity.ok(insightRepository.findByStatus(status));
     }
 
+    /**
+     * GET /api/v1/dashboard/summary
+     * Returns dashboard summary statistics
+     */
     @GetMapping("/dashboard/summary")
     public ResponseEntity<?> getDashboardSummary() {
-        long totalSensors = sensorRepository.count();
-        long activeSensors = sensorRepository.findByStatus("ACTIVE").size();
         long totalInsights = insightRepository.count();
-        long criticalInsights = insightRepository.findBySeverity("critical").size();
-        long warningInsights = insightRepository.findBySeverity("warning").size();
+        long normalInsights = insightRepository.findByStatus("NORMAL").size();
+        long anomalyInsights = insightRepository.findByStatus("ANOMALY").size();
 
         return ResponseEntity.ok(Map.of(
-                "totalSensors", totalSensors,
-                "activeSensors", activeSensors,
                 "totalInsights", totalInsights,
-                "criticalInsights", criticalInsights,
-                "warningInsights", warningInsights,
+                "normalInsights", normalInsights,
+                "anomalyInsights", anomalyInsights,
                 "timestamp", Instant.now()
         ));
     }

@@ -1,21 +1,30 @@
-FROM python:3.11-slim
+# ========================================
+# Terra-Cortex AI Analysis Service
+# Python 3.10 + FastAPI + aiokafka
+# ========================================
+
+FROM python:3.10-slim
 
 WORKDIR /app
 
-# 시스템 의존성 설치
+# Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Python 의존성 설치
+# Copy requirements and install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 애플리케이션 코드 복사
+# Copy application code
 COPY src ./src
 
-# 포트 노출
+# Expose service port
 EXPOSE 8082
 
-# FastAPI 서버 실행
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8082/health')" || exit 1
+
+# Run FastAPI with uvicorn
 CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8082"]
