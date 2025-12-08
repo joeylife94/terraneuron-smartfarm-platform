@@ -4,7 +4,8 @@
 
 ## 📁 포함된 파일
 
-- **`simulation.py`** - 엔드-투-엔드 파이프라인 시뮬레이션 및 테스트 스크립트 (NEW! 🎉)
+- **`simulation.py`** - 엔드-투-엔드 파이프라인 시뮬레이션 및 HTML 테스트 보고서 생성 (⭐ UPGRADED!)
+- **`TEST_REPORTER_README.md`** - HTML 테스트 보고서 상세 가이드 (NEW! 📊)
 - **`neural-flow-test.py`** - 데이터 플로우 통합 테스트 (기존)
 
 ---
@@ -95,6 +96,114 @@ python tests/simulation.py --help
 - `--interval SECONDS` - 요청 간 간격 (기본값: 1.0)
 - `--url URL` - terra-sense 서비스 URL (기본값: http://localhost:8081)
 - `--verbose` - 상세 출력 활성화 (요청/응답 전체 표시)
+- `--report` - **HTML 테스트 보고서 생성** (AI 검증 권장! 📊)
+- `--wait-for-insights N` - 인사이트 조회 전 대기 시간 (기본값: 3초)
+
+---
+
+## 📊 HTML 테스트 보고서 (NEW! ⭐)
+
+### 빠른 시작
+
+```bash
+# HTML 보고서와 함께 이상 탐지 테스트 실행
+python tests/simulation.py --mode anomaly --count 20 --report
+```
+
+**생성되는 내용:**
+- ✅ 전문가급 HTML 보고서 (예: `test_report_20251208_224817.html`)
+- ✅ 7가지 핵심 메트릭 대시보드
+- ✅ AI 권장사항 하이라이트 (보라색 박스)
+- ✅ 색상 코딩된 결과 (녹색=정상, 빨강=이상)
+- ✅ 성능 메트릭 (지연시간, 성공률)
+- ✅ 자동으로 브라우저에서 열림
+
+### 보고서 기능
+
+**요약 대시보드 메트릭:**
+| 메트릭 | 설명 |
+|--------|------|
+| **Total Tests** | 전송된 센서 데이터 개수 |
+| **Success Rate** | HTTP 200 응답 성공률 (%) |
+| **AI Triggered** | Local Analyzer가 탐지한 이상 개수 |
+| **AI Recommendations** | LLM 생성 권장사항 개수 |
+| **Avg Latency** | 평균 응답 시간 (밀리초) |
+
+**상세 결과 테이블:**
+- 타임스탬프, Farm ID, 센서 타입, 측정값
+- AI 상태 (NORMAL/ANOMALY 뱃지)
+- 🤖 **AI 권장사항** (보라색 그라디언트로 강조)
+- 요청 지연시간
+- 테스트 결과 (PASS/FAIL)
+
+**색상 코딩:**
+- 🟢 녹색 행: 정상 센서 측정값
+- 🔴 빨간색 행: 이상 탐지 (AI 트리거됨)
+- 🟣 보라색 박스: LLM 생성 권장사항
+
+### HTML 보고서 사용 예시
+
+#### 예시 1: Local AI 검증 (API 키 없이)
+```bash
+python tests/simulation.py --mode anomaly --count 10 --report
+
+# 결과:
+# - AI Status: 10개 ANOMALY 탐지 ✅
+# - AI Recommendations: 0 (Cloud Advisor 비활성) ⚠️
+# - 보고서: Local Edge Analyzer 동작 확인
+```
+
+#### 예시 2: Hybrid AI 전체 파이프라인 검증 (OpenAI 활성)
+```bash
+# 먼저 .env에 OPENAI_API_KEY 추가
+echo "OPENAI_API_KEY=sk-your-key" >> .env
+docker-compose up -d terra-cortex
+
+# 테스트 실행
+python tests/simulation.py --mode anomaly --count 20 --report --wait-for-insights 5
+
+# 결과:
+# - AI Status: 20개 ANOMALY 탐지 ✅
+# - AI Recommendations: 20개 LLM 응답 ✅
+# - 보고서: 모든 이상에 보라색 권장사항 박스 표시
+```
+
+#### 예시 3: Mixed 모드 성능 테스트
+```bash
+python tests/simulation.py --mode mixed --count 100 --interval 0.5 --report
+
+# 결과:
+# - 정상/이상 혼합 데이터
+# - 성능 메트릭 분석 (평균 지연시간)
+# - AI 트리거 비율 확인
+```
+
+### 보고서 위치
+
+```bash
+# 자동 생성되는 파일명
+test_report_YYYYMMDD_HHMMSS.html
+
+# 예시
+test_report_20251208_224817.html
+  - 날짜: 2025년 12월 8일
+  - 시간: 22:48:17
+
+# 브라우저에서 열기
+# - Windows: 자동으로 열림 (또는 더블클릭)
+# - Mac: open test_report_*.html
+# - Linux: xdg-open test_report_*.html
+```
+
+### 상세 가이드
+
+HTML 테스트 보고서의 모든 기능과 사용법은 다음 문서를 참조하세요:
+
+📖 **[TEST_REPORTER_README.md](./TEST_REPORTER_README.md)** - 전체 가이드 (1000+ 줄)
+  - AI 검증 워크플로우
+  - OpenAI/Ollama 설정 방법
+  - 문제 해결 가이드
+  - 테스트 전략 및 Best Practices
 
 ---
 

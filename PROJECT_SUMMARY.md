@@ -20,6 +20,8 @@ TerraNeuron is a production-ready, **event-driven microservices platform** for s
 - ✅ **Security layers** (API Gateway, rate limiting)
 - ✅ **Comprehensive documentation** (README, CONTRIBUTING, DEPLOYMENT, TROUBLESHOOTING)
 - ✅ **E2E Pipeline Validated** (25 insights processed, 100% success rate, AI anomaly detection confirmed)
+- ✅ **Hybrid AI Architecture** (Local Edge Analyzer + Cloud/Local LLM for cost-effective intelligence)
+- ✅ **Professional HTML Test Reporter** (AI verification, performance metrics, color-coded results)
 
 ---
 
@@ -44,7 +46,7 @@ IoT Sensors → HTTP POST → terra-sense → Kafka (raw-sensor-data) → terra-
 |---------|-----------|------|----------------|
 | **terra-gateway** | Java 17 + Spring Cloud Gateway | 8000 | API Gateway with Redis-based rate limiting |
 | **terra-sense** | Java 17 + Spring Boot 3.2 | 8081 | IoT data ingestion (HTTP POST) → Kafka producer |
-| **terra-cortex** | Python 3.10 + FastAPI (async) | 8082 | AI anomaly detection engine (Kafka consumer/producer) |
+| **terra-cortex** | Python 3.10 + FastAPI (async) + OpenAI/Ollama | 8082 | Hybrid AI anomaly detection (Local Edge + Cloud LLM) |
 | **terra-ops** | Java 17 + Spring Boot 3.2 + JPA | 8083 (mapped from 8080) | Management & Dashboard API (Kafka consumer) |
 
 ### Infrastructure Components

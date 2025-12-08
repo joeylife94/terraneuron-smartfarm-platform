@@ -49,10 +49,13 @@ graph TD
 - **출력**: Kafka Topic `raw-sensor-data`
 
 #### 2. **terra-cortex** (대뇌 피질 - AI Brain)
-- **기술**: Python 3.10+, FastAPI, PyTorch
-- **역할**: AI 기반 이상 탐지 및 분석
+- **기술**: Python 3.10+, FastAPI, Hybrid AI (Local Edge + Cloud LLM)
+- **역할**: 2단계 AI 분석 (Local Analyzer + Cloud Advisor)
+  - **Stage 1**: Local Edge Analyzer (규칙 기반, <1ms, 무료)
+  - **Stage 2**: Cloud LLM Advisor (ANOMALY 전용, 상세 권장사항)
 - **입력**: Kafka Topic `raw-sensor-data`
 - **출력**: Kafka Topic `processed-insights`
+- **AI 엔진**: OpenAI API 또는 Ollama (Local LLM) 지원
 
 #### 3. **terra-ops** (운영 통제 - Farm Management)
 - **기술**: Java 17+, Spring Boot 3, MySQL JPA
@@ -148,6 +151,11 @@ curl http://localhost:8080/api/v1/dashboard/summary
 - **센서 시뮬레이터**: 다양한 시나리오 테스트
   - 정상 모드
   - 이상 탐지 시나리오
+- **HTML Test Reporter**: 전문가급 테스트 보고서 생성
+  - AI 권장사항 추적 (LLM 응답 하이라이트)
+  - 성능 메트릭 (지연시간, 성공률)
+  - 색상 코딩 (녹색=정상, 빨강=이상, 보라=AI 권장)
+  - 7가지 핵심 지표 대시보드
   - 부하 테스트
 
 ## 🔗 서비스 엔드포인트

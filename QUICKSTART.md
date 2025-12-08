@@ -40,12 +40,23 @@ python tests/simulation.py --mode normal --count 20
 
 # 이상 데이터 테스트 (AI 감지 검증용)
 python tests/simulation.py --mode anomaly --count 10
+
+# ⭐ NEW: HTML 테스트 보고서 생성 (AI 검증)
+python tests/simulation.py --mode anomaly --count 20 --report
+
+# HTML 보고서 특징:
+# ✅ 7가지 핵심 메트릭 대시보드
+# ✅ AI 권장사항 하이라이트 (보라색 박스)
+# ✅ 색상 코딩 (녹색=정상, 빨강=이상)
+# ✅ 성능 메트릭 (지연시간, 성공률)
+# ✅ 자동으로 브라우저에서 열림
 ```
 
 **Expected Results:**
 - ✅ HTTP 200 success rate: 100%
 - ✅ AI anomaly detection: Temperature > 30°C flagged as CRITICAL
 - ✅ MySQL persistence: All insights saved with 0% data loss
+- ✅ HTML Report: test_report_YYYYMMDD_HHMMSS.html 생성
 
 ### Phase 3: 데이터 검증 (The Proof)
 ```bash
@@ -71,7 +82,7 @@ docker exec -it terraneuron-mysql mysql -u terra -pterra2025 terra_db \
 | 서비스 | URL | 설명 | Status |
 |--------|-----|------|--------|
 | **terra-sense** | http://localhost:8081 | IoT 센서 데이터 수집 API | ✅ Validated |
-| **terra-cortex** | http://localhost:8082 | AI 분석 엔진 API | ✅ Validated |
+| **terra-cortex** | http://localhost:8082 | Hybrid AI 분석 엔진 (Local + Cloud LLM) | ✅ v2.0.0 |
 | **terra-ops** | http://localhost:8083 | Dashboard & 관리 API | ✅ Validated |
 | **Swagger UI** | http://localhost:8083/swagger-ui.html | API 문서 | Available |
 | **Kafka** | localhost:9092 | Event Streaming | ✅ Working |
