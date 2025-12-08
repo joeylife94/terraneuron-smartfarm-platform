@@ -1,0 +1,47 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Terra-Sense (Java/Spring Boot)
+  - job_name: 'terra-sense'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['terra-sense:8081']
+        labels:
+          service: 'terra-sense'
+          layer: 'ingestion'
+
+  # Terra-Cortex (Python/FastAPI)
+  - job_name: 'terra-cortex'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['terra-cortex:8082']
+        labels:
+          service: 'terra-cortex'
+          layer: 'ai-engine'
+
+  # Terra-Ops (Java/Spring Boot)
+  - job_name: 'terra-ops'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['terra-ops:8080']
+        labels:
+          service: 'terra-ops'
+          layer: 'management'
+
+  # Kafka Exporter
+  - job_name: 'kafka'
+    static_configs:
+      - targets: ['kafka-exporter:9308']
+        labels:
+          service: 'kafka'
+          layer: 'infrastructure'
+
+  # MySQL Exporter
+  - job_name: 'mysql'
+    static_configs:
+      - targets: ['mysql-exporter:9104']
+        labels:
+          service: 'mysql'
+          layer: 'database'
