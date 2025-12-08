@@ -16,8 +16,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Pre-download sentence-transformers model to speed up startup
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
+# NOTE: sentence-transformers model will be downloaded at runtime (first use)
+# Pre-downloading during build can cause timeouts and network issues
+# The model (all-MiniLM-L6-v2, ~120MB) will be cached in container on first inference
 
 # Copy application code
 COPY src ./src
