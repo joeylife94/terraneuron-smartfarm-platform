@@ -36,6 +36,9 @@ public class Insight {
 
     @Column(name = "message", columnDefinition = "TEXT")
     private String message;
+    
+    @Column(name = "llm_recommendation", columnDefinition = "TEXT")
+    private String llmRecommendation;
 
     @Column(name = "timestamp", nullable = false)
     private Instant timestamp;

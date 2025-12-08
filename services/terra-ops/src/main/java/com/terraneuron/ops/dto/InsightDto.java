@@ -43,4 +43,7 @@ public class InsightDto {
     @JsonProperty("detectedAt")
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss.SSSSSS", timezone = "UTC")
     private Instant timestamp;
+    
+    @JsonProperty("llmRecommendation")
+    private String llmRecommendation;
 }

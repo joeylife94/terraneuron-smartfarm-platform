@@ -22,16 +22,19 @@ public class KafkaConsumerService {
     @KafkaListener(topics = "processed-insights", groupId = "${spring.kafka.consumer.group-id}")
     public void consumeInsight(InsightDto insightDto) {
         try {
-            log.info("📥 Kafka Received: farmId={}, status={}, message={}", 
+            log.info("📥 Kafka Received: farmId={}, status={}, message={}, llmRecommendation={}", 
                     insightDto.getFarmId(), 
                     insightDto.getStatus(), 
-                    insightDto.getMessage());
+                    insightDto.getMessage(),
+                    insightDto.getLlmRecommendation() != null ? 
+                        insightDto.getLlmRecommendation().substring(0, Math.min(50, insightDto.getLlmRecommendation().length())) + "..." : "null");
 
             // DTO -> Entity mapping and save
             Insight insight = Insight.builder()
                     .farmId(insightDto.getFarmId())
                     .status(insightDto.getStatus())
                     .message(insightDto.getMessage())
+                    .llmRecommendation(insightDto.getLlmRecommendation())
                     .timestamp(insightDto.getTimestamp())
                     .build();
 
