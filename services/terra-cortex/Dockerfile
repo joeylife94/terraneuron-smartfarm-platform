@@ -1,13 +1,13 @@
 # ========================================
 # Terra-Cortex AI Analysis Service
-# Python 3.10 + FastAPI + aiokafka
+# Python 3.10 + FastAPI + aiokafka + RAG
 # ========================================
 
 FROM python:3.10-slim
 
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies (including build tools for sentence-transformers)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
@@ -16,8 +16,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Pre-download sentence-transformers model to speed up startup
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
+
 # Copy application code
 COPY src ./src
+
+# Create data directories for RAG
+RUN mkdir -p /app/data/knowledge_base /app/data/chroma_db
 
 # Expose service port
 EXPOSE 8082

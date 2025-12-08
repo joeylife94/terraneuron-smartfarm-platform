@@ -2,12 +2,14 @@
 Cloud LLM Advisor
 Provides detailed AI-powered recommendations using OpenAI API
 Triggered ONLY when local analyzer detects ANOMALY
+Enhanced with RAG (Retrieval-Augmented Generation) for agricultural expertise
 """
 import os
 import logging
 from typing import Optional
 from openai import AsyncOpenAI
 from src.models import SensorData, Insight
+from src.rag_advisor import get_rag_advisor
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +21,7 @@ class CloudAdvisor:
     """
     
     def __init__(self):
-        """Initialize OpenAI client (supports both OpenAI and Ollama)"""
+        """Initialize OpenAI client (supports both OpenAI and Ollama) + RAG"""
         self.api_key = os.getenv("OPENAI_API_KEY")
         self.model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")  # Default model
         self.base_url = os.getenv("OPENAI_BASE_URL")  # For Ollama: http://host.docker.internal:11434/v1
@@ -37,6 +39,13 @@ class CloudAdvisor:
             self.client = None
             logger.warning("⚠️ Cloud Advisor disabled (OPENAI_API_KEY not set)")
         
+        # Initialize RAG advisor
+        self.rag_advisor = get_rag_advisor()
+        if self.rag_advisor.enabled:
+            logger.info(f"✅ RAG Advisor enabled: {self.rag_advisor.get_stats()['document_count']} documents")
+        else:
+            logger.warning("⚠️ RAG Advisor disabled (no knowledge base found)")
+        
         self.recommendation_count = 0
     
     async def get_recommendation(
@@ -46,6 +55,7 @@ class CloudAdvisor:
     ) -> Optional[str]:
         """
         Get detailed recommendation from LLM for anomaly.
+        Enhanced with RAG - retrieves relevant context from agricultural PDFs.
         
         Args:
             sensor_data: Original sensor data
@@ -61,26 +71,37 @@ class CloudAdvisor:
         try:
             self.recommendation_count += 1
             
-            # Prepare context for LLM
-            prompt = self._build_prompt(sensor_data, local_insight)
+            # Step 1: Retrieve relevant context from RAG (if enabled)
+            rag_contexts = []
+            if self.rag_advisor.enabled:
+                search_query = f"{sensor_data.sensorType} anomaly {sensor_data.value} agricultural risk management best practices"
+                rag_contexts = self.rag_advisor.retrieve_context(search_query)
             
-            # Call OpenAI API
-            logger.info(f"🤖 Requesting LLM recommendation for {sensor_data.farmId}...")
+            # Step 2: Build RAG-enhanced prompt
+            if rag_contexts:
+                # Use RAG prompt with retrieved context
+                prompt = self._build_rag_prompt(sensor_data, rag_contexts)
+                logger.info(f"🤖 Requesting RAG-enhanced LLM recommendation for {sensor_data.farmId}...")
+            else:
+                # Fallback to simple prompt if no RAG context
+                prompt = self._build_simple_prompt(sensor_data)
+                logger.info(f"🤖 Requesting LLM recommendation for {sensor_data.farmId}...")
             
+            # Step 3: Call LLM with enhanced prompt
             response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are an expert Agronomist for a Smart Farm. Be concise."
+                        "content": "You are an expert Agronomist for a Smart Farm. Provide actionable, evidence-based advice."
                     },
                     {
                         "role": "user",
-                        "content": f"Sensor {sensor_data.sensorType} value is {sensor_data.value}. This is an ANOMALY. Suggest immediate action in 1 sentence."
+                        "content": prompt
                     }
                 ],
                 temperature=0.7,
-                max_tokens=150,
+                max_tokens=200,
                 timeout=10.0  # 10 second timeout for Ollama
             )
             
@@ -94,6 +115,48 @@ class CloudAdvisor:
             logger.error(f"❌ Cloud Advisor API error: {e}", exc_info=True)
             # Return fallback error message
             return "AI Error: Check Local LLM connection. Ensure Ollama is running on host machine."
+    
+    
+    def _build_rag_prompt(self, sensor_data: SensorData, contexts: list) -> str:
+        """
+        Build RAG-enhanced prompt with retrieved agricultural knowledge
+        
+        Args:
+            sensor_data: Original sensor data
+            contexts: Retrieved context chunks from RAG
+            
+        Returns:
+            RAG-enhanced prompt string
+        """
+        context_section = "\n\n".join([
+            f"**Context {i+1}:**\n{ctx[:500]}..."  # Limit context length
+            for i, ctx in enumerate(contexts[:3])  # Top 3 contexts
+        ])
+        
+        prompt = f"""Based on agricultural best practices and the following context from expert manuals:
+
+{context_section}
+
+**Current Situation:**
+- Sensor Type: {sensor_data.sensorType}
+- Reading: {sensor_data.value} {self._get_unit(sensor_data.sensorType)}
+- Status: ANOMALY detected
+
+**Question:** What immediate action should the farmer take? Provide a specific, actionable recommendation in 2-3 sentences based on the context above."""
+        
+        return prompt
+    
+    def _build_simple_prompt(self, sensor_data: SensorData) -> str:
+        """
+        Build simple prompt without RAG context (fallback)
+        
+        Args:
+            sensor_data: Original sensor data
+            
+        Returns:
+            Simple prompt string
+        """
+        return f"Sensor {sensor_data.sensorType} shows {sensor_data.value} {self._get_unit(sensor_data.sensorType)}. This is an ANOMALY. Suggest immediate action in 1-2 sentences."
     
     def _build_prompt(self, sensor_data: SensorData, local_insight: Insight) -> str:
         """

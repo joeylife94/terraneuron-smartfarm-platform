@@ -1,0 +1,264 @@
+# Sample Agricultural Best Practices Guide
+
+## Tomato Cultivation - Temperature Management
+
+### Optimal Temperature Range
+- **Ideal Range**: 21-27°C (70-80°F) during the day
+- **Night Temperature**: 16-18°C (60-65°F)
+- **Critical High Threshold**: Above 32°C (90°F) triggers heat stress
+- **Critical Low Threshold**: Below 10°C (50°F) causes chilling injury
+
+### Heat Stress Management (>32°C)
+**Immediate Actions Required:**
+1. **Ventilation**: Open all vents to maximum, activate exhaust fans
+2. **Shading**: Deploy 30-50% shade cloth during peak hours (11am-3pm)
+3. **Cooling**: Activate evaporative cooling systems (fog/mist)
+4. **Irrigation**: Increase frequency to maintain plant turgor
+5. **Monitoring**: Check plants every 2 hours for wilting symptoms
+
+**Symptoms of Heat Stress:**
+- Leaf curling and wilting
+- Blossom drop (flowers fall before fruit set)
+- Sunscald on fruits and leaves
+- Reduced fruit size and quality
+
+### Prevention Strategies
+- Install automated temperature sensors with alerts
+- Pre-cool greenhouse before morning temperature rise
+- Use reflective mulch to reduce soil temperature
+- Ensure adequate air circulation (fans every 15 meters)
+
+---
+
+## Soil Moisture Management
+
+### Optimal Moisture Levels
+- **Tomatoes**: 60-80% field capacity
+- **Lettuce**: 70-85% field capacity  
+- **Peppers**: 55-75% field capacity
+
+### Critical Low Threshold: <40% Moisture
+**Immediate Action Required:**
+1. **Emergency Irrigation**: Apply water within 1 hour
+2. **Check System**: Verify drip lines, emitters, valves
+3. **Soil Test**: Measure actual moisture with probe
+4. **Root Inspection**: Check for damage or disease
+
+**Consequences of Low Moisture:**
+- Blossom-end rot in tomatoes (calcium uptake failure)
+- Reduced fruit size and yield
+- Increased pest susceptibility
+- Permanent root damage if prolonged
+
+### Irrigation Best Practices
+- Morning irrigation (6-9am) reduces disease risk
+- Drip irrigation preferred over overhead (reduces leaf wetness)
+- Monitor soil moisture at root zone depth (15-30cm)
+- Adjust frequency based on plant growth stage
+
+---
+
+## CO2 Enrichment Guidelines
+
+### Target Levels for Greenhouse Production
+- **Ambient CO2**: 400 ppm (outdoor air)
+- **Optimal Enrichment**: 800-1200 ppm during daylight hours
+- **Maximum Safe Level**: 1500 ppm
+- **Critical High**: >2000 ppm (toxicity risk)
+
+### High CO2 Emergency (>1500 ppm)
+**Immediate Actions:**
+1. **Ventilate**: Open all vents, activate exhaust fans
+2. **Stop Injection**: Turn off CO2 generators/burners
+3. **Evacuate**: Remove workers from greenhouse if >3000 ppm
+4. **Test**: Use CO2 meter to verify levels dropping
+5. **Investigate**: Check for CO2 system malfunction
+
+**Symptoms of CO2 Toxicity:**
+- Headache and dizziness in workers
+- Reduced plant growth (opposite of intended effect)
+- Leaf chlorosis (yellowing)
+- Increased disease susceptibility
+
+### CO2 Injection Best Practices
+- Inject only during daylight hours (when photosynthesis occurs)
+- Stop injection 1 hour before sunset
+- Monitor continuously with sensors
+- Maintain proper ventilation to prevent excessive buildup
+- Distribute CO2 evenly (multiple injection points)
+
+---
+
+## Humidity Control
+
+### Optimal Relative Humidity
+- **Vegetative Growth**: 70-80% RH
+- **Flowering/Fruiting**: 60-70% RH
+- **Critical High**: >85% RH (disease risk)
+- **Critical Low**: <40% RH (transpiration stress)
+
+### High Humidity Management (>85% RH)
+**Actions to Reduce Humidity:**
+1. Increase ventilation (exhaust fans + vents)
+2. Activate heating system (warm air holds more moisture)
+3. Reduce irrigation frequency
+4. Increase plant spacing (improve air flow)
+5. Apply preventive fungicides (powdery mildew, botrytis)
+
+### Low Humidity Management (<40% RH)
+**Actions to Increase Humidity:**
+1. Reduce ventilation rate
+2. Activate misting/fogging system
+3. Apply shade cloth to reduce transpiration
+4. Water paths/floors (evaporative cooling)
+5. Increase irrigation frequency
+
+---
+
+## Light Management
+
+### Optimal Light Levels (Photosynthetically Active Radiation)
+- **Tomatoes**: 400-600 µmol/m²/s
+- **Lettuce**: 200-300 µmol/m²/s
+- **Peppers**: 300-500 µmol/m²/s
+
+### Low Light Conditions (<100 lux for tomatoes)
+**Immediate Actions:**
+1. **Clean Glazing**: Remove dust, algae, shading from greenhouse roof
+2. **Activate Supplemental Lighting**: Turn on LED/HPS grow lights
+3. **Increase CO2**: Plants use less CO2 in low light, reduce injection
+4. **Adjust Spacing**: Increase space between plants for better light penetration
+5. **Prune**: Remove lower leaves to improve light distribution
+
+**Consequences of Low Light:**
+- Elongated stems (etiolation)
+- Reduced fruit set and yield
+- Poor fruit quality (low sugar content)
+- Increased disease susceptibility
+
+### High Light Management (>800 lux excess)
+- Apply 30-50% shade cloth during summer months
+- Use whitewash on greenhouse exterior
+- Ensure adequate cooling to prevent heat stress
+
+---
+
+## Integrated Pest Management (IPM)
+
+### Early Detection is Key
+- **Daily Scouting**: Inspect 10% of plants daily
+- **Sticky Traps**: Yellow cards for whiteflies, blue for thrips
+- **Action Threshold**: Treat when 5% of plants show damage
+
+### Biological Controls (Preferred First Line)
+- **Aphids**: Release ladybugs or lacewings
+- **Whiteflies**: Encarsia formosa parasitic wasps
+- **Spider Mites**: Phytoseiulus persimilis predatory mites
+- **Thrips**: Amblyseius cucumeris predatory mites
+
+### Chemical Controls (Last Resort)
+- Use only when biological controls fail
+- Rotate modes of action to prevent resistance
+- Follow pre-harvest interval (PHI) strictly
+- Apply in evening to avoid harming beneficial insects
+
+---
+
+## Disease Prevention
+
+### Environmental Controls
+**Prevent Fungal Diseases:**
+- Maintain humidity <80% RH
+- Ensure good air circulation (fans)
+- Avoid overhead irrigation
+- Space plants adequately
+- Remove infected plant material immediately
+
+**Common Greenhouse Diseases:**
+- **Powdery Mildew**: White powder on leaves, requires dry conditions + fungicide
+- **Botrytis (Gray Mold)**: Fuzzy gray growth, thrives in high humidity + cool temps
+- **Late Blight**: Brown lesions on leaves/stems, spreads rapidly in wet conditions
+- **Root Rot**: Wilting despite adequate water, caused by overwatering + poor drainage
+
+### Sanitation Protocols
+- Disinfect tools between plants (10% bleach solution)
+- Remove plant debris daily
+- Clean floors and walkways weekly
+- Disinfect greenhouse between crops (sulfur fumigation or steam)
+
+---
+
+## Emergency Response Protocols
+
+### Temperature Alert (>35°C or <5°C)
+1. **Immediate**: Adjust climate control systems
+2. **Within 30 min**: Verify all plants for stress symptoms
+3. **Within 1 hour**: Implement corrective actions
+4. **Within 4 hours**: Re-check and document incident
+
+### Moisture Alert (<30% or >90%)
+1. **Immediate**: Check irrigation system functionality
+2. **Within 15 min**: Begin corrective irrigation or drainage
+3. **Within 1 hour**: Soil probe verification
+4. **Daily**: Monitor affected plants for 7 days
+
+### CO2 Alert (>1800 ppm)
+1. **Immediate**: Evacuate personnel, open all vents
+2. **Within 5 min**: Shut down CO2 system
+3. **Within 30 min**: CO2 levels must return to <800 ppm
+4. **Before re-entry**: Test air quality with meter
+
+---
+
+## Record Keeping & Documentation
+
+### Daily Logs Required
+- Temperature (high/low/average)
+- Humidity (high/low/average)
+- CO2 levels (if enriching)
+- Soil moisture readings
+- Pest observations
+- Disease observations
+- Irrigation events
+- Climate control adjustments
+
+### Weekly Reports
+- Plant growth measurements
+- Yield estimates
+- Pest/disease trends
+- Equipment maintenance
+- Fertilizer applications
+
+### Compliance
+- Maintain records for minimum 2 years (GlobalG.A.P. requirement)
+- Document all pesticide applications (name, rate, date, PHI)
+- Track water usage and sources
+- Record all corrective actions for environmental alerts
+
+---
+
+## GlobalG.A.P. Compliance Checklist
+
+### Essential Control Points
+- ✅ Water quality tested annually
+- ✅ Soil/substrate tested before planting
+- ✅ Calibrated sensors for climate monitoring
+- ✅ IPM plan documented and implemented
+- ✅ Pesticide storage secure and labeled
+- ✅ Worker training records current
+- ✅ Traceability system functional (batch tracking)
+- ✅ Risk assessment completed for all production areas
+
+### Environmental Monitoring
+- ✅ Continuous temperature monitoring with alarms
+- ✅ Humidity sensors in each production zone
+- ✅ CO2 monitoring if enrichment used
+- ✅ Soil moisture sensors calibrated quarterly
+- ✅ Light sensors for supplemental lighting control
+
+---
+
+**Document Version**: 2.1  
+**Last Updated**: January 2025  
+**Approved By**: Agricultural Extension Service  
+**Compliance**: GlobalG.A.P. v5.4, ISO 22000:2018
