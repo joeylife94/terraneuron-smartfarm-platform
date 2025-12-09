@@ -387,6 +387,69 @@ docker exec terra-ops nc -zv mysql 3306
    - 재현 단계
    - 스크린샷 (가능한 경우)
 
+## 🆕 RAG 시스템 관련 문제
+
+### 문제: RAG API가 응답하지 않음
+
+**증상:**
+```bash
+curl http://localhost:8082/rag/query -X POST -H "Content-Type: application/json" -d '{"query":"test"}'
+# 504 Gateway Timeout
+```
+
+**해결:**
+```bash
+# 1. ChromaDB 볼륨 확인
+docker-compose logs terra-cortex | grep chroma
+
+# 2. 지식 베이스 재구축
+docker exec -it terra-cortex python src/ingest_knowledge.py
+
+# 3. ChromaDB 데이터 확인
+docker exec -it terra-cortex ls -la data/chroma_db/
+```
+
+### 문제: Ollama LLM 느린 응답
+
+**증상:**
+LLM 응답이 10초 이상 소요
+
+**해결:**
+```bash
+# 1. 더 작은 모델 사용
+ollama pull mistral  # llama3.1 대신 mistral 사용
+
+# 2. .env 파일 업데이트
+OPENAI_MODEL=mistral
+
+# 3. terra-cortex 재시작
+docker-compose restart terra-cortex
+
+# 4. GPU 가속 확인 (가능한 경우)
+nvidia-smi  # NVIDIA GPU가 있는 경우
+```
+
+### 문제: 지식 베이스 업데이트 실패
+
+**증상:**
+```
+Error: Cannot connect to ChromaDB
+```
+
+**해결:**
+```bash
+# 1. ChromaDB 볼륨 삭제 및 재생성
+docker-compose down
+docker volume rm terraneuron_chroma-data
+docker-compose up -d terra-cortex
+
+# 2. 지식 베이스 파일 확인
+ls -la services/terra-cortex/data/knowledge_base/
+
+# 3. 수동으로 지식 베이스 재구축
+docker exec -it terra-cortex python src/ingest_knowledge.py
+```
+
 ## 📚 관련 문서
 
 - [배포 가이드](DEPLOYMENT.md)

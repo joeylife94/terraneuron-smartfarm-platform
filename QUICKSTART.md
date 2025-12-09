@@ -1,7 +1,7 @@
 # 🌿 TerraNeuron 빠른 시작 가이드
 
-**Status:** ✅ **Production-Validated** (December 8, 2025)  
-**E2E Pipeline:** Verified with 25 insights, 100% success rate, AI detection confirmed
+**Status:** ✅ **Production-Validated** (December 9, 2025)  
+**E2E Pipeline:** Verified with RAG-powered AI advisory system
 
 ---
 
@@ -25,6 +25,11 @@ docker-compose ps
 curl http://localhost:8081/actuator/health  # terra-sense
 curl http://localhost:8082/health           # terra-cortex
 curl http://localhost:8083/api/v1/health    # terra-ops
+
+# 4. RAG 시스템 테스트 (Optional)
+curl http://localhost:8082/rag/query -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"query": "What is optimal temperature for tomatoes?"}'
 ```
 
 ### Phase 2: E2E 데이터 시뮬레이션 (Production-Validated ✅)
@@ -81,12 +86,13 @@ docker exec -it terraneuron-mysql mysql -u terra -pterra2025 terra_db \
 
 | 서비스 | URL | 설명 | Status |
 |--------|-----|------|--------|
+| **terra-gateway** | http://localhost:8000 | API Gateway with Rate Limiting | ✅ Available |
 | **terra-sense** | http://localhost:8081 | IoT 센서 데이터 수집 API | ✅ Validated |
-| **terra-cortex** | http://localhost:8082 | Hybrid AI 분석 엔진 (Local + Cloud LLM) | ✅ v2.0.0 |
+| **terra-cortex** | http://localhost:8082 | Hybrid AI + RAG 분석 엔진 | ✅ v3.0.0 (RAG) |
 | **terra-ops** | http://localhost:8083 | Dashboard & 관리 API | ✅ Validated |
 | **Swagger UI** | http://localhost:8083/swagger-ui.html | API 문서 | Available |
 | **Kafka** | localhost:9092 | Event Streaming | ✅ Working |
-| **MySQL** | localhost:3306 | Database (terra/terra2025) | ✅ 25 insights stored |
+| **MySQL** | localhost:3306 | Database (terra/terra2025) | ✅ 25+ insights stored |
 | **Prometheus** | http://localhost:9090 | Metrics Collection | Available |
 | **Grafana** | http://localhost:3000 | Visualization (admin/admin) | Available |
 

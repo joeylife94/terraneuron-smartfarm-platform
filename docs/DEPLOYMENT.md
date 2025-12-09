@@ -98,11 +98,13 @@ open http://localhost:3000
 - **Instance Type**: t3.medium (2 vCPU, 4GB RAM) 이상
 - **OS**: Ubuntu 22.04 LTS
 - **Security Group**: 포트 개방
-  - 8080 (terra-ops)
+  - 8000 (terra-gateway)
   - 8081 (terra-sense)
   - 8082 (terra-cortex)
+  - 8083 (terra-ops)
   - 3000 (Grafana)
   - 9090 (Prometheus)
+  - 22 (SSH)
 
 #### 2. Docker 설치
 
@@ -135,6 +137,24 @@ nano .env
 
 # 실행
 docker-compose up -d
+```
+
+#### 4. 보안 강화 (선택사항)
+
+```bash
+# 방화벽 설정
+sudo ufw allow 22/tcp
+sudo ufw allow 8000:8083/tcp
+sudo ufw allow 3000/tcp
+sudo ufw enable
+
+# SSL/TLS 인증서 설정 (Let's Encrypt)
+sudo apt-get install certbot
+sudo certbot certonly --standalone -d yourdomain.com
+
+# Nginx 리버스 프록시 설정 (Optional)
+sudo apt-get install nginx
+# nginx.conf 편집하여 SSL 터미네이션 설정
 ```
 
 ### Azure Container Instances 배포
@@ -359,6 +379,71 @@ logging:
 ### 백업
 
 ```bash
+# MySQL 백업
+docker exec terraneuron-mysql mysqldump -u terra -pterra2025 terra_db > backup_$(date +%Y%m%d).sql
+
+# InfluxDB 백업
+docker exec terraneuron-influxdb influx backup /tmp/backup
+docker cp terraneuron-influxdb:/tmp/backup ./influxdb_backup_$(date +%Y%m%d)
+
+# 전체 볼륨 백업
+docker run --rm -v terraneuron-mysql-data:/data -v $(pwd):/backup alpine tar czf /backup/mysql_backup_$(date +%Y%m%d).tar.gz /data
+```
+
+### 복구
+
+```bash
+# MySQL 복구
+docker exec -i terraneuron-mysql mysql -u terra -pterra2025 terra_db < backup_20251209.sql
+
+# InfluxDB 복구
+docker cp ./influxdb_backup_20251209 terraneuron-influxdb:/tmp/backup
+docker exec terraneuron-influxdb influx restore /tmp/backup
+```
+
+## 🌐 추가 클라우드 배포 옵션
+
+### Google Cloud Platform (GCP)
+
+```bash
+# GKE 클러스터 생성
+gcloud container clusters create terraneuron-cluster \
+  --zone asia-northeast3-a \
+  --num-nodes 3
+
+# kubectl 설정
+gcloud container clusters get-credentials terraneuron-cluster
+
+# 배포
+kubectl apply -f k8s/
+```
+
+### DigitalOcean Kubernetes
+
+```bash
+# doctl 설치 및 로그인
+snap install doctl
+doctl auth init
+
+# Kubernetes 클러스터 생성
+doctl kubernetes cluster create terraneuron-cluster \
+  --region sgp1 \
+  --node-pool "name=worker;size=s-2vcpu-4gb;count=3"
+
+# 배포
+kubectl apply -f k8s/
+```
+
+## 📚 추가 참고 자료
+
+- [Docker Compose 문서](https://docs.docker.com/compose/)
+- [Kubernetes 공식 가이드](https://kubernetes.io/docs/)
+- [TerraNeuron 트러블슈팅](TROUBLESHOOTING.md)
+- [프로젝트 README](../README.md)
+
+---
+
+**배포 성공을 기원합니다! 🚀**
 # MySQL 백업
 docker exec terraneuron-mysql mysqldump -u terra -pterra2025 terra_ops > backup.sql
 

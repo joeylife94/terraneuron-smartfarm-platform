@@ -1,16 +1,17 @@
-# 🧠 Terra-Cortex Hybrid AI Analysis Microservice
+# 🧠 Terra-Cortex Hybrid AI + RAG Analysis Microservice
 
-**Status:** ✅ **HYBRID AI ARCHITECTURE IMPLEMENTED**  
-**Stack:** Python 3.10 + FastAPI + aiokafka + OpenAI/Ollama  
-**Version:** 2.0.0  
+**Status:** ✅ **HYBRID AI + RAG ARCHITECTURE IMPLEMENTED**  
+**Stack:** Python 3.10 + FastAPI + aiokafka + OpenAI/Ollama + ChromaDB  
+**Version:** 3.0.0  
 **Port:** 8082  
-**Role:** Two-stage AI analysis (Local Edge AI + Cloud/Local LLM)
+**Role:** Three-stage AI analysis (Local Edge AI + Cloud/Local LLM + RAG Knowledge Base)  
+**Phase 2.A:** 🚧 **CloudEvents v1.0** (Action Plan Generation with trace_id)
 
 ---
 
-## 🎯 Hybrid AI Architecture Overview
+## 🎯 Hybrid AI + RAG Architecture Overview
 
-Terra-Cortex now implements a **cost-effective, high-performance hybrid AI pipeline**:
+Terra-Cortex now implements a **3-stage intelligent analysis pipeline**:
 
 ```
 Sensor Data → Stage 1: Local Edge Analyzer (always runs)
@@ -20,17 +21,21 @@ Sensor Data → Stage 1: Local Edge Analyzer (always runs)
               Stage 2: Cloud LLM Advisor (only for ANOMALY)
                   ↓
               Enhanced Insight with LLM Recommendation
+                  ↓
+              Stage 3: RAG Knowledge Base (contextual agricultural advice)
+                  ↓
+              Final Insight with Domain-Specific Knowledge
 ```
 
 ### Architecture Benefits
 
-| Feature | Local Edge Analyzer | Cloud LLM Advisor |
-|---------|---------------------|-------------------|
-| **Speed** | <1ms (instant) | ~500-2000ms |
-| **Cost** | Free (rule-based) | Pay-per-request |
-| **Trigger** | Always runs | ANOMALY only |
-| **Output** | Status + Severity + Message | Detailed recommendation |
-| **AI Type** | Rule-based detection | GPT-4o-mini or Ollama |
+| Feature | Local Edge Analyzer | Cloud LLM Advisor | RAG Knowledge Base |
+|---------|---------------------|-------------------|--------------------|
+| **Speed** | <1ms (instant) | ~500-2000ms | ~100-500ms |
+| **Cost** | Free (rule-based) | Pay-per-request | Free (local) |
+| **Trigger** | Always runs | ANOMALY only | On-demand |
+| **Output** | Status + Severity + Message | Detailed recommendation | Agricultural context |
+| **AI Type** | Rule-based detection | GPT-4o-mini or Ollama | Vector similarity search |
 
 ---
 
@@ -65,24 +70,48 @@ Sensor Data → Stage 1: Local Edge Analyzer (always runs)
   - `OPENAI_MODEL` selection (default: gpt-4o-mini)
   - `.env.example` template provided
 
+### Phase 3: RAG System ✅ COMPLETE
+- [x] **RAG Advisor** module (`src/rag_advisor.py`)
+  - ChromaDB vector database integration
+  - PDF/TXT knowledge base ingestion
+  - Semantic similarity search
+  - Contextual agricultural advice
+- [x] **Knowledge Ingestion** (`src/ingest_knowledge.py`)
+  - Automatic document processing
+  - Vector embedding generation
+  - Persistent storage in ChromaDB
+- [x] **RAG API Endpoints** in `main.py`
+  - `/rag/query` - Query knowledge base
+  - `/rag/ingest` - Add new knowledge
+  - `/health` - System health check with RAG status
+- [x] **Data Directory Structure**
+  - `data/knowledge_base/` - Source documents
+  - `data/chroma_db/` - Vector database storage
+
 ---
 
 ## 📂 File Structure
 
 ```
 services/terra-cortex/
-├── requirements.txt        # Python dependencies (fastapi, aiokafka, openai)
+├── requirements.txt        # Python dependencies (fastapi, aiokafka, openai, chromadb)
 ├── Dockerfile              # Docker container definition
 ├── .env.example            # Environment variable template
 ├── IMPLEMENTATION.md       # Complete implementation guide
 ├── QUICKREF.md             # Quick reference card
+├── RAG_QUICKSTART.md       # RAG system setup guide
 ├── README.md               # This file
+├── data/
+│   ├── knowledge_base/     # Agricultural knowledge documents (PDF, TXT)
+│   └── chroma_db/          # ChromaDB vector database
 └── src/
     ├── __init__.py         # Python package marker
-    ├── main.py             # ✅ FastAPI app + Hybrid AI orchestration
+    ├── main.py             # ✅ FastAPI app + Hybrid AI + RAG orchestration
     ├── local_analyzer.py   # ✅ Local Edge AI (rule-based detection)
     ├── cloud_advisor.py    # ✅ Cloud/Local LLM integration
-    └── models.py           # ✅ Enhanced Pydantic models with llmRecommendation
+    ├── rag_advisor.py      # ✅ RAG knowledge base system
+    ├── ingest_knowledge.py # ✅ Knowledge base ingestion tool
+    └── models.py           # ✅ Enhanced Pydantic models
 ```
 
 ---

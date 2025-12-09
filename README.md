@@ -10,8 +10,9 @@
 
 **신경망처럼 연결된 지능형 스마트팜 MSA 플랫폼**
 
-> **✅ Production-Validated (December 8, 2025)**  
-> 25 insights processed | 100% success rate | AI anomaly detection confirmed | 0% data loss
+> **✅ Production-Validated (December 9, 2025)**  
+> Full E2E pipeline verified | Hybrid AI operational | RAG-powered advisory system | Zero data loss  
+> **🚧 Phase 2.A in Progress:** Action Loop Foundation with Safety Guards & CloudEvents v1.0
 
 ---
 
@@ -49,13 +50,15 @@ graph TD
 - **출력**: Kafka Topic `raw-sensor-data`
 
 #### 2. **terra-cortex** (대뇌 피질 - AI Brain)
-- **기술**: Python 3.10+, FastAPI, Hybrid AI (Local Edge + Cloud LLM)
-- **역할**: 2단계 AI 분석 (Local Analyzer + Cloud Advisor)
+- **기술**: Python 3.10+, FastAPI, Hybrid AI (Local Edge + Cloud LLM) + RAG
+- **역할**: 3단계 지능형 분석 시스템
   - **Stage 1**: Local Edge Analyzer (규칙 기반, <1ms, 무료)
   - **Stage 2**: Cloud LLM Advisor (ANOMALY 전용, 상세 권장사항)
+  - **Stage 3**: RAG Knowledge Base (농업 지식 기반 조언 제공)
 - **입력**: Kafka Topic `raw-sensor-data`
 - **출력**: Kafka Topic `processed-insights`
 - **AI 엔진**: OpenAI API 또는 Ollama (Local LLM) 지원
+- **RAG**: ChromaDB 벡터 DB + 농업 전문 지식베이스
 
 #### 3. **terra-ops** (운영 통제 - Farm Management)
 - **기술**: Java 17+, Spring Boot 3, MySQL JPA
@@ -91,9 +94,10 @@ cd services/terra-ops
 
 | 서비스 | Swagger/Docs URL | 설명 |
 |--------|------------------|------|
-| **terra-ops** | http://localhost:8080/swagger-ui.html | Business & Dashboard API |
-| **terra-cortex** | http://localhost:8082 | AI Engine API |
-| **terra-sense** | http://localhost:8081/api/v1/ingest/health | IoT Ingestion API |
+| **terra-gateway** | http://localhost:8000 | API Gateway with Rate Limiting |
+| **terra-sense** | http://localhost:8081/actuator/health | IoT Ingestion API |
+| **terra-cortex** | http://localhost:8082/docs | AI Engine & RAG API |
+| **terra-ops** | http://localhost:8083/swagger-ui.html | Business & Dashboard API |
 
 ### API 예시
 
@@ -127,6 +131,13 @@ curl http://localhost:8080/api/v1/dashboard/summary
 - **API Gateway (terra-gateway)**: 통합 엔드포인트 & 보안
 
 ## 🎯 주요 기능
+
+### 🛡️ Action Protocol (Phase 2.A)
+- **CloudEvents v1.0**: 표준 이벤트 형식 (`terra.<service>.<category>.<action>`)
+- **Safety Validators**: 4층 검증 (Logical, Context, Permission, Device)
+- **Distributed Tracing**: 필수 `trace_id` 전파
+- **Audit Logging**: 모든 액션 라이프사이클 기록
+- **FarmOS Compatible**: Asset/Log/Plan 표준 매핑
 
 ### 🔐 보안
 - **API Gateway**: 모든 요청을 단일 진입점으로 통합

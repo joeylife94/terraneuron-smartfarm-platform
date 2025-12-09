@@ -99,6 +99,33 @@ git checkout -b feature/add-mqtt-authentication
 - **최대 줄 길이**: 120자
 - **주석**: 복잡한 로직에만 추가, 코드 자체가 문서가 되도록
 
+### 🆕 Phase 2.A 개발 규칙 (CloudEvents & Safety)
+
+#### CloudEvents 표준 준수
+- **Type Naming**: 반드시 `terra.<service>.<category>.<action>` 형식
+  - ✅ `terra.cortex.plan.generated`
+  - ❌ `terra-cortex.plan.generated` (하이픈 사용 금지)
+- **필수 필드**: `specversion`, `type`, `source`, `id`, `time`, `datacontenttype`, `data`
+- **trace_id**: 모든 이벤트의 `data` 필드에 필수 포함
+
+#### Distributed Tracing
+- **HTTP**: 헤더에 `X-Trace-Id` 추가
+- **Kafka**: 메시지 헤더에 `trace_id` 추가
+- **Logging**: 모든 로그에 trace_id 포함 (Java: MDC, Python: structlog)
+
+#### Safety Validators (terra-ops)
+새로운 ActionPlan 관련 코드 작성 시:
+1. **LogicalValidator**: 파라미터 유효성 검사
+2. **ContextValidator**: 환경 안전 조건 확인
+3. **PermissionValidator**: 승인 요구사항 검증
+4. **DeviceStateValidator**: 장치 상태 확인
+
+#### FarmOS 용어 매핑
+- `Sensor/Device` → `Asset (type: sensor/device)`
+- `Sensor Data` → `Log (type: observation)`
+- `Action History` → `Log (type: activity)`
+- `ActionPlan` → `Plan (type: input)`
+
 ## 💬 커밋 메시지 가이드라인
 
 [Conventional Commits](https://www.conventionalcommits.org/) 규칙을 따릅니다:
@@ -217,8 +244,43 @@ Closes #123
 
 - [프로젝트 README](README.md)
 - [빠른 시작 가이드](QUICKSTART.md)
-- [아키텍처 문서](docs/ARCHITECTURE.md)
+- [프로젝트 요약](PROJECT_SUMMARY.md)
 - [배포 가이드](docs/DEPLOYMENT.md)
+- [트러블슈팅 가이드](docs/TROUBLESHOOTING.md)
+- [Ollama 설정 가이드](OLLAMA_SETUP.md)
+
+## 🧪 테스트 실행 가이드
+
+### E2E 테스트 실행
+
+```bash
+# 전체 시스템이 실행 중인지 확인
+docker-compose ps
+
+# 테스트 실행
+python tests/simulation.py --mode mixed --count 20 --report
+
+# HTML 보고서가 자동으로 생성됩니다
+```
+
+### 개별 서비스 테스트
+
+```bash
+# Java 서비스 테스트 (terra-sense, terra-ops)
+cd services/terra-sense
+./gradlew test
+
+# Python 서비스 테스트 (terra-cortex)
+cd services/terra-cortex
+pytest tests/
+```
+
+## 🔒 보안 이슈 보고
+
+보안 취약점을 발견하셨나요? 공개 이슈로 올리지 마시고 다음 방법으로 보고해주세요:
+
+- 이메일: security@terraneuron.com (또는 프로젝트 관리자에게 직접 연락)
+- 가능한 자세한 정보 제공 (재현 방법, 영향 범위 등)
 
 ## 🙏 감사합니다!
 

@@ -246,7 +246,58 @@ OPENAI_BASE_URL=http://192.168.1.100:11434/v1
 - **Ollama Official Docs**: https://ollama.ai/docs
 - **Model Library**: https://ollama.ai/library
 - **Terra-Cortex README**: `services/terra-cortex/README.md`
+- **Terra-Cortex RAG Guide**: `services/terra-cortex/RAG_QUICKSTART.md`
 - **Test Reporter Guide**: `tests/TEST_REPORTER_README.md`
+
+---
+
+## 🎓 Advanced Topics
+
+### Using Ollama with RAG System
+
+Terra-Cortex now supports RAG (Retrieval-Augmented Generation) for enhanced recommendations:
+
+```bash
+# The RAG system works automatically with Ollama
+# Knowledge base is stored in services/terra-cortex/data/knowledge_base/
+
+# Test RAG with Ollama
+curl http://localhost:8082/rag/query -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"query": "Best temperature for tomato growth"}'
+```
+
+### GPU Acceleration (Optional)
+
+For faster inference, use GPU-enabled Ollama:
+
+**NVIDIA GPU:**
+```bash
+# Install NVIDIA Container Toolkit
+# Then run Ollama with GPU support
+docker run -d --gpus all \
+  -v ollama:/root/.ollama \
+  -p 11434:11434 \
+  ollama/ollama
+```
+
+### Model Fine-tuning
+
+You can create custom agricultural models:
+
+```bash
+# Create a Modelfile
+cat > Modelfile << EOF
+FROM llama3.1
+SYSTEM You are an agricultural expert specializing in smart farming.
+EOF
+
+# Create custom model
+ollama create agri-advisor -f Modelfile
+
+# Use in terra-cortex
+OPENAI_MODEL=agri-advisor
+```
 
 ---
 

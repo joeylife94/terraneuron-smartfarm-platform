@@ -1,9 +1,10 @@
 # 🌿 TerraNeuron Smart Farm Platform - Project Summary
 
 **Generated for Senior Architect Code Review**  
-**Date:** December 8, 2025  
+**Date:** December 9, 2025  
 **Architecture Pattern:** Microservices (MSA) with Event-Driven Architecture (EDA)  
-**Validation Status:** ✅ **Production-Validated** (E2E Pipeline Verified with 25 Real Insights)
+**Validation Status:** ✅ **Production-Validated** (E2E Pipeline + RAG System Verified)  
+**Current Phase:** 🚧 **Phase 2.A - Action Loop Foundation** (CloudEvents + Safety Guards)
 
 ---
 
@@ -14,14 +15,18 @@ TerraNeuron is a production-ready, **event-driven microservices platform** for s
 ### Key Highlights
 - ✅ **4 microservices** (3 core + 1 API Gateway)
 - ✅ **Event-driven architecture** with Apache Kafka
-- ✅ **Polyglot persistence** (MySQL, InfluxDB, Redis)
+- ✅ **Polyglot persistence** (MySQL, InfluxDB, Redis, ChromaDB)
 - ✅ **Complete observability** stack (Prometheus + Grafana)
 - ✅ **Production-ready CI/CD** pipelines (GitHub Actions)
-- ✅ **Security layers** (API Gateway, rate limiting)
+- ✅ **Security layers** (API Gateway, rate limiting, authentication)
 - ✅ **Comprehensive documentation** (README, CONTRIBUTING, DEPLOYMENT, TROUBLESHOOTING)
-- ✅ **E2E Pipeline Validated** (25 insights processed, 100% success rate, AI anomaly detection confirmed)
-- ✅ **Hybrid AI Architecture** (Local Edge Analyzer + Cloud/Local LLM for cost-effective intelligence)
+- ✅ **E2E Pipeline Validated** (25+ insights processed, 100% success rate)
+- ✅ **Hybrid AI + RAG Architecture** (Local Edge + Cloud LLM + Knowledge Base)
 - ✅ **Professional HTML Test Reporter** (AI verification, performance metrics, color-coded results)
+- 🚧 **CloudEvents v1.0 Standard** (Phase 2.A: Action Protocol Implementation)
+- 🚧 **4-Layer Safety Validation** (Logical, Context, Permission, Device)
+- 🚧 **Distributed Tracing** (Mandatory trace_id propagation)
+- 🚧 **FarmOS Compatible** (Asset/Log/Plan unified model)
 
 ---
 
@@ -46,23 +51,22 @@ IoT Sensors → HTTP POST → terra-sense → Kafka (raw-sensor-data) → terra-
 |---------|-----------|------|----------------|
 | **terra-gateway** | Java 17 + Spring Cloud Gateway | 8000 | API Gateway with Redis-based rate limiting |
 | **terra-sense** | Java 17 + Spring Boot 3.2 | 8081 | IoT data ingestion (HTTP POST) → Kafka producer |
-| **terra-cortex** | Python 3.10 + FastAPI (async) + OpenAI/Ollama | 8082 | Hybrid AI anomaly detection (Local Edge + Cloud LLM) |
+| **terra-cortex** | Python 3.10 + FastAPI (async) + OpenAI/Ollama + RAG | 8082 | 3-stage AI: Local Edge + Cloud LLM + Knowledge Base |
 | **terra-ops** | Java 17 + Spring Boot 3.2 + JPA | 8083 (mapped from 8080) | Management & Dashboard API (Kafka consumer) |
 
 ### Infrastructure Components
 
 | Component | Version | Purpose |
-|-----------|---------|---------|
+|-----------|---------|---------|  
 | **Apache Kafka** | 7.5 | Event streaming backbone |
 | **Zookeeper** | 7.5 | Kafka coordination |
 | **MySQL** | 8.0 | Relational data (farms, sensors, insights, alerts) |
 | **InfluxDB** | 2.7 | Time-series sensor data |
 | **Mosquitto** | Latest | MQTT broker for IoT devices |
 | **Redis** | 7 | Rate limiting cache |
+| **ChromaDB** | Latest | Vector database for RAG knowledge base |
 | **Prometheus** | 2.48 | Metrics collection |
-| **Grafana** | 10.2 | Visualization dashboards |
-
----
+| **Grafana** | 10.2 | Visualization dashboards |---
 
 ## 📁 Repository Structure
 
