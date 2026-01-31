@@ -2,10 +2,10 @@
 
 **Status:** ✅ **HYBRID AI + RAG ARCHITECTURE IMPLEMENTED**  
 **Stack:** Python 3.10 + FastAPI + aiokafka + OpenAI/Ollama + ChromaDB  
-**Version:** 3.0.0  
+**Version:** 3.1.0  
 **Port:** 8082  
 **Role:** Three-stage AI analysis (Local Edge AI + Cloud/Local LLM + RAG Knowledge Base)  
-**Phase 2.A:** 🚧 **CloudEvents v1.0** (Action Plan Generation with trace_id)
+**Phase 2.A:** ✅ **CloudEvents v1.0** (Action Plan Generation with trace_id) - IMPLEMENTED
 
 ---
 
@@ -88,6 +88,20 @@ Sensor Data → Stage 1: Local Edge Analyzer (always runs)
   - `data/knowledge_base/` - Source documents
   - `data/chroma_db/` - Vector database storage
 
+### Phase 2.A: CloudEvents & Action Protocol ✅ COMPLETE (January 2026)
+- [x] **CloudEvents Models** (`src/cloudevents_models.py`)
+  - CloudEvents v1.0 compliant schemas
+  - Event types: InsightDetectedEvent, ActionPlanGeneratedEvent
+  - Factory functions: `create_insight_event()`, `create_action_plan_event()`
+- [x] **trace_id Propagation**
+  - UUID-based trace ID generation
+  - Propagated through entire event chain
+  - Enables distributed tracing
+- [x] **Action Plan Generation**
+  - Automatic plan creation for ANOMALY insights
+  - Published to `action-plans` Kafka topic
+  - Safety conditions embedded in plan data
+
 ---
 
 ## 📂 File Structure
@@ -111,7 +125,8 @@ services/terra-cortex/
     ├── cloud_advisor.py    # ✅ Cloud/Local LLM integration
     ├── rag_advisor.py      # ✅ RAG knowledge base system
     ├── ingest_knowledge.py # ✅ Knowledge base ingestion tool
-    └── models.py           # ✅ Enhanced Pydantic models
+    ├── models.py           # ✅ Enhanced Pydantic models
+    └── cloudevents_models.py # ✅ CloudEvents v1.0 models (Phase 2.A)
 ```
 
 ---

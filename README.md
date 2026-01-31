@@ -7,12 +7,25 @@
 ![Kafka](https://img.shields.io/badge/Apache%20Kafka-7.5-231F20?style=flat&logo=apache-kafka&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat&logo=docker&logoColor=white)
 ![Validation](https://img.shields.io/badge/E2E%20Validated-100%25%20Success-28a745?style=flat&logo=checkmarx&logoColor=white)
+![Security](https://img.shields.io/badge/JWT%20Auth-Implemented-blueviolet?style=flat&logo=jsonwebtokens&logoColor=white)
+![CloudEvents](https://img.shields.io/badge/CloudEvents-v1.0-orange?style=flat&logo=cloudfoundry&logoColor=white)
 
 **신경망처럼 연결된 지능형 스마트팜 MSA 플랫폼**
 
-> **✅ Production-Validated (December 9, 2025)**  
+> **✅ Production-Ready (January 31, 2026)**  
 > Full E2E pipeline verified | Hybrid AI operational | RAG-powered advisory system | Zero data loss  
-> **🚧 Phase 2.A in Progress:** Action Loop Foundation with Safety Guards & CloudEvents v1.0
+> **✅ Phase 2.A COMPLETED:** CloudEvents v1.0 | 4-Layer Safety Validation | Distributed Tracing (trace_id)  
+> **✅ Phase 3 COMPLETED:** JWT Authentication | Role-based Access Control | Audit Logging
+
+---
+
+## 📜 Version History
+
+| Version | Date | Milestone |
+|---------|------|----------|
+| v2.1.0 | 2026-01-31 | Phase 2.A & 3 Complete: CloudEvents, Safety Validation, JWT Auth |
+| v2.0.0 | 2025-12-09 | Phase 1 Complete: E2E Pipeline, Hybrid AI, RAG System |
+| v1.0.0 | 2025-11-15 | Initial MSA Architecture with Kafka Event Backbone |
 
 ---
 
@@ -61,9 +74,15 @@ graph TD
 - **RAG**: ChromaDB 벡터 DB + 농업 전문 지식베이스
 
 #### 3. **terra-ops** (운영 통제 - Farm Management)
-- **기술**: Java 17+, Spring Boot 3, MySQL JPA
-- **역할**: 비즈니스 로직 처리 및 Dashboard API 제공
-- **입력**: Kafka Topic `processed-insights`
+- **기술**: Java 17+, Spring Boot 3, MySQL JPA, Spring Security
+- **역할**: 비즈니스 로직 처리, Action Plan 관리, Dashboard API 제공
+- **입력**: Kafka Topic `processed-insights`, `action-plans`
+- **출력**: Kafka Topic `terra.control.command`
+- **Phase 2.A 신규 기능**:
+  - Action Plan 관리 (생성/승인/거부/실행)
+  - 4단계 Safety Validation (논리/컨텍스트/권한/디바이스)
+  - Audit Logging (FarmOS Log 호환)
+  - JWT 인증 시스템
 
 ## 🚀 빠른 시작
 
@@ -132,14 +151,25 @@ curl http://localhost:8080/api/v1/dashboard/summary
 
 ## 🎯 주요 기능
 
-### 🛡️ Action Protocol (Phase 2.A)
+### 🛡️ Action Protocol (Phase 2.A) ✅ IMPLEMENTED
 - **CloudEvents v1.0**: 표준 이벤트 형식 (`terra.<service>.<category>.<action>`)
 - **Safety Validators**: 4층 검증 (Logical, Context, Permission, Device)
-- **Distributed Tracing**: 필수 `trace_id` 전파
-- **Audit Logging**: 모든 액션 라이프사이클 기록
+- **Distributed Tracing**: 필수 `trace_id` 전파 (Kafka 헤더 포함)
+- **Audit Logging**: 모든 액션 라이프사이클 기록 (FarmOS Log 호환)
 - **FarmOS Compatible**: Asset/Log/Plan 표준 매핑
+- **Action Plan API**:
+  - `GET /api/actions/pending` - 대기중인 액션 조회
+  - `POST /api/actions/{id}/approve` - 액션 승인 (Safety Validation 후 실행)
+  - `POST /api/actions/{id}/reject` - 액션 거부
+  - `GET /api/actions/{id}/audit` - 감사 이력 조회
 
-### 🔐 보안
+### 🔐 보안 (Phase 3) ✅ IMPLEMENTED
+- **JWT Authentication**: 토큰 기반 인증 시스템
+  - Access Token (24시간) + Refresh Token (7일)
+  - `POST /api/auth/login` - 로그인
+  - `POST /api/auth/refresh` - 토큰 갱신
+  - `GET /api/auth/validate` - 토큰 검증
+- **Role-based Access Control**: ADMIN, OPERATOR, VIEWER 역할
 - **API Gateway**: 모든 요청을 단일 진입점으로 통합
 - **Rate Limiting**: Redis 기반 요청 제한
 - **CORS 설정**: 크로스 오리진 요청 관리
@@ -238,11 +268,21 @@ terraneuron-smartfarm/
 
 ## 🗺️ Roadmap
 
+### ✅ Completed Phases
 - [x] **Phase 1: Genesis** - 모노레포 구조 및 MSA 기본 통신 구축 (Kafka)
 - [x] **Phase 1.5: Infrastructure** - 모니터링, CI/CD, API Gateway 추가
-- [ ] **Phase 2: Awakening** - terra-cortex AI 모델(CNN) 연동 및 질병 진단 로직 구현
-- [ ] **Phase 3: Expansion** - 실제 IoT 하드웨어(Raspberry Pi + Soil Sensor) 연동
-- [ ] **Phase 4: Evolution** - Kubernetes (K8s) 배포 및 모바일 앱 연동 (Flutter)
+- [x] **Phase 2.A: Action Loop** - CloudEvents v1.0, 4-Layer Safety Validation, trace_id 전파 ✨ NEW
+- [x] **Phase 2.B: Hybrid AI** - Local Edge + Cloud LLM + RAG Knowledge Base
+- [x] **Phase 3: Security** - JWT Authentication, Role-based Access Control ✨ NEW
+
+### 🚧 In Progress
+- [ ] **Phase 2.C: Edge Reflex** - Local fail-safe mechanism (Internet outage safety)
+
+### 🔮 Future Phases
+- [ ] **Phase 4: Expansion** - 실제 IoT 하드웨어(Raspberry Pi + Soil Sensor) 연동
+- [ ] **Phase 5: Evolution** - K3s/Docker Swarm 배포 및 모바일 앱 연동
+
+> 📋 상세 로드맵은 [ROADMAP.md](ROADMAP.md) 참조
 
 ## 🤝 기여하기
 
