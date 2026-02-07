@@ -231,6 +231,29 @@ services:
     networks:
       - terraneuron-net
 
+  # ========== 데이터 수집 레이어 (선택적) ==========
+
+  terra-data-collector:
+    build:
+      context: ./services/terra-data-collector
+      dockerfile: Dockerfile
+    container_name: terra-data-collector
+    depends_on:
+      - terra-sense
+    environment:
+      TERRA_SENSE_URL: http://terra-sense:8081
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      COLLECTOR_LOG_LEVEL: INFO
+    ports:
+      - "8083:8083"
+    volumes:
+      - ./services/terra-data-collector/data:/app/data
+      - ./services/terra-data-collector/config.yaml:/app/config.yaml
+    profiles:
+      - data-collector   # docker compose --profile data-collector up 으로만 시작
+    networks:
+      - terraneuron-net
+
 networks:
   terraneuron-net:
     driver: bridge
