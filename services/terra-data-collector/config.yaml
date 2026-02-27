@@ -1,0 +1,134 @@
+# ============================================================
+# Terra Data Collector Configuration
+# 외부 공개 데이터를 수집하여 TerraNeuron 파이프라인에 주입
+# ============================================================
+
+# 가상 농장 매핑 (외부 데이터 → 농장 ID 매핑)
+farms:
+  - farm_id: "farm-A"
+    name: "스마트팜 A동"
+    # 경기도 화성시 (기본 위치)
+    latitude: 37.1995
+    longitude: 126.8318
+  - farm_id: "farm-B"
+    name: "스마트팜 B동"
+    latitude: 37.2005
+    longitude: 126.8325
+
+# 데이터 제공자 설정
+providers:
+  open_meteo:
+    enabled: true
+    # 수집 간격 (초)
+    interval_seconds: 300
+    # 수집할 변수 목록
+    variables:
+      - temperature_2m        # 지상 2m 기온 → temperature 센서
+      - relative_humidity_2m  # 지상 2m 상대습도 → humidity 센서
+      - soil_moisture_0_to_1cm  # 토양수분 → soilMoisture 센서
+      - shortwave_radiation   # 단파복사 → light 센서 (lux 변환)
+    # 과거 데이터 수집 (AI 학습용)
+    historical:
+      enabled: true
+      days_back: 365          # 최근 1년 데이터
+
+  nasa_power:
+    enabled: true
+    interval_seconds: 3600    # 1시간 (NASA는 일 단위 데이터)
+    # 수집할 파라미터
+    parameters:
+      - T2M                   # 2m 기온
+      - RH2M                  # 2m 상대습도
+      - ALLSKY_SFC_SW_DWN     # 지표면 일사량
+      - T2M_MAX               # 일 최고기온
+      - T2M_MIN               # 일 최저기온
+      - PRECTOTCORR           # 보정강수량
+    # 과거 데이터 수집
+    historical:
+      enabled: true
+      years_back: 3           # 최근 3년
+
+  thingspeak:
+    enabled: true
+    interval_seconds: 600
+    # 공개 채널 목록 (실제 IoT 센서 데이터)
+    channels:
+      - channel_id: 12397      # 온실 환경 모니터링
+        description: "Greenhouse Environment"
+        field_mapping:
+          field1: "temperature"
+          field2: "humidity"
+      - channel_id: 283855     # 기상 관측소
+        description: "Weather Station"
+        field_mapping:
+          field1: "temperature"
+          field2: "humidity"
+          field3: "light"
+
+# 내보내기 설정
+exporters:
+  # terra-sense HTTP 브릿지 (실시간 파이프라인 테스트)
+  terra_bridge:
+    enabled: true
+    terra_sense_url: "http://localhost:8081"
+    endpoint: "/api/v1/ingest/sensor-data"
+    # 배치 크기 (한 번에 보내는 데이터 수)
+    batch_size: 10
+    # 요청 간 지연 (ms) - terra-sense 부하 방지
+    delay_ms: 100
+
+  # Kafka 직접 전송 (Docker 환경)
+  kafka_bridge:
+    enabled: false
+    bootstrap_servers: "localhost:9092"
+    topic: "raw-sensor-data"
+
+  # CSV 내보내기 (AI 학습 데이터셋)
+  csv_export:
+    enabled: true
+    output_dir: "./data/exports/csv"
+    # 파일 분할 기준
+    split_by: "daily"          # daily, weekly, monthly
+    include_metadata: true
+
+  # JSONL 내보내기 (LLM 파인튜닝용)
+  jsonl_export:
+    enabled: true
+    output_dir: "./data/exports/jsonl"
+    # 파인튜닝 포맷 (instruction-tuning 형태)
+    format: "instruction"
+
+  # Parquet 내보내기 (대규모 ML 학습용)
+  parquet_export:
+    enabled: true
+    output_dir: "./data/exports/parquet"
+    compression: "snappy"
+
+# 데이터 소스 태깅 (IoT 데이터와 구분)
+tagging:
+  source_label: "external"     # IoT는 "iot", 외부 데이터는 "external"
+  provider_label: true         # 어떤 제공자에서 왔는지 태깅
+  quality_label: true          # 데이터 품질 등급 태깅
+
+# 스케줄러 설정
+scheduler:
+  enabled: true
+  timezone: "Asia/Seoul"
+  # 실시간 수집 작업
+  realtime_jobs:
+    - provider: "open_meteo"
+      cron: "*/5 * * * *"      # 5분마다
+    - provider: "thingspeak"
+      cron: "*/10 * * * *"     # 10분마다
+  # 일괄 수집 작업 (AI 학습 데이터)
+  batch_jobs:
+    - provider: "nasa_power"
+      cron: "0 6 * * *"       # 매일 오전 6시
+    - provider: "open_meteo"
+      type: "historical"
+      cron: "0 3 * * 1"       # 매주 월요일 오전 3시
+
+# 로깅
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
