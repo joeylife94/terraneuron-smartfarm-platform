@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground: #171717;
+  --background: #f8fafc;
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+}
+
+/* ── 카드 기본 스타일 ── */
+.card {
+  @apply rounded-xl border border-gray-200 bg-white shadow-sm;
+}
+
+.card-header {
+  @apply px-5 py-4 border-b border-gray-100;
+}
+
+.card-body {
+  @apply px-5 py-4;
+}
+
+/* ── 상태 뱃지 ── */
+.badge-normal  { @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800; }
+.badge-warning { @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800; }
+.badge-anomaly { @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800; }
