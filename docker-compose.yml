@@ -194,6 +194,8 @@ services:
     container_name: terra-cortex
     depends_on:
       - kafka
+      - terra-ops
+      - influxdb
     volumes:
       - ./services/terra-cortex/src:/app/src
       # 호스트의 data 폴더(PDF 넣을 곳)를 컨테이너 내부의 /app/data로 연결
@@ -206,6 +208,25 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-ollama}  # For Ollama use "ollama", for OpenAI use real key
       OPENAI_MODEL: ${OPENAI_MODEL:-llama3.1}  # For Ollama: llama3.1, mistral, etc. For OpenAI: gpt-4o-mini
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-http://host.docker.internal:11434/v1}  # Ollama endpoint (use host.docker.internal for local Ollama)
+      # Weather API (OpenWeatherMap 무료 tier: https://openweathermap.org/api)
+      WEATHER_API_KEY: ${WEATHER_API_KEY:-}           # OpenWeatherMap API Key (비어있으면 비활성화)
+      WEATHER_PROVIDER: ${WEATHER_PROVIDER:-openweathermap}
+      WEATHER_LAT: ${WEATHER_LAT:-35.1796}            # 농장 위도 (기본: 대전)
+      WEATHER_LON: ${WEATHER_LON:-129.0756}            # 농장 경도 (기본: 부산)
+      # Crop Profile (terra-ops 연동 — 작물 모델링 Step 2)
+      TERRA_OPS_URL: http://terra-ops:8080             # terra-ops REST API 주소
+      CROP_CACHE_TTL: ${CROP_CACHE_TTL:-1800}          # 작물 프로필 캐시 TTL (30분)
+      # Time Series Trend Analyzer (InfluxDB 시계열 분석 — Step 3)
+      INFLUXDB_URL: http://influxdb:8086
+      INFLUXDB_TOKEN: terra-token-2025
+      INFLUXDB_ORG: terraneuron
+      INFLUXDB_BUCKET: sensor_data
+      TREND_CACHE_TTL: ${TREND_CACHE_TTL:-120}           # 추세 캐시 TTL (2분)
+      TREND_WINDOW: ${TREND_WINDOW:-1h}                  # 기본 분석 윈도우
+      # Knowledge Accumulation Pipeline (지식 축적 — Step 6)
+      KNOWLEDGE_COLLECT_INTERVAL: ${KNOWLEDGE_COLLECT_INTERVAL:-60}  # 자동 수집 주기 (분)
+      KNOWLEDGE_BASE_PATH: /app/data/knowledge_base
+      CHROMA_DB_PATH: /app/data/chroma_db
     ports:
       - "8082:8082"
     extra_hosts:
@@ -228,6 +249,24 @@ services:
       SPRING_DATASOURCE_PASSWORD: terra2025
     ports:
       - "8080:8080"
+    networks:
+      - terraneuron-net
+
+  # ========== 농업인 대시보드 ==========
+
+  terra-dashboard:
+    build:
+      context: ./services/terra-dashboard
+      dockerfile: Dockerfile
+    container_name: terra-dashboard
+    depends_on:
+      - terra-cortex
+      - terra-ops
+      - terra-sense
+    ports:
+      - "3001:3000"
+    environment:
+      NODE_ENV: production
     networks:
       - terraneuron-net
 

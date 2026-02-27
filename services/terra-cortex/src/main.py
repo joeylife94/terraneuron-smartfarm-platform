@@ -20,6 +20,10 @@ from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
 from src.local_analyzer import LocalAnalyzer
 from src.cloud_advisor import CloudAdvisor
 from src.models import SensorData, Insight
+from src.weather_provider import get_weather_provider, WeatherProvider
+from src.crop_profile import get_crop_profile_provider, CropProfileProvider
+from src.timeseries import get_timeseries_analyzer, TimeSeriesAnalyzer
+from src.knowledge_collector import get_knowledge_collector, KnowledgeCollector
 from src.cloudevents_models import (
     generate_trace_id,
     create_insight_event,
@@ -56,6 +60,10 @@ kafka_task = None
 # Global AI components (Hybrid Architecture)
 local_analyzer: LocalAnalyzer = None
 cloud_advisor: CloudAdvisor = None
+weather_provider: WeatherProvider = None
+crop_provider: CropProfileProvider = None
+trend_analyzer: TimeSeriesAnalyzer = None
+knowledge_collector: KnowledgeCollector = None
 
 # Action Plan Configuration (Safety-First Design)
 ACTION_PLAN_CONFIG = {
@@ -151,6 +159,9 @@ async def consume_messages():
     logger.info("🔄 Starting Kafka consumer loop with Hybrid AI + CloudEvents v1.0...")
     logger.info("   - Local Analyzer: Always active (Edge AI)")
     logger.info(f"   - Cloud Advisor: {cloud_advisor.enabled and 'Enabled (triggers on ANOMALY)' or 'Disabled (no API key)'}")
+    logger.info(f"   - Weather Provider: {weather_provider.enabled and 'Enabled' or 'Disabled (no WEATHER_API_KEY)'}")
+    logger.info(f"   - Crop Profile: Enabled (terra-ops 연동)")
+    logger.info(f"   - Trend Analyzer: Enabled (InfluxDB 시계열)")
     logger.info("   - CloudEvents: Enabled with trace_id propagation")
     logger.info("   - Action Plans: Auto-generated for ANOMALY (requires approval)")
     
@@ -166,6 +177,42 @@ async def consume_messages():
                 
                 logger.info(f"📥 [{trace_id[:20]}...] Received: {sensor_data.farmId} - {sensor_data.sensorType}: {sensor_data.value}")
                 
+                # STEP 0: Fetch weather context (cached, non-blocking)
+                weather = await weather_provider.get_weather() if weather_provider.enabled else None
+                if weather:
+                    local_analyzer.set_weather_context(weather)
+                    logger.info(f"   🌤️ Weather context: {weather.temperature}°C, {weather.humidity}%, {weather.description}")
+                
+                # STEP 0.5: Fetch crop profile context (cached, terra-ops 연동)
+                crop_ctx = await crop_provider.get_crop_context(sensor_data.farmId)
+                if crop_ctx and crop_ctx.has_crop_profile:
+                    local_analyzer.set_crop_context(crop_ctx)
+                    primary = crop_ctx.get_primary_condition()
+                    if primary:
+                        logger.info(f"   🌱 Crop context: {primary.crop_name} - {primary.current_stage} ({primary.days_since_planting}일차)")
+                else:
+                    local_analyzer.set_crop_context(None)
+                
+                # STEP 0.75: Fetch time-series trend context (cached, InfluxDB)
+                trend_ctx = None
+                try:
+                    trend_ctx = await trend_analyzer.get_trend_context(
+                        sensor_data.farmId, sensor_data.sensorType.lower()
+                    )
+                    if trend_ctx and trend_ctx.has_data:
+                        local_analyzer.set_trend_context(trend_ctx)
+                        logger.info(
+                            f"   📈 Trend: {trend_ctx.stats.direction}"
+                            f" (MA:{trend_ctx.stats.moving_avg:.1f},"
+                            f" rate:{trend_ctx.stats.rate_of_change:+.2f}/h,"
+                            f" spike:{trend_ctx.stats.is_spike})"
+                        )
+                    else:
+                        local_analyzer.set_trend_context(None)
+                except Exception as te:
+                    logger.warning(f"   ⚠️ Trend context fetch failed: {te}")
+                    local_analyzer.set_trend_context(None)
+                
                 # STEP 1: Local Edge AI Analysis (always runs, fast)
                 insight = local_analyzer.analyze(sensor_data)
                 logger.info(f"   🔍 Local Analyzer: {insight.status} ({insight.severity})")
@@ -173,7 +220,7 @@ async def consume_messages():
                 # STEP 2: Cloud LLM Advisory (only for ANOMALY, smart trigger)
                 if insight.status == "ANOMALY" and cloud_advisor.enabled:
                     logger.info(f"   🤖 Triggering Cloud Advisor for ANOMALY...")
-                    llm_recommendation = await cloud_advisor.get_recommendation(sensor_data, insight)
+                    llm_recommendation = await cloud_advisor.get_recommendation(sensor_data, insight, weather, crop_ctx, trend_ctx)
                     
                     if llm_recommendation:
                         insight.llmRecommendation = llm_recommendation
@@ -187,6 +234,10 @@ async def consume_messages():
                 # STEP 4: Generate Action Plan for ANOMALY (requires human approval)
                 if insight.status == "ANOMALY":
                     await generate_action_plan(trace_id, sensor_data, insight)
+                
+                # STEP 5: Accumulate insight for knowledge collection
+                if knowledge_collector:
+                    knowledge_collector.accumulate_insight(insight.model_dump(mode='json'))
                 
             except Exception as e:
                 logger.error(f"❌ Error processing message: {e}", exc_info=True)
@@ -307,23 +358,35 @@ async def send_insight(insight: Insight):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager"""
-    global local_analyzer, cloud_advisor
+    global local_analyzer, cloud_advisor, weather_provider, crop_provider, trend_analyzer, knowledge_collector
     
     logger.info("🧠 Terra-Cortex Hybrid AI Engine starting...")
     
     # Initialize AI components
     local_analyzer = LocalAnalyzer()
     cloud_advisor = CloudAdvisor()
+    weather_provider = get_weather_provider()
+    crop_provider = get_crop_profile_provider()
+    trend_analyzer = get_timeseries_analyzer()
+    knowledge_collector = get_knowledge_collector()
     
     logger.info("   ✅ Local Analyzer initialized (Edge AI)")
     logger.info(f"   {'✅' if cloud_advisor.enabled else '⚠️'} Cloud Advisor {'enabled' if cloud_advisor.enabled else 'disabled (set OPENAI_API_KEY to enable)'}")
+    logger.info(f"   {'✅' if weather_provider.enabled else '⚠️'} Weather Provider {'enabled' if weather_provider.enabled else 'disabled (set WEATHER_API_KEY to enable)'}")
+    logger.info(f"   ✅ Crop Profile Provider initialized (terra-ops 연동)")
+    logger.info(f"   ✅ Trend Analyzer initialized (InfluxDB 시계열 분석)")
+    logger.info(f"   ✅ Knowledge Collector initialized (지식 축적 파이프라인)")
     
     # Start Kafka
     await start_kafka()
     
+    # Start auto knowledge collection
+    await knowledge_collector.start_auto_collection()
+    
     yield
     
     logger.info("🛑 Terra-Cortex Hybrid AI Engine shutting down...")
+    await knowledge_collector.close()
     await stop_kafka()
 
 
@@ -346,7 +409,9 @@ async def root() -> Dict[str, Any]:
         "status": "running",
         "description": "Hybrid AI Analysis Engine: Local Edge AI + Cloud LLM",
         "local_analyzer": local_analyzer.get_stats() if local_analyzer else {},
-        "cloud_advisor": cloud_advisor.get_stats() if cloud_advisor else {}
+        "cloud_advisor": cloud_advisor.get_stats() if cloud_advisor else {},
+        "weather_provider": weather_provider.get_stats() if weather_provider else {},
+        "knowledge_collector": knowledge_collector.get_stats() if knowledge_collector else {}
     }
 
 
@@ -391,8 +456,139 @@ async def info() -> Dict[str, Any]:
                 "trigger": "ANOMALY only",
                 "enabled": cloud_advisor.enabled if cloud_advisor else False,
                 "stats": cloud_advisor.get_stats() if cloud_advisor else {}
+            },
+            "weather": {
+                "name": "Weather Context Provider",
+                "type": "external-api",
+                "enabled": weather_provider.enabled if weather_provider else False,
+                "stats": weather_provider.get_stats() if weather_provider else {}
+            },
+            "crop_profile": {
+                "name": "Crop Profile Provider",
+                "type": "terra-ops-api",
+                "enabled": crop_provider.enabled if crop_provider else False,
+                "stats": crop_provider.get_stats() if crop_provider else {}
+            },
+            "trend_analyzer": {
+                "name": "Time Series Trend Analyzer",
+                "type": "influxdb-flux",
+                "enabled": trend_analyzer is not None,
+                "config": trend_analyzer.get_config() if trend_analyzer else {}
+            },
+            "knowledge_collector": {
+                "name": "Knowledge Accumulation Pipeline",
+                "type": "auto-rag-enrichment",
+                "enabled": knowledge_collector is not None,
+                "stats": knowledge_collector.get_stats() if knowledge_collector else {}
             }
         }
+    }
+
+
+# ─── Time Series Trend REST API ─────────────────────────────────────
+@app.get("/api/trends/{farm_id}/{sensor_type}")
+async def get_trend(farm_id: str, sensor_type: str, window: str = "1h"):
+    """Get time-series trend analysis for a farm sensor"""
+    if not trend_analyzer:
+        return {"error": "Trend analyzer not initialized"}
+    ctx = await trend_analyzer.get_trend_context(farm_id, sensor_type, window)
+    if not ctx or not ctx.has_data:
+        return {"farm_id": farm_id, "sensor_type": sensor_type, "has_data": False, "message": "No data available"}
+    return {
+        "farm_id": ctx.farm_id,
+        "sensor_type": ctx.sensor_type,
+        "has_data": True,
+        "stats": {
+            "mean": ctx.stats.mean,
+            "std": ctx.stats.std,
+            "min": ctx.stats.min_val,
+            "max": ctx.stats.max_val,
+            "count": ctx.stats.count,
+            "latest": ctx.stats.latest,
+            "direction": ctx.stats.direction,
+            "rate_of_change": ctx.stats.rate_of_change,
+            "moving_avg": ctx.stats.moving_avg,
+            "deviation_from_ma": ctx.stats.deviation_from_ma,
+            "is_spike": ctx.stats.is_spike,
+            "predicted_next": ctx.stats.predicted_next,
+            "period": ctx.stats.period,
+        },
+        "recent_points": [{"time": p.time, "value": p.value} for p in (ctx.recent_points or [])[-30:],],
+        "message": ctx.message,
+    }
+
+
+@app.get("/api/trends/{farm_id}/{sensor_type}/daily")
+async def get_daily_trend(farm_id: str, sensor_type: str, days: int = 7):
+    """Get daily aggregated stats for a farm sensor"""
+    if not trend_analyzer:
+        return {"error": "Trend analyzer not initialized"}
+    rows = await trend_analyzer.query_daily_stats(farm_id, sensor_type, days)
+    return {
+        "farm_id": farm_id,
+        "sensor_type": sensor_type,
+        "days": days,
+        "data": [{"time": r.time, "value": r.value} for r in rows],
+    }
+
+
+@app.get("/api/trends/{farm_id}/{sensor_type}/hourly")
+async def get_hourly_pattern(farm_id: str, sensor_type: str, days: int = 7):
+    """Get hourly pattern (average by hour of day)"""
+    if not trend_analyzer:
+        return {"error": "Trend analyzer not initialized"}
+    patterns = await trend_analyzer.query_hourly_pattern(farm_id, sensor_type, days)
+    return {
+        "farm_id": farm_id,
+        "sensor_type": sensor_type,
+        "days": days,
+        "pattern": [
+            {"hour": p.hour, "avg": p.avg_value, "min": p.min_value, "max": p.max_value}
+            for p in patterns
+        ],
+    }
+
+
+# ─── Knowledge Accumulation REST API ────────────────────────────────
+@app.get("/api/knowledge/stats")
+async def get_knowledge_stats():
+    """Get knowledge collector statistics"""
+    if not knowledge_collector:
+        return {"error": "Knowledge collector not initialized"}
+    return knowledge_collector.get_stats()
+
+
+@app.get("/api/knowledge/entries")
+async def get_knowledge_entries(limit: int = 50):
+    """Get recent knowledge entries"""
+    if not knowledge_collector:
+        return {"error": "Knowledge collector not initialized"}
+    return {
+        "entries": knowledge_collector.get_entries(limit),
+        "total": knowledge_collector.stats["total_entries"],
+    }
+
+
+@app.post("/api/knowledge/collect")
+async def trigger_collection():
+    """Trigger manual knowledge collection cycle"""
+    if not knowledge_collector:
+        return {"error": "Knowledge collector not initialized"}
+    result = await knowledge_collector.collect_all()
+    return result
+
+
+@app.post("/api/knowledge/ingest")
+async def ingest_manual_knowledge(title: str, content: str, category: str = "manual"):
+    """Manually add a knowledge entry and embed into RAG"""
+    if not knowledge_collector:
+        return {"error": "Knowledge collector not initialized"}
+    entry = knowledge_collector.add_manual_entry(title, content, category)
+    return {
+        "entry_id": entry.entry_id,
+        "title": entry.title,
+        "embedded": entry.embedded,
+        "created_at": entry.created_at,
     }
 
 
