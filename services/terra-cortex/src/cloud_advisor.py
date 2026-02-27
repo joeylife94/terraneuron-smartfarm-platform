@@ -3,6 +3,7 @@ Cloud LLM Advisor
 Provides detailed AI-powered recommendations using OpenAI API
 Triggered ONLY when local analyzer detects ANOMALY
 Enhanced with RAG (Retrieval-Augmented Generation) for agricultural expertise
+Enhanced with crop profile context for growth-stage-aware recommendations (Step 2)
 """
 import os
 import logging
@@ -10,6 +11,9 @@ from typing import Optional
 from openai import AsyncOpenAI
 from src.models import SensorData, Insight
 from src.rag_advisor import get_rag_advisor
+from src.weather_provider import WeatherData
+from src.crop_profile import CropContext
+from src.timeseries import TrendContext
 
 logger = logging.getLogger(__name__)
 
@@ -51,18 +55,14 @@ class CloudAdvisor:
     async def get_recommendation(
         self, 
         sensor_data: SensorData, 
-        local_insight: Insight
+        local_insight: Insight,
+        weather: Optional['WeatherData'] = None,
+        crop_ctx: Optional['CropContext'] = None,
+        trend_ctx: Optional['TrendContext'] = None
     ) -> Optional[str]:
         """
         Get detailed recommendation from LLM for anomaly.
-        Enhanced with RAG - retrieves relevant context from agricultural PDFs.
-        
-        Args:
-            sensor_data: Original sensor data
-            local_insight: Insight from local analyzer (with ANOMALY status)
-            
-        Returns:
-            Detailed recommendation string from LLM, or None if API unavailable
+        Enhanced with RAG + weather + crop profile + time series trend context.
         """
         if not self.enabled:
             logger.debug("Cloud Advisor disabled, skipping LLM call")
@@ -80,11 +80,11 @@ class CloudAdvisor:
             # Step 2: Build RAG-enhanced prompt
             if rag_contexts:
                 # Use RAG prompt with retrieved context
-                prompt = self._build_rag_prompt(sensor_data, rag_contexts)
+                prompt = self._build_rag_prompt(sensor_data, rag_contexts, weather, crop_ctx, trend_ctx)
                 logger.info(f"🤖 Requesting RAG-enhanced LLM recommendation for {sensor_data.farmId}...")
             else:
                 # Fallback to simple prompt if no RAG context
-                prompt = self._build_simple_prompt(sensor_data)
+                prompt = self._build_simple_prompt(sensor_data, weather, crop_ctx, trend_ctx)
                 logger.info(f"🤖 Requesting LLM recommendation for {sensor_data.farmId}...")
             
             # Step 3: Call LLM with enhanced prompt
@@ -117,16 +117,9 @@ class CloudAdvisor:
             return "AI Error: Check Local LLM connection. Ensure Ollama is running on host machine."
     
     
-    def _build_rag_prompt(self, sensor_data: SensorData, contexts: list) -> str:
+    def _build_rag_prompt(self, sensor_data: SensorData, contexts: list, weather: Optional['WeatherData'] = None, crop_ctx: Optional['CropContext'] = None, trend_ctx: Optional['TrendContext'] = None) -> str:
         """
-        Build RAG-enhanced prompt with retrieved agricultural knowledge
-        
-        Args:
-            sensor_data: Original sensor data
-            contexts: Retrieved context chunks from RAG
-            
-        Returns:
-            RAG-enhanced prompt string
+        Build RAG-enhanced prompt with retrieved agricultural knowledge + crop + trend context
         """
         context_section = "\n\n".join([
             f"**Context {i+1}:**\n{ctx[:500]}..."  # Limit context length
@@ -140,23 +133,96 @@ class CloudAdvisor:
 **Current Situation:**
 - Sensor Type: {sensor_data.sensorType}
 - Reading: {sensor_data.value} {self._get_unit(sensor_data.sensorType)}
-- Status: ANOMALY detected
+- Status: ANOMALY detected"""
 
-**Question:** What immediate action should the farmer take? Provide a specific, actionable recommendation in 2-3 sentences based on the context above."""
+        # 날씨 데이터가 있으면 컨텍스트에 추가
+        if weather:
+            prompt += f"""
+
+**Current Weather Conditions (External):**
+- Outdoor Temperature: {weather.temperature}°C
+- Outdoor Humidity: {weather.humidity}%
+- Weather: {weather.description}
+- Wind Speed: {weather.wind_speed}m/s"""
+            if weather.rain_1h > 0:
+                prompt += f"\n- Rainfall (1h): {weather.rain_1h}mm"
+            if weather.forecast_temp_max is not None:
+                prompt += f"\n- Today's Forecast: {weather.forecast_temp_min}°C ~ {weather.forecast_temp_max}°C"
+
+        prompt += """
+
+**Question:** What immediate action should the farmer take? Consider both the sensor reading AND current weather conditions. Provide a specific, actionable recommendation in 2-3 sentences based on the context above."""
+
+        # 작물 프로필 컨텍스트 추가
+        if crop_ctx and crop_ctx.has_crop_profile:
+            primary = crop_ctx.get_primary_condition()
+            if primary:
+                prompt = prompt.replace(
+                    "**Question:**",
+                    f"""**Crop Profile (Growth Stage):**
+- Crop: {primary.crop_name} ({primary.crop_code})
+- Growth Stage: {primary.current_stage} (Stage #{primary.stage_order})
+- Days Since Planting: {primary.days_since_planting}
+- Optimal Temperature: {primary.temperature.optimal_low}~{primary.temperature.optimal_high}°C (critical: {primary.temperature.min}~{primary.temperature.max}°C)
+- Optimal Humidity: {primary.humidity.optimal_low}~{primary.humidity.optimal_high}% (critical: {primary.humidity.min}~{primary.humidity.max}%)
+- Optimal CO2: {primary.co2.optimal_low:.0f}~{primary.co2.optimal_high:.0f}ppm
+
+**Question:**"""
+                )
+        
+        # 시계열 추세 컨텍스트 추가
+        if trend_ctx and trend_ctx.has_data and trend_ctx.stats:
+            ts = trend_ctx.stats
+            trend_section = f"""\n**Time Series Trend (last {ts.period}):**
+- Direction: {ts.direction} (rate: {ts.rate_of_change:+.2f}/h)
+- Moving Average: {ts.moving_avg}, Current Deviation: {ts.deviation_from_ma:+.1f}
+- Range: {ts.min_val}~{ts.max_val}, Std Dev: {ts.std}
+- Spike Detected: {ts.is_spike}"""
+            if ts.predicted_next is not None:
+                trend_section += f"\n- Predicted (10min): {ts.predicted_next}"
+            prompt = prompt.replace(
+                "**Question:**",
+                f"{trend_section}\n\n**Question:**"
+            )
         
         return prompt
     
-    def _build_simple_prompt(self, sensor_data: SensorData) -> str:
+    def _build_simple_prompt(self, sensor_data: SensorData, weather: Optional['WeatherData'] = None, crop_ctx: Optional['CropContext'] = None, trend_ctx: Optional['TrendContext'] = None) -> str:
         """
-        Build simple prompt without RAG context (fallback)
+        Build simple prompt without RAG context (fallback) + optional crop/trend context
+        """
+        prompt = f"Sensor {sensor_data.sensorType} shows {sensor_data.value} {self._get_unit(sensor_data.sensorType)}. This is an ANOMALY."
         
-        Args:
-            sensor_data: Original sensor data
-            
-        Returns:
-            Simple prompt string
-        """
-        return f"Sensor {sensor_data.sensorType} shows {sensor_data.value} {self._get_unit(sensor_data.sensorType)}. This is an ANOMALY. Suggest immediate action in 1-2 sentences."
+        if weather:
+            prompt += f" Current outdoor conditions: {weather.temperature}°C, {weather.humidity}% humidity, {weather.description}."
+            if weather.rain_1h > 0:
+                prompt += f" Rainfall: {weather.rain_1h}mm/h."
+        
+        if crop_ctx and crop_ctx.has_crop_profile:
+            primary = crop_ctx.get_primary_condition()
+            if primary:
+                prompt += (
+                    f" Growing {primary.crop_name} in {primary.current_stage} stage"
+                    f" (day {primary.days_since_planting})."
+                    f" Optimal range: {primary.temperature.optimal_low}~{primary.temperature.optimal_high}°C,"
+                    f" {primary.humidity.optimal_low}~{primary.humidity.optimal_high}% humidity."
+                )
+        
+        prompt += " Suggest immediate action in 1-2 sentences, considering the crop's growth stage and weather."
+        
+        # 추세 정보 추가
+        if trend_ctx and trend_ctx.has_data and trend_ctx.stats:
+            ts = trend_ctx.stats
+            prompt += (
+                f" Trend: {ts.direction} over last {ts.period}"
+                f" (rate: {ts.rate_of_change:+.2f}/h, MA: {ts.moving_avg})."
+            )
+            if ts.is_spike:
+                prompt += " SPIKE detected (>2σ)."
+            if ts.predicted_next is not None:
+                prompt += f" Predicted 10min: {ts.predicted_next:.1f}."
+        
+        return prompt
     
     def _build_prompt(self, sensor_data: SensorData, local_insight: Insight) -> str:
         """
