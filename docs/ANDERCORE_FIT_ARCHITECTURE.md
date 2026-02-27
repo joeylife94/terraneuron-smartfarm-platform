@@ -1,7 +1,9 @@
 # TerraNeuron / Asgard → Andercore Fit: Technical Architecture Narrative (Bilingual)
 
-> **📅 Last Updated: January 31, 2026**  
-> **Version: 2.1.0** - Phase 2.A (Action Loop) & Phase 3 (Security) Implementation Complete
+> **📅 Last Updated: February 27, 2026**  
+> **Version: 2.1.1** - Documentation Refresh & Known Issues Documented
+
+> **📖 관련 문서:** [PROJECT_STATUS.md](PROJECT_STATUS.md) | [API_REFERENCE.md](API_REFERENCE.md) | [DEVELOPMENT_GUIDE.md](DEVELOPMENT_GUIDE.md)
 
 ---
 
@@ -9,6 +11,7 @@
 
 | Version | Date | Changes |
 |---------|------|----------|
+| v2.1.1 | 2026-02-27 | 문서 체계 정비, 알려진 이슈 문서화, 신규 문서 연결 |
 | v2.1.0 | 2026-01-31 | Phase 2.A & 3 구현 완료: CloudEvents, 4-Layer Safety, JWT Auth, Audit Logging |
 | v2.0.0 | 2025-12-09 | Initial architecture narrative with Hybrid AI design |
 

@@ -1,5 +1,8 @@
 # 🔧 TerraNeuron 트러블슈팅 가이드
 
+> **📅 Last Updated:** 2026-02-27  
+> **📖 관련 문서:** [PROJECT_STATUS.md](PROJECT_STATUS.md) | [DEVELOPMENT_GUIDE.md](DEVELOPMENT_GUIDE.md) | [API_REFERENCE.md](API_REFERENCE.md)
+
 자주 발생하는 문제와 해결 방법을 정리한 문서입니다.
 
 ## 📋 목차
@@ -450,8 +453,47 @@ ls -la services/terra-cortex/data/knowledge_base/
 docker exec -it terra-cortex python src/ingest_knowledge.py
 ```
 
+## ⚠️ 알려진 설계/구현 이슈 (2026-02 기준)
+
+아래는 버그가 아니라 **현재 미구현/비활성**된 항목입니다. 자세한 내용은 [PROJECT_STATUS.md](PROJECT_STATUS.md)를 참조하세요.
+
+### 1. Spring Security가 비활성화 상태
+
+**현상:** 모든 API가 인증 없이 접근 가능
+**원인:** `SecurityConfig.java`에서 `anyRequest().permitAll()` 설정
+**임시 대응:** 개발 환경에서는 문제 없으나, 프로덕션에서는 반드시 RBAC 활성화 필요
+
+### 2. AuthController가 DB를 사용하지 않음
+
+**현상:** `admin/admin123`으로만 로그인 가능 (인메모리 하드코딩)
+**원인:** `AuthController.java`가 `users` 테이블을 조회하지 않고 Map으로 직접 비교
+**해결 방향:** UserRepository + BCryptPasswordEncoder 연동
+
+### 3. init.sql과 JPA 엔티티 스키마 불일치
+
+**현상:** `docker-compose down -v` 후 재시작 시 테이블 구조가 예상과 다를 수 있음
+**원인:** `init.sql`의 `insights.sensor_id BIGINT FK` vs JPA `Insight.farmId VARCHAR`. `ddl-auto=update`가 JPA 기준으로 테이블을 변경
+**임시 대응:** JPA 엔티티를 소스 오브 트루스로 사용. init.sql은 참고용
+
+### 4. MQTT 수집 미구현
+
+**현상:** MQTT로 센서 데이터 전송 불가
+**원인:** Paho MQTT 의존성만 있고, 실제 리스너 클래스 없음
+**해결 방향:** `MqttListenerService.java` 신규 작성 필요
+
+### 5. `terra.control.command` 토픽 소비자 없음
+
+**현상:** 액션 플랜 승인 후 실제 장치 제어가 이루어지지 않음
+**원인:** terra-ops가 토픽에 메시지를 발행하지만, 이를 소비하는 서비스가 없음
+**해결 방향:** 별도 디바이스 제어 서비스 또는 terra-sense에 consumer 추가
+
+---
+
 ## 📚 관련 문서
 
+- [프로젝트 현황](PROJECT_STATUS.md)
+- [개발 가이드](DEVELOPMENT_GUIDE.md)
+- [API 레퍼런스](API_REFERENCE.md)
 - [배포 가이드](DEPLOYMENT.md)
 - [기여 가이드](../CONTRIBUTING.md)
 - [README](../README.md)

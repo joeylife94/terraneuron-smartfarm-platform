@@ -1,6 +1,12 @@
 # 🚀 TerraNeuron 배포 가이드
 
+> **📅 Last Updated:** 2026-02-27  
+> **📖 관련 문서:** [PROJECT_STATUS.md](PROJECT_STATUS.md) | [DEVELOPMENT_GUIDE.md](DEVELOPMENT_GUIDE.md) | [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
+
 프로덕션 환경에 TerraNeuron을 배포하는 완전한 가이드입니다.
+
+> ⚠️ **주의:** 현재 Spring Security RBAC가 비활성 상태이고, JWT Secret이 하드코딩되어 있습니다.
+> 프로덕션 배포 전 반드시 [PROJECT_STATUS.md](PROJECT_STATUS.md)의 "Critical 이슈" 항목을 해결하세요.
 
 ## 📋 목차
 
@@ -460,6 +466,9 @@ docker run --rm --volumes-from terraneuron-mysql -v $(pwd):/backup ubuntu tar cv
 
 ## 📚 추가 리소스
 
-- [아키텍처 문서](docs/ARCHITECTURE.md)
-- [API 문서](http://your-server:8080/swagger-ui.html)
+- [프로젝트 현황](PROJECT_STATUS.md)
+- [개발 가이드](DEVELOPMENT_GUIDE.md)
+- [API 레퍼런스](API_REFERENCE.md)
+- [아키텍처 문서](ANDERCORE_FIT_ARCHITECTURE.md)
+- [API 문서 (Swagger)](http://your-server:8083/swagger-ui.html)
 - [모니터링 대시보드](http://your-server:3000)
