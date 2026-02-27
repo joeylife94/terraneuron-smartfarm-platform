@@ -251,4 +251,33 @@ public class AuditService {
 
         return saved;
     }
+
+    /**
+     * Log command feedback from device (피드백 루프)
+     */
+    @Transactional
+    public AuditLog logCommandFeedback(String traceId, String commandId, String planId,
+                                        String farmId, String assetId, String status, String error) {
+        Map<String, Object> details = new HashMap<>();
+        details.put("command_id", commandId);
+        details.put("plan_id", planId);
+        details.put("farm_id", farmId);
+        details.put("target_asset", assetId);
+        details.put("feedback_status", status);
+        if (error != null && !error.isEmpty()) {
+            details.put("error", error);
+        }
+
+        return createLog(
+                traceId != null && !traceId.isEmpty() ? traceId : "feedback-" + commandId,
+                AuditLog.EventType.COMMAND_EXECUTED,
+                "command",
+                commandId != null ? commandId : planId,
+                "terra-sense",
+                "Device feedback: " + status + " for asset " + assetId,
+                details,
+                !"FAILED".equals(status),
+                "FAILED".equals(status) ? error : null
+        );
+    }
 }
