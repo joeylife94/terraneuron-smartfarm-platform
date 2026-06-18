@@ -1,6 +1,6 @@
 package com.terraneuron.ops.service;
 
-import com.terraneuron.ops.dto.InsightDto;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.terraneuron.ops.entity.Insight;
 import com.terraneuron.ops.repository.InsightRepository;
 import lombok.RequiredArgsConstructor;
@@ -8,9 +8,37 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Service;
 
+import java.util.Map;
+import java.util.Optional;
+
 /**
- * Kafka Consumer Service
+ * Kafka Consumer Service for Processed Insights
+ *
  * Consumes processed insights from terra-cortex AI analysis
+ * Supports CloudEvents v1.0 format: terra.cortex.insight.detected
+ *
+ * CloudEvents format:
+ * {
+ *   "specversion": "1.0",
+ *   "type": "terra.cortex.insight.detected",
+ *   "source": "//terraneuron/terra-cortex",
+ *   "id": "uuid",
+ *   "time": "RFC3339",
+ *   "datacontenttype": "application/json",
+ *   "data": {
+ *     "trace_id": "...",
+ *     "farm_id": "...",
+ *     "sensor_type": "...",
+ *     "status": "NORMAL|ANOMALY",
+ *     "severity": "info|warning|critical",
+ *     "message": "...",
+ *     "raw_value": 25.5,
+ *     "confidence": 0.95,
+ *     "detected_at": "2025-12-09T10:30:00Z",
+ *     "llm_recommendation": "...",
+ *     "rag_context": "..."
+ *   }
+ * }
  */
 @Slf4j
 @Service
@@ -18,28 +46,37 @@ import org.springframework.stereotype.Service;
 public class KafkaConsumerService {
 
     private final InsightRepository insightRepository;
+    private final ObjectMapper objectMapper;
+    private final InsightEventParser insightEventParser;
 
+    /**
+     * Kafka listener for processed-insights topic
+     * Consumes CloudEvents-compliant insight messages from terra-cortex
+     */
     @KafkaListener(topics = "processed-insights", groupId = "${spring.kafka.consumer.group-id}")
-    public void consumeInsight(InsightDto insightDto) {
+    public void consumeInsight(Map<String, Object> messageData) {
         try {
-            log.info("📥 Kafka Received: farmId={}, status={}, message={}, llmRecommendation={}", 
-                    insightDto.getFarmId(), 
-                    insightDto.getStatus(), 
-                    insightDto.getMessage(),
-                    insightDto.getLlmRecommendation() != null ? 
-                        insightDto.getLlmRecommendation().substring(0, Math.min(50, insightDto.getLlmRecommendation().length())) + "..." : "null");
+            log.debug("📥 Kafka Received raw message: {}", messageData.keySet());
 
-            // DTO -> Entity mapping and save
-            Insight insight = Insight.builder()
-                    .farmId(insightDto.getFarmId())
-                    .status(insightDto.getStatus())
-                    .message(insightDto.getMessage())
-                    .llmRecommendation(insightDto.getLlmRecommendation())
-                    .timestamp(insightDto.getTimestamp())
-                    .build();
+            // Parse the message (handles both CloudEvents and legacy formats)
+            Optional<Insight> insightOpt = insightEventParser.parse(messageData);
 
-            insightRepository.save(insight);
-            log.info("✅ Insight saved: ID={}", insight.getId());
+            if (!insightOpt.isPresent()) {
+                log.error("❌ Failed to parse insight message: skipping");
+                return;
+            }
+
+            Insight insight = insightOpt.get();
+
+            log.info("📥 Processing insight: farmId={}, status={}, message={}...",
+                    insight.getFarmId(),
+                    insight.getStatus(),
+                    insight.getMessage() != null ?
+                        insight.getMessage().substring(0, Math.min(50, insight.getMessage().length())) : "");
+
+            // Save to database
+            Insight saved = insightRepository.save(insight);
+            log.info("✅ Insight saved to database: ID={}", saved.getId());
 
         } catch (Exception e) {
             log.error("❌ Kafka message processing failed: {}", e.getMessage(), e);

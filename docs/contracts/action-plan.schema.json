@@ -1,0 +1,200 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Action Plan Generation Event - CloudEvents v1.0",
+  "description": "AI-generated action plan from terra-cortex with CloudEvents envelope",
+  "type": "object",
+  "required": [
+    "specversion",
+    "type",
+    "source",
+    "id",
+    "time",
+    "datacontenttype",
+    "data"
+  ],
+  "properties": {
+    "specversion": {
+      "type": "string",
+      "const": "1.0",
+      "description": "CloudEvents specification version"
+    },
+    "type": {
+      "type": "string",
+      "const": "terra.cortex.plan.generated",
+      "description": "Event type for action plan generation"
+    },
+    "source": {
+      "type": "string",
+      "const": "//terraneuron/terra-cortex",
+      "description": "Event source - terra-cortex service"
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique event identifier"
+    },
+    "time": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Event creation time in RFC3339 format"
+    },
+    "datacontenttype": {
+      "type": "string",
+      "const": "application/json",
+      "description": "Content type of data payload"
+    },
+    "data": {
+      "type": "object",
+      "required": [
+        "trace_id",
+        "plan_id",
+        "farm_id",
+        "target_asset_id",
+        "action_category",
+        "action_type",
+        "reasoning",
+        "generated_at"
+      ],
+      "properties": {
+        "trace_id": {
+          "type": "string",
+          "description": "Distributed tracing ID linking to source insight"
+        },
+        "plan_id": {
+          "type": "string",
+          "pattern": "^plan-[a-z0-9]+$",
+          "description": "Unique action plan identifier"
+        },
+        "plan_type": {
+          "type": "string",
+          "default": "input",
+          "enum": ["input", "harvest", "maintenance"],
+          "description": "FarmOS-compatible plan type"
+        },
+        "farm_id": {
+          "type": "string",
+          "description": "Farm identifier"
+        },
+        "target_asset_id": {
+          "type": "string",
+          "description": "Target device/asset to execute action on"
+        },
+        "target_asset_type": {
+          "type": "string",
+          "default": "device",
+          "description": "Type of target asset"
+        },
+        "action_category": {
+          "type": "string",
+          "enum": ["ventilation", "irrigation", "lighting", "heating", "cooling", "alert"],
+          "description": "Category of action to take"
+        },
+        "action_type": {
+          "type": "string",
+          "enum": ["turn_on", "turn_off", "adjust", "alert_only"],
+          "description": "Specific action type"
+        },
+        "parameters": {
+          "type": "object",
+          "description": "Action parameters (e.g., duration, intensity)",
+          "properties": {
+            "duration_minutes": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Duration in minutes"
+            },
+            "speed_level": {
+              "type": "string",
+              "enum": ["low", "medium", "high", "max"],
+              "description": "Speed level for devices"
+            },
+            "target_value": {
+              "type": "number",
+              "description": "Target value for adjustment"
+            },
+            "intensity": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100,
+              "description": "Intensity percentage"
+            }
+          },
+          "additionalProperties": false
+        },
+        "reasoning": {
+          "type": "string",
+          "description": "AI-generated reasoning for this action plan"
+        },
+        "requires_approval": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether human approval is required before execution"
+        },
+        "priority": {
+          "type": "string",
+          "enum": ["low", "medium", "high", "critical"],
+          "default": "medium",
+          "description": "Priority level of the plan"
+        },
+        "estimated_impact": {
+          "type": ["string", "null"],
+          "description": "Estimated impact of executing this plan (optional)"
+        },
+        "safety_conditions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Safety conditions that must be met before execution"
+        },
+        "generated_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the plan was generated (RFC3339)"
+        },
+        "expires_at": {
+          "type": ["string", "null"],
+          "format": "date-time",
+          "description": "When this plan expires if not executed (optional)"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "specversion": "1.0",
+      "type": "terra.cortex.plan.generated",
+      "source": "//terraneuron/terra-cortex",
+      "id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "time": "2025-12-09T10:30:05Z",
+      "datacontenttype": "application/json",
+      "data": {
+        "trace_id": "trace-a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        "plan_id": "plan-abc12345",
+        "plan_type": "input",
+        "farm_id": "farm-001",
+        "target_asset_id": "fan-01",
+        "target_asset_type": "device",
+        "action_category": "ventilation",
+        "action_type": "turn_on",
+        "parameters": {
+          "duration_minutes": 30,
+          "speed_level": "high"
+        },
+        "reasoning": "Temperature 42.5°C exceeds threshold. Activation of ventilation system will reduce greenhouse temperature to optimal range (28-32°C) within 30 minutes based on historical data.",
+        "requires_approval": true,
+        "priority": "high",
+        "estimated_impact": "Temperature reduction of ~8°C expected",
+        "safety_conditions": [
+          "fan-01_device_online",
+          "no_maintenance_mode",
+          "temperature_above_threshold"
+        ],
+        "generated_at": "2025-12-09T10:30:05Z",
+        "expires_at": "2025-12-09T11:00:05Z"
+      }
+    }
+  ]
+}

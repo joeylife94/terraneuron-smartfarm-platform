@@ -2,11 +2,13 @@ package com.terraneuron.ops.security;
 
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
@@ -21,7 +23,7 @@ import java.util.stream.Collectors;
 @Component
 public class JwtTokenProvider {
 
-    @Value("${jwt.secret:terraneuron-secret-key-2025-phase3-production-ready-256bit-key}")
+    @Value("${jwt.secret}")
     private String jwtSecret;
 
     @Value("${jwt.expiration:86400000}") // 24 hours default
@@ -29,6 +31,16 @@ public class JwtTokenProvider {
 
     @Value("${jwt.refresh-expiration:604800000}") // 7 days default
     private long refreshExpiration;
+
+    @PostConstruct
+    void validateJwtSecret() {
+        if (!StringUtils.hasText(jwtSecret)) {
+            throw new IllegalStateException("JWT_SECRET is required and must not be blank.");
+        }
+        if (jwtSecret.getBytes(StandardCharsets.UTF_8).length < 32) {
+            throw new IllegalStateException("JWT_SECRET must be at least 32 bytes for HMAC-SHA signing.");
+        }
+    }
 
     private SecretKey getSigningKey() {
         byte[] keyBytes = jwtSecret.getBytes(StandardCharsets.UTF_8);

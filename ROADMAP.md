@@ -59,43 +59,57 @@
 
 ---
 
-## ✅ Phase 3: Production Readiness - COMPLETED (January 2026)
+## ✅ Phase 3: Production Readiness - IN PROGRESS (Not Complete)
 
-### ✅ Security Implementation
-- [x] **JWT Authentication:**
-    - ✅ `JwtTokenProvider` - Token generation and validation
-    - ✅ `JwtAuthenticationFilter` - Request authentication
-    - ✅ `SecurityConfig` - Spring Security configuration
-    - ✅ Role-based access: ADMIN, OPERATOR, VIEWER
-- [x] **Auth API:**
-    - ✅ `POST /api/auth/login` - Login with JWT tokens
-    - ✅ `POST /api/auth/refresh` - Token refresh
-    - ✅ `GET /api/auth/validate` - Token validation
-- [x] **Database Schema:** Users table with BCrypt password hashing
+### ⚠️ Security Implementation Status: PARTIALLY COMPLETE
 
-### 📍 Remaining Tasks
-- [ ] **SSL/TLS:** HTTPS configuration for all services
-- [ ] **Secrets Management:** HashiCorp Vault or AWS Secrets Manager
-- [ ] **Deployment:**
-    - [ ] Docker Swarm configuration
-    - [ ] K3s setup (lightweight Kubernetes)
-    - [ ] CI/CD pipeline updates
+**Code is in repository but NOT ENFORCED:**
+
+- ✅ **JWT Infrastructure:** JwtTokenProvider, JwtAuthenticationFilter, SecurityConfig all implemented
+- ✅ **Role Definitions:** ADMIN, OPERATOR, VIEWER roles defined
+- ✅ **Auth Endpoints:** POST /api/auth/login, /refresh, /validate all functional
+- ❌ **RBAC Disabled:** SecurityConfig line 54 uses `.anyRequest().permitAll()`  
+- ❌ **Demo Users Hardcoded:** AuthController uses in-memory Map instead of database
+- ❌ **Secrets Exposed:** JWT Secret in application.properties (no environment variable)
+- ❌ **CORS Wildcard:** terra-gateway and terra-ops allow `*` origins
+- ❌ **No TLS/SSL** Configuration
+
+### Required to Complete Phase 3:
+- [ ] **Enable RBAC** (1 day) — Uncomment role checks in SecurityConfig
+- [ ] **Database Auth** (1.5 days) — Replace hardcoded users with DB lookup + BCrypt
+- [ ] **Secrets Management** (1.5 days) — Remove hardcoded keys; require environment variables
+- [ ] **CORS Hardening** (0.5 day) — Replace `*` with whitelist; use environment variables
+- [ ] **TLS Configuration** (1 day) — Add HTTPS to all services
+
+**Estimated total for Phase 3 completion: 5 days**
 
 ---
 
-## 🔮 Phase 4: Advanced Features (Future)
+## � Phase 4: Advanced Features & Operations (Future - Prioritized by Audit)
 
-### 📍 Phase 4.A: FarmOS Full Integration
+### 📍 Phase 4.A: Testing & Quality (Priority 1)
+- [ ] **Unit Tests** — SafetyValidator, JwtTokenProvider, LocalAnalyzer, ActionPlan state machine (Priority: CRITICAL)
+- [ ] **Integration Tests** — Kafka round-trips, MySQL persistence, SecurityConfig enforcement
+- [ ] **Automated E2E Test Suite** — Replace manual scripts with pytest framework (Priority: CRITICAL)
+- [ ] **CI/CD Pipeline** — GitHub Actions for automated testing on commit
+
+### 📍 Phase 4.B: Integration Completion (Priority 1)
+- [ ] **MQTT Device Listener** — Wire terra-sense MQTT inbound (currently scaffolded)
+- [ ] **InfluxDB Writer** — Implement terra-sense → InfluxDB time-series persistence
+- [ ] **Device Command Consumer** — Wire terra-sense DeviceCommandConsumer to actually consume `terra.control.command`
+- [ ] **Kafka Event Contract** — Fix event naming (terra.ops.command.execute vs .executed), align schemas
+
+### 📍 Phase 4.C: FarmOS Integration
 - [ ] Complete FarmOS API compatibility
 - [ ] Asset/Log/Plan unified model
 - [ ] Industry compliance reporting
 
-### 📍 Phase 4.B: Multi-Tenant Architecture
+### 📍 Phase 4.D: Multi-Tenant Architecture
 - [ ] Organization/Farm hierarchy
 - [ ] Tenant isolation
 - [ ] Usage metering and billing
 
-### 📍 Phase 4.C: Advanced AI
+### 📍 Phase 4.E: Advanced AI
 - [ ] Predictive maintenance
 - [ ] Yield optimization models
 - [x] Weather integration *(Step 1 완료)*

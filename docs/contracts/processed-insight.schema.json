@@ -1,0 +1,149 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Insight Detection Event - CloudEvents v1.0",
+  "description": "AI-detected insight from terra-cortex with CloudEvents envelope",
+  "type": "object",
+  "required": [
+    "specversion",
+    "type",
+    "source",
+    "id",
+    "time",
+    "datacontenttype",
+    "data"
+  ],
+  "properties": {
+    "specversion": {
+      "type": "string",
+      "const": "1.0",
+      "description": "CloudEvents specification version"
+    },
+    "type": {
+      "type": "string",
+      "const": "terra.cortex.insight.detected",
+      "description": "Event type for insight detection"
+    },
+    "source": {
+      "type": "string",
+      "const": "//terraneuron/terra-cortex",
+      "description": "Event source - terra-cortex service"
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique event identifier"
+    },
+    "time": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Event creation time in RFC3339 format"
+    },
+    "datacontenttype": {
+      "type": "string",
+      "const": "application/json",
+      "description": "Content type of data payload"
+    },
+    "data": {
+      "type": "object",
+      "required": [
+        "trace_id",
+        "farm_id",
+        "sensor_type",
+        "status",
+        "severity",
+        "message",
+        "raw_value",
+        "confidence",
+        "detected_at"
+      ],
+      "properties": {
+        "trace_id": {
+          "type": "string",
+          "description": "Distributed tracing ID for event chain correlation"
+        },
+        "farm_id": {
+          "type": "string",
+          "description": "Farm identifier"
+        },
+        "asset_id": {
+          "type": "string",
+          "description": "Asset identifier (e.g., sensor ID)"
+        },
+        "asset_type": {
+          "type": "string",
+          "default": "sensor",
+          "description": "Type of asset (sensor, device, etc.)"
+        },
+        "sensor_type": {
+          "type": "string",
+          "enum": ["temperature", "humidity", "co2", "light", "ph", "ec"],
+          "description": "Type of sensor that generated this insight"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["NORMAL", "ANOMALY"],
+          "description": "Detection status: normal operation or anomaly detected"
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["info", "warning", "critical"],
+          "description": "Severity level of the insight"
+        },
+        "message": {
+          "type": "string",
+          "description": "Human-readable insight message"
+        },
+        "raw_value": {
+          "type": "number",
+          "description": "Raw sensor value that triggered this insight"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Confidence score of the detection (0-1)"
+        },
+        "detected_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the insight was detected (RFC3339)"
+        },
+        "llm_recommendation": {
+          "type": ["string", "null"],
+          "description": "LLM-generated recommendation (only for ANOMALY, optional)"
+        },
+        "rag_context": {
+          "type": ["string", "null"],
+          "description": "RAG (Retrieval-Augmented Generation) context used in analysis (optional)"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "specversion": "1.0",
+      "type": "terra.cortex.insight.detected",
+      "source": "//terraneuron/terra-cortex",
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "time": "2025-12-09T10:30:00Z",
+      "datacontenttype": "application/json",
+      "data": {
+        "trace_id": "trace-a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        "farm_id": "farm-001",
+        "asset_id": "sensor-temp-01",
+        "asset_type": "sensor",
+        "sensor_type": "temperature",
+        "status": "ANOMALY",
+        "severity": "critical",
+        "message": "Temperature 42.5°C exceeds safe threshold of 35°C",
+        "raw_value": 42.5,
+        "confidence": 0.95,
+        "detected_at": "2025-12-09T10:30:00Z",
+        "llm_recommendation": "Immediate ventilation required. Recommend activating fan for 30 minutes at maximum speed to cool greenhouse.",
+        "rag_context": "Similar temperature anomalies occurred on 2025-12-08 with recovery time of ~45 minutes"
+      }
+    }
+  ]
+}

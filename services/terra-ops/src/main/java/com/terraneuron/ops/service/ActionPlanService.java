@@ -35,6 +35,7 @@ public class ActionPlanService {
     private final AuditService auditService;
     private final ObjectMapper objectMapper;
     private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final ActionPlanEventValidator eventValidator;
 
     private static final String COMMAND_TOPIC = "terra.control.command";
 
@@ -46,15 +47,16 @@ public class ActionPlanService {
     @Transactional
     public void consumeActionPlan(Map<String, Object> planEvent) {
         try {
-            log.info("📥 Received action plan from terra-cortex");
-            
-            // Extract data from CloudEvents format
-            @SuppressWarnings("unchecked")
-            Map<String, Object> data = (Map<String, Object>) planEvent.get("data");
-            if (data == null) {
-                log.error("❌ Invalid CloudEvent: missing 'data' field");
+            log.info("📥 Received action plan event from terra-cortex");
+
+            // Validate CloudEvents v1.0 envelope
+            Optional<Map<String, Object>> validatedData = eventValidator.validate(planEvent);
+            if (validatedData.isEmpty()) {
+                log.warn("❌ Skipping malformed or wrong-type action plan event");
                 return;
             }
+
+            Map<String, Object> data = validatedData.get();
 
             String traceId = (String) data.get("trace_id");
             String planId = (String) data.get("plan_id");
