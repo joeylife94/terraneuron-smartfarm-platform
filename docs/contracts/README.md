@@ -154,7 +154,7 @@ Communicates AI-generated action plans from terra-cortex to terra-ops for approv
 
 ## Consumer Implementation
 
-### terra-ops Kafka Consumer
+### terra-ops Kafka Consumer - Insight Events
 
 **Location:** [`KafkaConsumerService.java`](../../services/terra-ops/src/main/java/com/terraneuron/ops/service/KafkaConsumerService.java)
 
@@ -177,6 +177,45 @@ Insight saved = insightRepository.save(insightOpt.get());
 **Backward Compatibility:**
 - Also supports legacy flat format (camelCase fields) for graceful migration
 - Logs warning when legacy format is used
+
+### terra-ops Kafka Consumer - Action Plan Events
+
+**Location:** [`ActionPlanService.java`](../../services/terra-ops/src/main/java/com/terraneuron/ops/service/ActionPlanService.java)
+**Validator:** [`ActionPlanEventValidator.java`](../../services/terra-ops/src/main/java/com/terraneuron/ops/service/ActionPlanEventValidator.java)
+
+The consumer validates CloudEvents envelopes and parses action plans:
+
+```java
+// Validate CloudEvents v1.0 envelope
+Optional<Map<String, Object>> validatedData = eventValidator.validate(planEvent);
+
+if (validatedData.isEmpty()) {
+    log.warn("Skipping malformed or wrong-type action plan event");
+    return;
+}
+
+// Extract and persist plan data
+Map<String, Object> data = validatedData.get();
+ActionPlan plan = ActionPlan.builder()
+    .planId((String) data.get("plan_id"))
+    .traceId((String) data.get("trace_id"))
+    // ... map remaining fields
+    .build();
+
+actionPlanRepository.save(plan);
+```
+
+**Envelope Validation Rules:**
+- `specversion` must equal `"1.0"`
+- `type` must equal `"terra.cortex.plan.generated"`
+- `data` field must exist and be a non-empty object/map
+
+**Error Handling:**
+- Missing or invalid `specversion` → Log error, skip event
+- Wrong `type` → Log warn, skip event (graceful rejection)
+- Missing `data` field → Log error, skip event
+- Empty `data` or non-map type → Log error, skip event
+- All validation failures are non-fatal and do not crash the consumer
 
 ### Event Parsing Logic
 
@@ -220,11 +259,14 @@ private String sensorType;
 
 ### Unit Tests
 
+**Insight Parser Tests**
+
 Location: [`InsightEventParserTest.java`](../../services/terra-ops/src/test/java/com/terraneuron/ops/service/InsightEventParserTest.java)
 
 Run with:
 ```bash
-mvn test -Dtest=InsightEventParserTest
+cd services/terra-ops
+gradle test --tests "*InsightEventParserTest"
 ```
 
 **Coverage:**
@@ -236,6 +278,27 @@ mvn test -Dtest=InsightEventParserTest
 - ✅ Timestamp parsing
 - ✅ Optional fields handling
 
+**Action Plan Validator Tests**
+
+Location: [`ActionPlanEventValidatorTest.java`](../../services/terra-ops/src/test/java/com/terraneuron/ops/service/ActionPlanEventValidatorTest.java)
+
+Run with:
+```bash
+cd services/terra-ops
+gradle test --tests "*ActionPlanEventValidatorTest"
+```
+
+**Coverage:**
+- ✅ Valid CloudEvents v1.0 action plan envelope validation
+- ✅ Wrong or non-string `specversion` rejection
+- ✅ Wrong or non-string `type` rejection
+- ✅ Missing `data` field detection
+- ✅ Empty `data` field detection
+- ✅ Non-map `data` type rejection
+- ✅ Null event handling
+- ✅ trace_id extraction
+- ✅ Data field preservation (all fields intact after validation)
+
 ### Integration Tests
 
 To test against running Kafka:
@@ -245,7 +308,8 @@ To test against running Kafka:
 docker-compose up -d kafka
 
 # Run terra-ops
-mvn spring-boot:run
+cd services/terra-ops
+gradle bootRun
 
 # Publish test message to processed-insights topic
 # Message should be consumed and stored in database
