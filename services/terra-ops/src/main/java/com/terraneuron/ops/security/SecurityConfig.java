@@ -1,8 +1,10 @@
 package com.terraneuron.ops.security;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -31,27 +33,42 @@ public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
 
+    @Value("${app.cors.allowed-origins:http://localhost:3000,http://localhost:3001}")
+    private String allowedOrigins;
+
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
+            // Stateless REST API: each request uses a JWT bearer token, so CSRF protection is not needed.
             .csrf(AbstractHttpConfigurer::disable)
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 // Public endpoints (no authentication required)
-                .requestMatchers("/").permitAll()
-                .requestMatchers("/health", "/actuator/**").permitAll()
-                .requestMatchers("/swagger-ui/**", "/api-docs/**", "/v3/api-docs/**").permitAll()
                 .requestMatchers("/api/auth/**").permitAll()
-                
-                // Protected endpoints (authentication required)
-                // In development mode, allow all for easy testing
-                // In production, uncomment below and configure properly
-                // .requestMatchers("/api/actions/**").hasAnyRole("ADMIN", "OPERATOR")
-                // .requestMatchers("/api/insights/**").hasAnyRole("ADMIN", "OPERATOR", "VIEWER")
-                
-                // For development/Phase 2.A: Allow all authenticated or anonymous
-                .anyRequest().permitAll()
+                .requestMatchers("/actuator/health").permitAll()
+                .requestMatchers("/swagger-ui/**", "/v3/api-docs", "/v3/api-docs/**").permitAll()
+
+                // Administrative and management endpoints
+                .requestMatchers("/actuator/**").hasRole("ADMIN")
+
+                // Operational action mutations
+                .requestMatchers(HttpMethod.POST, "/api/actions/*/approve", "/api/actions/*/reject")
+                    .hasAnyRole("ADMIN", "OPERATOR")
+
+                // Crop and farm operational mutations
+                .requestMatchers(HttpMethod.POST, "/api/farms/*/crops").hasAnyRole("ADMIN", "OPERATOR")
+                .requestMatchers(HttpMethod.PUT, "/api/farms/*/crops/*/advance-stage").hasAnyRole("ADMIN", "OPERATOR")
+
+                // Read-only application APIs
+                .requestMatchers(HttpMethod.GET, "/api/actions/**").hasAnyRole("ADMIN", "OPERATOR", "VIEWER")
+                .requestMatchers(HttpMethod.GET, "/api/crops/**").hasAnyRole("ADMIN", "OPERATOR", "VIEWER")
+                .requestMatchers(HttpMethod.GET, "/api/farms/*/crops").hasAnyRole("ADMIN", "OPERATOR", "VIEWER")
+                .requestMatchers(HttpMethod.GET, "/api/farms/*/optimal-conditions").hasAnyRole("ADMIN", "OPERATOR", "VIEWER")
+                .requestMatchers(HttpMethod.GET, "/api/v1/**").hasAnyRole("ADMIN", "OPERATOR", "VIEWER")
+
+                // Unknown routes are authenticated, but not assigned an invented role rule.
+                .anyRequest().authenticated()
             )
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
@@ -61,15 +78,29 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(List.of("*"));
+        configuration.setAllowedOrigins(parseAllowedOrigins());
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "X-Trace-ID"));
+        configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "X-Trace-ID", "Accept"));
         configuration.setExposedHeaders(List.of("X-Trace-ID"));
+        configuration.setAllowCredentials(false);
         configuration.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
         return source;
+    }
+
+    private List<String> parseAllowedOrigins() {
+        List<String> origins = Arrays.stream(allowedOrigins.split(","))
+                .map(String::trim)
+                .filter(origin -> !origin.isEmpty())
+                .toList();
+
+        if (origins.isEmpty() || origins.contains("*")) {
+            throw new IllegalStateException("CORS allowed origins must be explicit; wildcard '*' is not allowed.");
+        }
+
+        return origins;
     }
 
     @Bean

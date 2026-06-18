@@ -24,7 +24,8 @@ public class AuthController {
 
     private final JwtTokenProvider tokenProvider;
 
-    // Hardcoded users for development (replace with database in production)
+    // DEMO_ONLY: hardcoded branch-local users for JWT/RBAC smoke testing.
+    // Replace with database-backed authentication in a future branch before production use.
     private static final Map<String, UserInfo> USERS = Map.of(
             "admin", new UserInfo("admin", "admin123", "ROLE_ADMIN,ROLE_OPERATOR"),
             "operator", new UserInfo("operator", "operator123", "ROLE_OPERATOR"),
