@@ -1,8 +1,12 @@
 # 📊 TerraNeuron 프로젝트 현황 (Project Status)
 
-> **📅 Last Updated:** 2026-02-27  
+> **📅 Last Updated:** 2026-06-18 (Audit Review)  
 > **Version:** v2.1.0  
-> **Purpose:** 프로젝트 합류 시 "이것만 읽으면 바로 일 시작 가능"한 현황 문서
+> **Status:** ⚠️ Architecture Prototype — Demonstration-Ready  
+> **Real Implementation Status:** See [AUDIT_REPORT.md](../AUDIT_REPORT.md) for detailed findings  
+> **Path to Portfolio-Grade Hardened Demo:** Requires Sprint 1-5 (~2-3 weeks)
+Path to Production-Grade Architecture Prototype: Requires additional security, testing, observability, and deployment hardening. to harden security, add test coverage, complete integrations  
+> **Purpose:** 프로젝트 합류 시 현황 파악용 문서
 
 ---
 
@@ -21,15 +25,15 @@
 
 | 항목 | 상태 | 비고 |
 |------|------|------|
-| **E2E 파이프라인** (센서→AI→대시보드) | ✅ 동작 | HTTP 센서 수집 → Kafka → AI 분석 → MySQL 저장 |
-| **Hybrid AI** (Local + LLM + RAG) | ✅ 동작 | OpenAI / Ollama 지원 |
-| **Action Protocol** (CloudEvents + 승인) | ✅ 동작 | 4-Layer Safety + Audit Trail |
-| **JWT 인증** | ⚠️ 구현됨/비활성 | SecurityConfig에서 `permitAll()` — RBAC 주석 처리됨 |
-| **MQTT 수집** | ❌ 미구현 | 의존성만 존재, 리스너 클래스 없음 |
-| **InfluxDB 저장** | ❌ 미구현 | 의존성만 존재, 서비스 클래스 없음 |
-| **단위 테스트** | ❌ 없음 | 전체 서비스에 테스트 코드 0개 |
-| **CI/CD** | ❌ 없음 | 파이프라인 미정의 |
-| **프로덕션 배포** | ❌ 미완 | Docker Compose 로컬만 동작 |
+| **E2E 파이프라인** (센서→AI→대시보드) | ✅ Implemented | HTTP 센서 수집 → Kafka → AI 분석 → MySQL 저장 |
+| **Hybrid AI** (Local + LLM + RAG) | ✅ Implemented | OpenAI / Ollama 지원 |
+| **Action Protocol** (CloudEvents + 승인) | ✅ Implemented | 4-Layer Safety + Audit Trail |
+| **JWT 인증** | ⚠️ Partially implemented | Code in place; RBAC disabled via `permitAll()`; demo users hardcoded |
+| **MQTT 수집** | 🟡 Scaffolded | 의존성만 존재, 리스너 클래스 없음 |
+| **InfluxDB 저장** | 🟡 Scaffolded | 의존성만 존재, 서비스 클래스 없음 |
+| **단위 테스트** | ❌ Not implemented | 전체 서비스에 테스트 코드 0개 |
+| **CI/CD** | ❌ Not implemented | 파이프라인 미정의 |
+| **프로덕션 배포** | ❌ Not implemented | Docker Compose 로컬만 동작 |
 
 ---
 
@@ -44,12 +48,35 @@ Phase 3: Security (JWT + RBAC)                 ███████████
 Phase 4: Advanced Features                     ░░░░░░░░░░░░░░░░░░░░   0% ❌
 ```
 
-### Phase 3 미완료 항목
-- Spring Security **RBAC 규칙이 주석 처리**되어 `anyRequest().permitAll()` 상태
-- AuthController가 **DB의 users 테이블을 사용하지 않고** 인메모리 하드코딩 (admin/admin123)
-- JWT Secret이 application.properties에 하드코딩
-- SSL/TLS 미설정
-- Secrets Management (Vault 등) 미적용
+### ⚠️ Phase 3: Security Implementation — PARTIALLY COMPLETE (Not Enforced)
+
+**What is in code:**
+- ✅ `JwtTokenProvider` — Token generation/validation
+- ✅ `JwtAuthenticationFilter` — Request filter
+- ✅ `SecurityConfig` — Spring Security config file
+- ✅ Role definitions — ADMIN, OPERATOR, VIEWER
+
+**What is NOT enforced in production:**
+- ❌ **RBAC disabled** — Line 54 of `SecurityConfig.java`: `.anyRequest().permitAll()`  
+  (Should be: `.requestMatchers("/api/actions/**").hasAnyRole("ADMIN", "OPERATOR")`)
+- ❌ **All APIs open** — No JWT token required to access any endpoint
+- ❌ **Hardcoded users** — `AuthController.java` lines 25-29 use in-memory Map:
+  ```java
+  "admin" → "admin123"
+  "operator" → "operator123"  
+  "viewer" → "viewer123"
+  ```
+  (Should read from `users` table with BCrypt verification)
+- ❌ **JWT secret exposed** — `application.properties` line 36 fallback:
+  ```properties
+  jwt.secret=${JWT_SECRET:<redacted-insecure-demo-fallback>}
+  ```
+  (Should require `JWT_SECRET` environment variable, no fallback)
+- ❌ **No Secrets Management** — Vault/AWS Secrets Manager not integrated
+- ❌ **No SSL/TLS** — HTTP only
+- ❌ **CORS wildcard** — `terra-gateway` and `terra-ops` allow `*` origins
+
+**Status:** Phase 3 code exists but is **completely disabled for "ease of testing"**. Must be re-enabled and hardened before production.
 
 ---
 
@@ -73,12 +100,12 @@ Phase 4: Advanced Features                     ░░░░░░░░░░░
 
 | 항목 | 상태 | 세부 |
 |------|------|------|
-| HTTP REST 수집 | ✅ | `POST /api/v1/ingest/sensor-data` |
-| Kafka Producer | ✅ | `raw-sensor-data` 토픽 |
-| MQTT Listener | ❌ | Paho MQTT 의존성 있으나 리스너 미구현 |
-| InfluxDB Writer | ❌ | 의존성 있으나 서비스 클래스 미구현 |
-| 입력 값 범위 검증 | ⚠️ | `@NotBlank`/`@NotNull`만 있음, 범위 체크 없음 |
-| 중복 제거 | ❌ | 미구현 |
+| HTTP REST 수집 | ✅ Implemented | `POST /api/v1/ingest/sensor-data` |
+| Kafka Producer | ✅ Implemented | `raw-sensor-data` 토픽 |
+| MQTT Listener | 🟡 Scaffolded | Paho dependency present; MqttConfig exists; no listener wired |
+| InfluxDB Writer | 🟡 Scaffolded | Client dependency present; no code writing measurements |
+| Input Validation | ⚠️ Partial | `@NotBlank`/`@NotNull`만 있음; no range checks |
+| Deduplication | ❌ Not implemented | 미구현 |
 
 **주요 파일:**
 - `services/terra-sense/src/main/java/com/terraneuron/sense/controller/IngestController.java`
@@ -93,14 +120,14 @@ Phase 4: Advanced Features                     ░░░░░░░░░░░
 
 | 항목 | 상태 | 세부 |
 |------|------|------|
-| Kafka Consumer (raw-sensor-data) | ✅ | aiokafka 기반 |
-| Stage 1: Local Analyzer | ✅ | 온도/습도/CO2/토양수분/조도 임계치 |
-| Stage 2: Cloud LLM | ✅ | OpenAI + Ollama 지원, ANOMALY 시에만 호출 |
-| Stage 3: RAG | ✅ | ChromaDB + all-MiniLM-L6-v2 |
-| CloudEvents 생성 | ✅ | `processed-insights` + `action-plans` 생산 |
-| Action Plan 자동 생성 | ✅ | 센서 타입→장치 매핑 (fan/heater/etc.) |
-| LLM 실패 시 fallback | ✅ | Graceful degradation |
-| Kafka Producer 재시도 | ❌ | 재시도 로직 없음 |
+| Kafka Consumer | ✅ Implemented | aiokafka 기반 |
+| Stage 1: Local Analyzer | ✅ Implemented | 온도/습도/CO2/토양수분/조도 임계치 |
+| Stage 2: Cloud LLM | ✅ Implemented | OpenAI + Ollama; ANOMALY에서만 호출 |
+| Stage 3: RAG | ✅ Implemented | ChromaDB + embeddings |
+| CloudEvents Generation | ✅ Implemented | `processed-insights` + `action-plans` produced |
+| Action Plan Auto-generation | ✅ Implemented | Sensor → device mapping |
+| LLM Failure Fallback | ✅ Implemented | Graceful degradation to alert |
+| Kafka Producer Retry | ❌ Not implemented | 재시도 로직 없음 |
 
 **주요 파일:**
 - `services/terra-cortex/src/main.py` — Kafka 소비/생산 + 파이프라인 오케스트레이션
@@ -126,15 +153,16 @@ Phase 4: Advanced Features                     ░░░░░░░░░░░
 
 | 항목 | 상태 | 세부 |
 |------|------|------|
-| Dashboard API | ✅ | 인사이트 조회/필터/통계 |
-| Action Plan CRUD | ✅ | 승인/거부/감사이력 |
-| 4-Layer Safety Validation | ✅ | Logical/Context/Permission/DeviceState |
-| Kafka Consumer | ✅ | `processed-insights` + `action-plans` |
-| JWT Auth API | ✅ | login/refresh/validate |
-| Spring Security RBAC | ⚠️ | 코드 존재하나 `permitAll()`로 비활성 |
-| Audit Logging | ✅ | FarmOS Log 호환 |
-| Plan 만료 스케줄러 | ✅ | 60초 주기 |
-| Kafka → Command 발행 | ✅ | `terra.control.command` 토픽 |
+| Dashboard API | ✅ Implemented | 인사이트 조회/필터/통계 |
+| Action Plan CRUD | ✅ Implemented | 승인/거부/감사이력 |
+| 4-Layer Safety Validation | ✅ Implemented | Logical/Context/Permission/DeviceState |
+| Kafka Consumer | ✅ Implemented | `processed-insights` + `action-plans` |
+| JWT Auth API | ✅ Implemented | login/refresh/validate endpoints |
+| Spring Security RBAC | ⚠️ Partially implemented | Code exists; disabled via `permitAll()` |
+| Audit Logging | ✅ Implemented | FarmOS Log 호환 |
+| Plan Expiration | ✅ Implemented | 60초 주기 scheduler |
+| Command Publishing | ✅ Implemented | Publishes to `terra.control.command` |
+| Command Consuming | ❌ Not connected | DeviceCommandConsumer exists; NOT wired to service |
 
 **주요 파일:**
 - `services/terra-ops/src/main/java/com/terraneuron/ops/controller/DashboardController.java`
