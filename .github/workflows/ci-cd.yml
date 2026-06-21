@@ -16,6 +16,7 @@ jobs:
     name: Build Java Services (terra-sense, terra-ops)
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         service: [terra-sense, terra-ops]
     
