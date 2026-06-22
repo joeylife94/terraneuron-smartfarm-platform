@@ -33,7 +33,7 @@ public class InfluxDbWriterService {
     private String bucket;
 
     @Value("${influxdb.org}")
-    private String org;
+    private String organization;
 
     /**
      * 센서 데이터를 InfluxDB에 저장
@@ -55,7 +55,7 @@ public class InfluxDbWriterService {
                     .addField("value", sensorData.getValue())
                     .time(timestamp, WritePrecision.MS);
 
-            writeApi.writePoint(bucket, org, point);
+            writeApi.writePoint(bucket, organization, point);
 
             log.debug("✅ InfluxDB 저장 완료: sensorId={}, type={}, value={}", 
                     sensorData.getSensorId(), 

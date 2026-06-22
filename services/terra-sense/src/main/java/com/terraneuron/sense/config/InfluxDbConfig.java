@@ -22,7 +22,7 @@ public class InfluxDbConfig {
     private String token;
 
     @Value("${influxdb.org}")
-    private String org;
+    private String organization;
 
     @Value("${influxdb.bucket}")
     private String bucket;
@@ -30,8 +30,8 @@ public class InfluxDbConfig {
     @Bean
     public InfluxDBClient influxDBClient() {
         try {
-            InfluxDBClient client = InfluxDBClientFactory.create(url, token.toCharArray(), org, bucket);
-            log.info("✅ InfluxDB 클라이언트 초기화 완료: url={}, org={}, bucket={}", url, org, bucket);
+            InfluxDBClient client = InfluxDBClientFactory.create(url, token.toCharArray(), organization, bucket);
+            log.info("✅ InfluxDB 클라이언트 초기화 완료: url={}, org={}, bucket={}", url, organization, bucket);
             return client;
         } catch (Exception e) {
             log.error("❌ InfluxDB 클라이언트 초기화 실패: {}", e.getMessage());
