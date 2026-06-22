@@ -130,7 +130,6 @@ async def start_kafka():
 
 async def stop_kafka():
     """Stop Kafka consumer and producer"""
-    global consumer, producer, kafka_task
     
     if kafka_task:
         kafka_task.cancel()
