@@ -84,14 +84,14 @@ ACTION_PLAN_CONFIG = {
 async def start_kafka():
     """Initialize and start Kafka consumer and producer with retry logic"""
     global consumer, producer, kafka_task
-
+    
     max_retries = 10
     retry_delay = 5
-
+    
     for attempt in range(1, max_retries + 1):
         try:
             logger.info(f"🔄 Kafka connection attempt {attempt}/{max_retries}...")
-
+            
             # Create consumer
             consumer = AIOKafkaConsumer(
                 INPUT_TOPIC,
@@ -101,23 +101,23 @@ async def start_kafka():
                 auto_offset_reset='latest',
                 enable_auto_commit=True
             )
-
+            
             # Create producer
             producer = AIOKafkaProducer(
                 bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
                 value_serializer=lambda v: json.dumps(v).encode('utf-8')
             )
-
+            
             # Start both
             await consumer.start()
             await producer.start()
-
+            
             logger.info(f"✅ Kafka started: consuming from '{INPUT_TOPIC}', producing to '{OUTPUT_TOPIC}'")
-
+            
             # Start consuming in background
             kafka_task = asyncio.create_task(consume_messages())
             return
-
+            
         except Exception as e:
             logger.warning(f"⚠️ Kafka connection attempt {attempt} failed: {e}")
             if attempt < max_retries:
@@ -131,19 +131,19 @@ async def start_kafka():
 async def stop_kafka():
     """Stop Kafka consumer and producer"""
     global consumer, producer, kafka_task
-
+    
     if kafka_task:
         kafka_task.cancel()
         try:
             await kafka_task
         except asyncio.CancelledError:
             pass
-
+    
     if consumer:
         await consumer.stop()
     if producer:
         await producer.stop()
-
+    
     logger.info("🛑 Kafka stopped")
 
 
@@ -164,25 +164,25 @@ async def consume_messages():
     logger.info(f"   - Trend Analyzer: Enabled (InfluxDB 시계열)")
     logger.info("   - CloudEvents: Enabled with trace_id propagation")
     logger.info("   - Action Plans: Auto-generated for ANOMALY (requires approval)")
-
+    
     try:
         async for message in consumer:
             try:
                 # Generate trace_id for this event chain (distributed tracing)
                 trace_id = generate_trace_id()
-
+                
                 # Parse sensor data
                 sensor_data_dict = message.value
                 sensor_data = SensorData(**sensor_data_dict)
-
+                
                 logger.info(f"📥 [{trace_id[:20]}...] Received: {sensor_data.farmId} - {sensor_data.sensorType}: {sensor_data.value}")
-
+                
                 # STEP 0: Fetch weather context (cached, non-blocking)
                 weather = await weather_provider.get_weather() if weather_provider.enabled else None
                 if weather:
                     local_analyzer.set_weather_context(weather)
                     logger.info(f"   🌤️ Weather context: {weather.temperature}°C, {weather.humidity}%, {weather.description}")
-
+                
                 # STEP 0.5: Fetch crop profile context (cached, terra-ops 연동)
                 crop_ctx = await crop_provider.get_crop_context(sensor_data.farmId)
                 if crop_ctx and crop_ctx.has_crop_profile:
@@ -192,7 +192,7 @@ async def consume_messages():
                         logger.info(f"   🌱 Crop context: {primary.crop_name} - {primary.current_stage} ({primary.days_since_planting}일차)")
                 else:
                     local_analyzer.set_crop_context(None)
-
+                
                 # STEP 0.75: Fetch time-series trend context (cached, InfluxDB)
                 trend_ctx = None
                 try:
@@ -212,36 +212,36 @@ async def consume_messages():
                 except Exception as te:
                     logger.warning(f"   ⚠️ Trend context fetch failed: {te}")
                     local_analyzer.set_trend_context(None)
-
+                
                 # STEP 1: Local Edge AI Analysis (always runs, fast)
                 insight = local_analyzer.analyze(sensor_data)
                 logger.info(f"   🔍 Local Analyzer: {insight.status} ({insight.severity})")
-
+                
                 # STEP 2: Cloud LLM Advisory (only for ANOMALY, smart trigger)
                 if insight.status == "ANOMALY" and cloud_advisor.enabled:
                     logger.info(f"   🤖 Triggering Cloud Advisor for ANOMALY...")
                     llm_recommendation = await cloud_advisor.get_recommendation(sensor_data, insight, weather, crop_ctx, trend_ctx)
-
+                    
                     if llm_recommendation:
                         insight.llmRecommendation = llm_recommendation
                         logger.info(f"   ✅ Cloud LLM recommendation added ({len(llm_recommendation)} chars)")
                     else:
                         logger.warning("   ⚠️ Cloud LLM recommendation failed, using local analysis only")
-
+                
                 # STEP 3: Send CloudEvents-compliant Insight Event
                 await send_insight_event(trace_id, sensor_data, insight)
-
+                
                 # STEP 4: Generate Action Plan for ANOMALY (requires human approval)
                 if insight.status == "ANOMALY":
                     await generate_action_plan(trace_id, sensor_data, insight)
-
+                
                 # STEP 5: Accumulate insight for knowledge collection
                 if knowledge_collector:
                     knowledge_collector.accumulate_insight(insight.model_dump(mode='json'))
-
+                
             except Exception as e:
                 logger.error(f"❌ Error processing message: {e}", exc_info=True)
-
+    
     except asyncio.CancelledError:
         logger.info("🛑 Consumer loop cancelled")
     except Exception as e:
@@ -254,7 +254,7 @@ async def send_insight_event(trace_id: str, sensor_data: SensorData, insight: In
         # Map severity string to enum
         severity_map = {"info": Severity.INFO, "warning": Severity.WARNING, "critical": Severity.CRITICAL}
         severity = severity_map.get(insight.severity, Severity.INFO)
-
+        
         # Create CloudEvents-compliant insight event
         insight_event = create_insight_event(
             trace_id=trace_id,
@@ -267,7 +267,7 @@ async def send_insight_event(trace_id: str, sensor_data: SensorData, insight: In
             confidence=insight.confidence,
             llm_recommendation=insight.llmRecommendation
         )
-
+        
         # Send to Kafka with trace_id in headers
         await producer.send_and_wait(
             OUTPUT_TOPIC,
@@ -275,9 +275,9 @@ async def send_insight_event(trace_id: str, sensor_data: SensorData, insight: In
             key=insight.farmId.encode('utf-8'),
             headers=[("trace_id", trace_id.encode('utf-8'))]
         )
-
+        
         logger.info(f"📤 [{trace_id[:20]}...] Sent CloudEvent: {insight.farmId} - {insight.status} ({insight.severity})")
-
+        
     except Exception as e:
         logger.error(f"❌ Failed to send insight event: {e}")
 
@@ -287,24 +287,24 @@ async def generate_action_plan(trace_id: str, sensor_data: SensorData, insight: 
     try:
         sensor_type = sensor_data.sensorType.lower()
         severity = insight.severity.lower()
-
+        
         # Check if we have an action plan config for this sensor type
         if sensor_type not in ACTION_PLAN_CONFIG:
             logger.info(f"   ℹ️ No action plan configured for sensor type: {sensor_type}")
             return
-
+        
         # Get severity-based action config (fall back to 'high' if specific severity not found)
         severity_key = severity if severity in ACTION_PLAN_CONFIG[sensor_type] else "high"
         if severity_key not in ACTION_PLAN_CONFIG[sensor_type]:
             logger.info(f"   ℹ️ No action plan for {sensor_type} at severity: {severity}")
             return
-
+            
         config = ACTION_PLAN_CONFIG[sensor_type][severity_key]
-
+        
         # Map severity to priority
         priority_map = {"warning": Priority.MEDIUM, "critical": Priority.HIGH}
         priority = priority_map.get(severity, Priority.MEDIUM)
-
+        
         # Create CloudEvents-compliant action plan
         action_plan_event = create_action_plan_event(
             trace_id=trace_id,
@@ -322,7 +322,7 @@ async def generate_action_plan(trace_id: str, sensor_data: SensorData, insight: 
             ],
             expires_minutes=30
         )
-
+        
         # Send to action-plans topic (terra-ops will consume and validate)
         await producer.send_and_wait(
             ACTION_PLAN_TOPIC,
@@ -330,10 +330,10 @@ async def generate_action_plan(trace_id: str, sensor_data: SensorData, insight: 
             key=sensor_data.farmId.encode('utf-8'),
             headers=[("trace_id", trace_id.encode('utf-8'))]
         )
-
+        
         logger.info(f"📤 [{trace_id[:20]}...] Action Plan generated: {config['asset']} -> {config['action'].value}")
         logger.info(f"   ⏳ Awaiting human approval in terra-ops...")
-
+        
     except Exception as e:
         logger.error(f"❌ Failed to generate action plan: {e}", exc_info=True)
 
@@ -342,15 +342,15 @@ async def send_insight(insight: Insight):
     """Send insight to Kafka output topic (legacy format for backward compatibility)"""
     try:
         insight_dict = insight.model_dump(mode='json')
-
+        
         await producer.send_and_wait(
             OUTPUT_TOPIC,
             value=insight_dict,
             key=insight.farmId.encode('utf-8')
         )
-
+        
         logger.info(f"📤 Sent: {insight.farmId} - {insight.status} ({insight.severity})")
-
+        
     except Exception as e:
         logger.error(f"❌ Failed to send insight: {e}")
 
@@ -359,9 +359,9 @@ async def send_insight(insight: Insight):
 async def lifespan(app: FastAPI):
     """Application lifespan manager"""
     global local_analyzer, cloud_advisor, weather_provider, crop_provider, trend_analyzer, knowledge_collector
-
+    
     logger.info("🧠 Terra-Cortex Hybrid AI Engine starting...")
-
+    
     # Initialize AI components
     local_analyzer = LocalAnalyzer()
     cloud_advisor = CloudAdvisor()
@@ -369,22 +369,22 @@ async def lifespan(app: FastAPI):
     crop_provider = get_crop_profile_provider()
     trend_analyzer = get_timeseries_analyzer()
     knowledge_collector = get_knowledge_collector()
-
+    
     logger.info("   ✅ Local Analyzer initialized (Edge AI)")
     logger.info(f"   {'✅' if cloud_advisor.enabled else '⚠️'} Cloud Advisor {'enabled' if cloud_advisor.enabled else 'disabled (set OPENAI_API_KEY to enable)'}")
     logger.info(f"   {'✅' if weather_provider.enabled else '⚠️'} Weather Provider {'enabled' if weather_provider.enabled else 'disabled (set WEATHER_API_KEY to enable)'}")
     logger.info(f"   ✅ Crop Profile Provider initialized (terra-ops 연동)")
     logger.info(f"   ✅ Trend Analyzer initialized (InfluxDB 시계열 분석)")
     logger.info(f"   ✅ Knowledge Collector initialized (지식 축적 파이프라인)")
-
+    
     # Start Kafka
     await start_kafka()
-
+    
     # Start auto knowledge collection
     await knowledge_collector.start_auto_collection()
-
+    
     yield
-
+    
     logger.info("🛑 Terra-Cortex Hybrid AI Engine shutting down...")
     await knowledge_collector.close()
     await stop_kafka()
