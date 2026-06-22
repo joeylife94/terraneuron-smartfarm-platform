@@ -97,7 +97,11 @@ Communicates AI-generated action plans from terra-cortex to terra-ops for approv
 #### Schema Location
 - JSON Schema: [`action-plan.schema.json`](./action-plan.schema.json)
 - Pydantic Model: [`terra-cortex/src/cloudevents_models.py`](../../services/terra-cortex/src/cloudevents_models.py) (`ActionPlanGeneratedEvent`)
-- Java Model: [`terra-ops/src/main/java/.../dto/ActionPlanDto.java`](../../services/terra-ops/src/main/java/com/terraneuron/ops/dto/ActionPlanDto.java)
+- Java runtime path: terra-ops does **not** bind action-plan events to a typed DTO. The
+  envelope is validated by [`ActionPlanEventValidator.java`](../../services/terra-ops/src/main/java/com/terraneuron/ops/service/ActionPlanEventValidator.java)
+  and the `data` payload is consumed as a raw `Map<String, Object>` in
+  [`ActionPlanService.consumeActionPlan`](../../services/terra-ops/src/main/java/com/terraneuron/ops/service/ActionPlanService.java),
+  which maps fields directly onto the `ActionPlan` JPA entity.
 
 #### CloudEvents Envelope
 ```json
@@ -319,7 +323,10 @@ gradle bootRun
 
 ### For New Consumers (Recommended)
 
-Implement CloudEvents parsing using the [`CloudEventsEnvelope`](../../services/terra-ops/src/main/java/com/terraneuron/ops/dto/CloudEventsEnvelope.java) generic wrapper:
+terra-ops consumes CloudEvents as raw `Map<String, Object>` messages and validates the
+envelope explicitly before mapping the `data` payload. There is intentionally **no generic
+typed envelope wrapper**; the validators (`ActionPlanEventValidator`) and parsers
+(`InsightEventParser`) are the canonical entry points:
 
 ```java
 @KafkaListener(topics = "processed-insights")
