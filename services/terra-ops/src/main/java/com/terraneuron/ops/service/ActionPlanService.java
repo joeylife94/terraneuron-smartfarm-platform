@@ -51,8 +51,7 @@ public class ActionPlanService {
             // Validate CloudEvents v1.0 envelope
             Optional<Map<String, Object>> validatedData = eventValidator.validate(planEvent);
             if (validatedData.isEmpty()) {
-                log.warn("❌ Skipping malformed or wrong-type action plan event");
-                return;
+                throw new IllegalArgumentException("Invalid action plan event payload");
             }
 
             Map<String, Object> data = validatedData.get();
@@ -117,6 +116,7 @@ public class ActionPlanService {
 
         } catch (Exception e) {
             log.error("❌ Failed to process action plan: {}", e.getMessage(), e);
+            throw new IllegalStateException("Failed to process action plan event", e);
         }
     }
 
