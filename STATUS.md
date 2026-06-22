@@ -30,6 +30,12 @@ notes below are deliberately factual and verified against the current `main`-der
   and `InsightEventParser`. Both are unit-tested.
 - **Kafka consumers** persist action plans and insights to MySQL; approved/executed plans are
   published to the `terra.control.command` topic.
+- **Kafka consumer retry and dead-letter handling** is implemented for all three terra-ops
+  listeners. A shared `DefaultErrorHandler` retries failures twice with a fixed one-second
+  backoff, then `DeadLetterPublishingRecoverer` publishes the record to `<source-topic>.DLT`.
+  The three DLTs are declared through `KafkaAdmin`, and listener failures now propagate to the
+  container. Unit tests cover bounded recovery, DLT naming, failure propagation, and the insight
+  happy path.
 - **terra-sense** contains the command/feedback and persistence wiring
   (`DeviceCommandConsumer`, `InfluxDbWriterService`, `MqttGatewayService`, plus their config
   classes). These are present and configured. *(Full end-to-end runtime is not re-verified in
@@ -54,14 +60,13 @@ notes below are deliberately factual and verified against the current `main`-der
 
 ## Known gaps (out of scope for this PR)
 
-- **Kafka DLQ / retry / error-handler is not implemented.** Consumers catch, log, and skip
-  malformed events; there is no dead-letter topic or retry policy.
-- **Docker Compose / full E2E startup is not repaired or verified here.**
+- **Docker Compose startup is covered by the repository E2E smoke test**, but production-like
+  resilience and external-service behavior are not exhaustively verified.
 - **No full runtime JSON Schema validation.** Inbound events are checked for the CloudEvents
   envelope shape, not validated against `docs/contracts/*.schema.json`.
 - **DB-backed auth and secrets management** beyond `JWT_SECRET` are not implemented.
 
-## Recently fixed (this PR: "address core TerraNeuron audit findings")
+## Recently fixed (core TerraNeuron audit findings)
 
 - **Approval/safety lifecycle bug:** `approvePlan()` previously ran the SafetyValidator while
   the plan was still `PENDING`, so layer 3 ("requires human approval") auto-rejected every
@@ -75,12 +80,18 @@ notes below are deliberately factual and verified against the current `main`-der
 - **Retired stale audit docs** (`AUDIT_REPORT.md`, `docs/IMPLEMENTATION_GAPS.md`) in favor of
   this document.
 
+## Recently fixed (this PR: "add Kafka retry and DLQ handling")
+
+- **Listener exceptions now propagate** from the action-plan, insight, and command-feedback
+  consumers instead of being logged and swallowed.
+- **Bounded retry and dead-letter recovery** now retries each failed record twice and publishes
+  exhausted records to the corresponding `.DLT` topic. Consumer auto-commit is explicitly
+  disabled and record acknowledgment is explicit.
+
 ## Recommended next PRs
 
-1. Kafka DLQ + retry + error-handler for the action-plan and insight consumers.
-2. Docker Compose / E2E startup repair and an automated smoke test.
-3. Full runtime JSON Schema validation against `docs/contracts/*.schema.json`.
-4. DB-backed authentication (replace hardcoded users, hash with BCrypt) and broader secrets
+1. Full runtime JSON Schema validation against `docs/contracts/*.schema.json`.
+2. DB-backed authentication (replace hardcoded users, hash with BCrypt) and broader secrets
    management.
-5. Promote SafetyValidator layers 2/4 from advisory warnings to enforced checks where the
+3. Promote SafetyValidator layers 2/4 from advisory warnings to enforced checks where the
    domain requires hard gating.

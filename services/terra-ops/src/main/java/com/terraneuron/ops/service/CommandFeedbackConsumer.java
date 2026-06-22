@@ -39,8 +39,7 @@ public class CommandFeedbackConsumer {
             @SuppressWarnings("unchecked")
             Map<String, Object> data = (Map<String, Object>) feedbackEvent.get("data");
             if (data == null) {
-                log.warn("⚠️ 잘못된 피드백 이벤트: data 필드 누락");
-                return;
+                throw new IllegalArgumentException("Invalid command feedback event: missing data field");
             }
 
             String traceId = (String) data.getOrDefault("trace_id", "");
@@ -69,6 +68,7 @@ public class CommandFeedbackConsumer {
 
         } catch (Exception e) {
             log.error("❌ 피드백 처리 실패: {}", e.getMessage(), e);
+            throw new IllegalStateException("Failed to process command feedback event", e);
         }
     }
 

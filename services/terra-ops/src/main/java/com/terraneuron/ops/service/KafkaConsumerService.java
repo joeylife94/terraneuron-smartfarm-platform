@@ -1,6 +1,5 @@
 package com.terraneuron.ops.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.terraneuron.ops.entity.Insight;
 import com.terraneuron.ops.repository.InsightRepository;
 import lombok.RequiredArgsConstructor;
@@ -46,7 +45,6 @@ import java.util.Optional;
 public class KafkaConsumerService {
 
     private final InsightRepository insightRepository;
-    private final ObjectMapper objectMapper;
     private final InsightEventParser insightEventParser;
 
     /**
@@ -62,8 +60,7 @@ public class KafkaConsumerService {
             Optional<Insight> insightOpt = insightEventParser.parse(messageData);
 
             if (!insightOpt.isPresent()) {
-                log.error("❌ Failed to parse insight message: skipping");
-                return;
+                throw new IllegalArgumentException("Invalid insight event payload");
             }
 
             Insight insight = insightOpt.get();
@@ -80,6 +77,7 @@ public class KafkaConsumerService {
 
         } catch (Exception e) {
             log.error("❌ Kafka message processing failed: {}", e.getMessage(), e);
+            throw new IllegalStateException("Failed to process insight event", e);
         }
     }
 }
