@@ -1,5 +1,6 @@
 package com.terraneuron.sense.config;
 
+import com.terraneuron.sense.model.SensorData;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.StringDeserializer;
@@ -81,6 +82,23 @@ public class KafkaConfig {
                 new ConcurrentKafkaListenerContainerFactory<>();
         factory.setConsumerFactory(commandConsumerFactory());
         return factory;
+    }
+
+    // ── Producer for raw sensor data ──
+
+    @Bean
+    public ProducerFactory<String, SensorData> sensorDataProducerFactory() {
+        Map<String, Object> props = new HashMap<>();
+        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, JsonSerializer.class);
+        props.put(JsonSerializer.ADD_TYPE_INFO_HEADERS, false);
+        return new DefaultKafkaProducerFactory<>(props);
+    }
+
+    @Bean
+    public KafkaTemplate<String, SensorData> sensorDataKafkaTemplate() {
+        return new KafkaTemplate<>(sensorDataProducerFactory());
     }
 
     // ── Producer for feedback ──
