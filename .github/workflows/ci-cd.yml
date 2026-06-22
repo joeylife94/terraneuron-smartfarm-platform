@@ -16,6 +16,7 @@ jobs:
     name: Build Java Services (terra-sense, terra-ops)
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         service: [terra-sense, terra-ops]
     
@@ -28,24 +29,23 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
-          cache: 'gradle'
 
-      - name: 🔧 Grant Execute Permission for Gradlew
-        run: chmod +x services/${{ matrix.service }}/gradlew
+      - name: 🐘 Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.5'
         
       - name: 🏗️ Build with Gradle
-        run: |
-          cd services/${{ matrix.service }}
-          ./gradlew build --no-daemon
+        working-directory: services/${{ matrix.service }}
+        run: gradle build --no-daemon
           
       - name: 🧪 Run Tests
-        run: |
-          cd services/${{ matrix.service }}
-          ./gradlew test --no-daemon
+        working-directory: services/${{ matrix.service }}
+        run: gradle test --no-daemon
           
       - name: 📊 Upload Test Results
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: test-results-${{ matrix.service }}
           path: services/${{ matrix.service }}/build/test-results/
