@@ -130,7 +130,6 @@ async def start_kafka():
 
 async def stop_kafka():
     """Stop Kafka consumer and producer"""
-    global consumer, producer, kafka_task
     
     if kafka_task:
         kafka_task.cancel()
@@ -513,7 +512,10 @@ async def get_trend(farm_id: str, sensor_type: str, window: str = "1h"):
             "predicted_next": ctx.stats.predicted_next,
             "period": ctx.stats.period,
         },
-        "recent_points": [{"time": p.time, "value": p.value} for p in (ctx.recent_points or [])[-30:],],
+        "recent_points": [
+            {"time": p.time, "value": p.value}
+            for p in (ctx.recent_points or [])[-30:]
+        ],
         "message": ctx.message,
     }
 
