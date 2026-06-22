@@ -2,7 +2,6 @@ package com.terraneuron.ops.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.terraneuron.ops.dto.ActionPlanDto;
 import com.terraneuron.ops.entity.ActionPlan;
 import com.terraneuron.ops.repository.ActionPlanRepository;
 import com.terraneuron.ops.service.safety.SafetyValidator;
@@ -161,31 +160,37 @@ public class ActionPlanService {
             throw new IllegalStateException("Plan cannot be approved: status=" + plan.getStatus() + ", expired=" + plan.isExpired());
         }
 
+        // Record the human approval decision BEFORE running safety validation.
+        // The permission layer (SafetyValidator layer 3) rejects any plan that still
+        // requires approval while PENDING; validating in that pre-approval state would
+        // auto-reject every normal plan. By transitioning to APPROVED (with approver and
+        // timestamp set) first, validation evaluates the plan in its post-approval state.
+        plan.setStatus(ActionPlan.PlanStatus.APPROVED);
+        plan.setApprovedBy(approvedBy);
+        plan.setApprovedAt(Instant.now());
+
         // Run safety validation
         SafetyValidator.ValidationResult validationResult = safetyValidator.validate(plan);
-        auditService.logPlanValidated(plan, validationResult.isOverallPassed(), 
+        auditService.logPlanValidated(plan, validationResult.isOverallPassed(),
                 validationResult.getFailedLayer(), validationResult.getAllErrors());
 
         if (!validationResult.isOverallPassed()) {
             // Fail-safe: Default to ALERT_ONLY instead of execution
             log.warn("⚠️ Safety validation failed for plan {}. Defaulting to ALERT_ONLY.", planId);
             plan.setStatus(ActionPlan.PlanStatus.REJECTED);
-            plan.setRejectionReason("Safety validation failed at layer: " + validationResult.getFailedLayer() + 
+            plan.setRejectionReason("Safety validation failed at layer: " + validationResult.getFailedLayer() +
                     ". Errors: " + String.join("; ", validationResult.getAllErrors()));
             actionPlanRepository.save(plan);
-            
+
             auditService.logPlanRejected(plan, "system", plan.getRejectionReason());
-            
+
             // Trigger alert instead
             triggerSafetyAlert(plan, validationResult);
-            
+
             return plan;
         }
 
-        // Update plan status
-        plan.setStatus(ActionPlan.PlanStatus.APPROVED);
-        plan.setApprovedBy(approvedBy);
-        plan.setApprovedAt(Instant.now());
+        // Persist the approved plan
         actionPlanRepository.save(plan);
 
         log.info("✅ Plan approved: {} by {}", planId, approvedBy);
