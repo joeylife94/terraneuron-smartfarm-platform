@@ -103,6 +103,14 @@ notes below are deliberately factual and verified against the current `main`-der
   JSON object and included `farm_id` explicitly in the command payload. The terra-sense
   consumer remains backward-compatible with JSON-string parameters.
 
+## Recently fixed (PR #10: "persist insight trace fields and audit detection")
+
+- **Insight metadata is now persisted:** trace, asset, sensor, severity, raw value, confidence,
+  and RAG context fields parsed from canonical CloudEvents are retained on the insight entity;
+  available sensor/severity/value/confidence fields are also retained for legacy events.
+- **Insight detection is now recorded in audit logs** after the insight is saved, using the
+  persisted trace ID or a saved-insight-ID fallback for legacy events without one.
+
 ## Recommended next PRs
 
 1. Full runtime JSON Schema validation against `docs/contracts/*.schema.json`.

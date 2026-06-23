@@ -28,17 +28,41 @@ public class Insight {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(name = "trace_id", length = 100)
+    private String traceId;
+
     @Column(name = "farm_id", nullable = false)
     private String farmId;
+
+    @Column(name = "asset_id", length = 100)
+    private String assetId;
+
+    @Column(name = "asset_type", length = 50)
+    private String assetType;
+
+    @Column(name = "sensor_type", length = 50)
+    private String sensorType;
 
     @Column(name = "status", nullable = false, length = 50)
     private String status;
 
+    @Column(name = "severity", length = 50)
+    private String severity;
+
     @Column(name = "message", columnDefinition = "TEXT")
     private String message;
+
+    @Column(name = "raw_value")
+    private Double rawValue;
+
+    @Column(name = "confidence")
+    private Double confidence;
     
     @Column(name = "llm_recommendation", columnDefinition = "TEXT")
     private String llmRecommendation;
+
+    @Column(name = "rag_context", columnDefinition = "TEXT")
+    private String ragContext;
 
     @Column(name = "timestamp", nullable = false)
     private Instant timestamp;

@@ -97,10 +97,18 @@ public class InsightEventParser {
             Instant timestamp = parseTimestamp(payload.getDetectedAt());
             
             Insight insight = Insight.builder()
+                    .traceId(payload.getTraceId())
                     .farmId(payload.getFarmId())
+                    .assetId(payload.getAssetId())
+                    .assetType(payload.getAssetType())
+                    .sensorType(payload.getSensorType())
                     .status(payload.getStatus())
+                    .severity(payload.getSeverity())
                     .message(payload.getMessage())
+                    .rawValue(payload.getRawValue())
+                    .confidence(payload.getConfidence())
                     .llmRecommendation(payload.getLlmRecommendation())
+                    .ragContext(payload.getRagContext())
                     .timestamp(timestamp)
                     .build();
             
@@ -136,6 +144,10 @@ public class InsightEventParser {
             String status = (String) messageData.get("status");
             String message = (String) messageData.get("message");
             String llmRec = (String) messageData.get("llmRecommendation");
+            String sensorType = (String) messageData.get("sensorType");
+            String severity = (String) messageData.get("severity");
+            Double rawValue = asDouble(messageData.get("rawValue"));
+            Double confidence = asDouble(messageData.get("confidence"));
             Object timestampObj = messageData.get("detectedAt");
             
             if (farmId == null || farmId.isBlank() || status == null || status.isBlank()) {
@@ -147,8 +159,12 @@ public class InsightEventParser {
             
             Insight insight = Insight.builder()
                     .farmId(farmId)
+                    .sensorType(sensorType)
                     .status(status)
+                    .severity(severity)
                     .message(message != null ? message : "")
+                    .rawValue(rawValue)
+                    .confidence(confidence)
                     .llmRecommendation(llmRec)
                     .timestamp(timestamp)
                     .build();
@@ -163,6 +179,10 @@ public class InsightEventParser {
         }
     }
     
+    private Double asDouble(Object value) {
+        return value instanceof Number ? ((Number) value).doubleValue() : null;
+    }
+
     /**
      * Parse timestamp from various formats
      */
