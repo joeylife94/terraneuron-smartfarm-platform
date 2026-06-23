@@ -85,7 +85,7 @@ notes below are deliberately factual and verified against the current `main`-der
 - **Retired stale audit docs** (`AUDIT_REPORT.md`, `docs/IMPLEMENTATION_GAPS.md`) in favor of
   this document.
 
-## Recently fixed (this PR: "add Kafka retry and DLQ handling")
+## Recently fixed (PR #7: "add Kafka retry and DLQ handling")
 
 - **Listener exceptions now propagate** from the action-plan, insight, and command-feedback
   consumers instead of being logged and swallowed.
@@ -93,7 +93,7 @@ notes below are deliberately factual and verified against the current `main`-der
   exhausted records to the corresponding `.DLT` topic. Consumer auto-commit is explicitly
   disabled and record acknowledgment is explicit.
 
-## Recently fixed (this PR: "add command and feedback schemas")
+## Recently fixed (PR #8: "add command and feedback schemas")
 
 - **Added command and feedback JSON Schemas** matching the live terra-ops → terra-sense command
   request and terra-sense → terra-ops feedback paths.
