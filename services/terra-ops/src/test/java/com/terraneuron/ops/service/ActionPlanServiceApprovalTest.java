@@ -59,7 +59,8 @@ class ActionPlanServiceApprovalTest {
                 auditService,
                 objectMapper,
                 kafkaTemplate,
-                eventValidator);
+                eventValidator,
+                new ContractSchemaValidator(objectMapper));
     }
 
     private ActionPlan.ActionPlanBuilder pendingPlanBuilder() {

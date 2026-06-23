@@ -13,7 +13,9 @@ import org.springframework.kafka.core.KafkaTemplate;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
@@ -28,7 +30,12 @@ class DeviceCommandConsumerTest {
 
     @BeforeEach
     void setUp() {
-        consumer = new DeviceCommandConsumer(mqttGateway, new ObjectMapper(), kafkaTemplate);
+        ObjectMapper objectMapper = new ObjectMapper();
+        consumer = new DeviceCommandConsumer(
+                mqttGateway,
+                objectMapper,
+                kafkaTemplate,
+                new ContractSchemaValidator(objectMapper));
     }
 
     @Test
@@ -72,6 +79,19 @@ class DeviceCommandConsumerTest {
         verify(mqttGateway).publishCommand(commandCaptor.capture());
         assertThat(commandCaptor.getValue().getParameters())
                 .containsEntry("duration_minutes", 15);
+    }
+
+    @Test
+    void rejectsInvalidCommandBeforePublishing() {
+        Map<String, Object> invalidEvent = Map.of(
+                "specversion", "1.0",
+                "type", "terra.ops.command.execute",
+                "data", Map.of());
+
+        assertThatThrownBy(() -> consumer.onCommand(invalidEvent))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("command.schema.json");
+        verifyNoInteractions(mqttGateway, kafkaTemplate);
     }
 
     private Map<String, Object> commandEvent(Object parameters) {

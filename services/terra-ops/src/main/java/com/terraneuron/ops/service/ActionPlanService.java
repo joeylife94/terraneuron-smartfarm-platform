@@ -36,6 +36,7 @@ public class ActionPlanService {
     private final ObjectMapper objectMapper;
     private final KafkaTemplate<String, Object> kafkaTemplate;
     private final ActionPlanEventValidator eventValidator;
+    private final ContractSchemaValidator contractSchemaValidator;
 
     private static final String COMMAND_TOPIC = "terra.control.command";
 
@@ -48,6 +49,9 @@ public class ActionPlanService {
     public void consumeActionPlan(Map<String, Object> planEvent) {
         try {
             log.info("📥 Received action plan event from terra-cortex");
+
+            contractSchemaValidator.validate(
+                    ContractSchemaValidator.ACTION_PLAN_SCHEMA, planEvent);
 
             // Validate CloudEvents v1.0 envelope
             Optional<Map<String, Object>> validatedData = eventValidator.validate(planEvent);

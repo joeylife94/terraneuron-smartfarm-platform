@@ -419,8 +419,11 @@ gradle test --tests "*ActionPlanEventValidatorTest"
 Location: [`ContractSchemaExamplesTest.java`](../../services/terra-ops/src/test/java/com/terraneuron/ops/contracts/ContractSchemaExamplesTest.java)
 
 The test loads every `docs/contracts/*.schema.json` file and validates every embedded example
-against its Draft 7 schema. This is documentation/example consistency testing only; runtime
-Kafka messages are not yet validated against these JSON Schema files.
+against its Draft 7 schema. Gradle also packages these same files as runtime resources for
+terra-ops and terra-sense. Their ingress consumers validate canonical CloudEvents before domain
+parsing or processing, and validation failures propagate to the listener container. Legacy flat
+insights remain supported without schema validation; legacy JSON-string command parameters are
+normalized to objects before command validation.
 
 ### Integration Tests
 
@@ -442,14 +445,16 @@ gradle bootRun
 
 ### For New Consumers (Recommended)
 
-terra-ops consumes CloudEvents as raw `Map<String, Object>` messages and validates the
-envelope explicitly before mapping the `data` payload. There is intentionally **no generic
-typed envelope wrapper**; the validators (`ActionPlanEventValidator`) and parsers
-(`InsightEventParser`) are the canonical entry points:
+terra-ops consumes CloudEvents as raw `Map<String, Object>` messages and validates each event
+with `ContractSchemaValidator` before mapping the `data` payload. There is intentionally **no
+generic typed envelope wrapper**; the ingress consumers, `ActionPlanEventValidator`, and
+`InsightEventParser` remain the canonical entry points:
 
 ```java
 @KafkaListener(topics = "processed-insights")
 public void consume(Map<String, Object> messageData) {
+    contractSchemaValidator.validate(
+        ContractSchemaValidator.PROCESSED_INSIGHT_SCHEMA, messageData);
     Optional<Insight> insight = insightEventParser.parse(messageData);
     // Handle result
 }
@@ -499,6 +504,5 @@ Fix by checking producer logs and validating input data.
 ## Future Enhancements
 
 - [ ] Support for other event types (alerts, audit logs)
-- [ ] Runtime JSON Schema validation
 - [ ] Event replay from dead-letter queue
 - [ ] Multi-tenancy support in trace_id
