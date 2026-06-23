@@ -115,7 +115,9 @@ notes below are deliberately factual and verified against the current `main`-der
 - **Canonical CloudEvents are runtime-validated** against the corresponding schemas in
   `docs/contracts` before domain parsing or processing.
 - **Validation failures propagate** to the listener container instead of being caught and
-  skipped; terra-ops sends them through its existing Kafka retry/DLQ handling.
+  skipped. terra-ops validation failures propagate to the existing retry/DLT handling.
+  terra-sense command validation failures propagate to the listener container; no FAILED feedback
+  is emitted for schema-invalid commands, and no terra-sense DLT is introduced in this PR.
 - **Legacy compatibility remains intact:** legacy flat insight events are still parsed without
   claiming schema validation, and legacy JSON-string command parameters are normalized to an
   object before command-schema validation.
