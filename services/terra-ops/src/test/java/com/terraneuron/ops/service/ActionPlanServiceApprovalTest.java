@@ -7,11 +7,13 @@ import com.terraneuron.ops.service.safety.SafetyValidator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.kafka.core.KafkaTemplate;
 
 import java.time.Instant;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -40,16 +42,16 @@ class ActionPlanServiceApprovalTest {
     @Mock
     private AuditService auditService;
     @Mock
-    private ObjectMapper objectMapper;
-    @Mock
     private KafkaTemplate<String, Object> kafkaTemplate;
     @Mock
     private ActionPlanEventValidator eventValidator;
 
     private ActionPlanService service;
+    private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() {
+        objectMapper = new ObjectMapper();
         SafetyValidator safetyValidator = new SafetyValidator();
         service = new ActionPlanService(
                 actionPlanRepository,
@@ -68,6 +70,7 @@ class ActionPlanServiceApprovalTest {
                 .targetAssetId("fan-01")
                 .actionCategory("ventilation")
                 .actionType("turn_on")
+                .parameters("{\"duration_minutes\":30,\"speed_level\":\"high\"}")
                 .reasoning("Temperature exceeds threshold")
                 .status(ActionPlan.PlanStatus.PENDING)
                 .priority(ActionPlan.ActionPriority.MEDIUM)
@@ -91,7 +94,18 @@ class ActionPlanServiceApprovalTest {
         assertThat(result.getApprovedAt()).isNotNull();
 
         // Command was published to the control topic.
-        verify(kafkaTemplate, times(1)).send(eq("terra.control.command"), eq("farm-1"), any());
+        ArgumentCaptor<Object> eventCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(kafkaTemplate, times(1)).send(
+                eq("terra.control.command"), eq("farm-1"), eventCaptor.capture());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> commandEvent = (Map<String, Object>) eventCaptor.getValue();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = (Map<String, Object>) commandEvent.get("data");
+        assertThat(commandEvent.get("type")).isEqualTo("terra.ops.command.execute");
+        assertThat(data.get("farm_id")).isEqualTo("farm-1");
+        assertThat(data.get("parameters")).isEqualTo(Map.of(
+                "duration_minutes", 30,
+                "speed_level", "high"));
         verify(auditService).logPlanApproved(eq(plan), eq("operator"), eq("looks good"));
     }
 

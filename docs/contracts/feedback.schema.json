@@ -1,0 +1,107 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Command Feedback Event - CloudEvents v1.0",
+  "description": "Command delivery or execution feedback published by terra-sense to the terra.control.feedback Kafka topic for terra-ops",
+  "type": "object",
+  "required": [
+    "specversion",
+    "type",
+    "source",
+    "id",
+    "time",
+    "datacontenttype",
+    "data"
+  ],
+  "properties": {
+    "specversion": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "type": {
+      "type": "string",
+      "const": "terra.sense.command.feedback"
+    },
+    "source": {
+      "type": "string",
+      "const": "//terraneuron/terra-sense"
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "time": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "datacontenttype": {
+      "type": "string",
+      "const": "application/json"
+    },
+    "data": {
+      "type": "object",
+      "required": [
+        "trace_id",
+        "command_id",
+        "plan_id",
+        "farm_id",
+        "target_asset_id",
+        "status",
+        "error",
+        "timestamp"
+      ],
+      "properties": {
+        "trace_id": {
+          "type": "string"
+        },
+        "command_id": {
+          "type": "string"
+        },
+        "plan_id": {
+          "type": "string"
+        },
+        "farm_id": {
+          "type": "string"
+        },
+        "target_asset_id": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["DELIVERED", "EXECUTED", "FAILED"],
+          "description": "DELIVERED and FAILED are emitted by the current Kafka-to-MQTT bridge; EXECUTED is understood by terra-ops for device-confirmed completion."
+        },
+        "error": {
+          "type": "string",
+          "description": "Failure detail, or an empty string when no error occurred"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Time terra-sense generated the feedback payload"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "specversion": "1.0",
+      "type": "terra.sense.command.feedback",
+      "source": "//terraneuron/terra-sense",
+      "id": "e5f6a7b8-c9d0-4e12-9fab-34567890abcd",
+      "time": "2025-12-09T10:35:01Z",
+      "datacontenttype": "application/json",
+      "data": {
+        "trace_id": "trace-a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        "command_id": "cmd-1a2b3c4d",
+        "plan_id": "plan-abc12345",
+        "farm_id": "farm-001",
+        "target_asset_id": "fan-01",
+        "status": "DELIVERED",
+        "error": "",
+        "timestamp": "2025-12-09T10:35:01Z"
+      }
+    }
+  ]
+}
