@@ -1,6 +1,7 @@
 package com.terraneuron.ops.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.terraneuron.ops.entity.ActionPlan;
 import com.terraneuron.ops.repository.ActionPlanRepository;
@@ -235,6 +236,8 @@ public class ActionPlanService {
         }
 
         try {
+            Map<String, Object> parameters = parseCommandParameters(plan.getParameters());
+
             // Build command event
             Map<String, Object> commandEvent = Map.of(
                     "specversion", "1.0",
@@ -247,9 +250,10 @@ public class ActionPlanService {
                             "trace_id", plan.getTraceId(),
                             "plan_id", plan.getPlanId(),
                             "command_id", "cmd-" + java.util.UUID.randomUUID().toString().substring(0, 8),
+                            "farm_id", plan.getFarmId(),
                             "target_asset_id", plan.getTargetAssetId(),
                             "action_type", plan.getActionType(),
-                            "parameters", plan.getParameters() != null ? plan.getParameters() : "{}",
+                            "parameters", parameters,
                             "executed_by", plan.getApprovedBy()
                     )
             );
@@ -341,6 +345,15 @@ public class ActionPlanService {
     }
 
     // ========== Helper Methods ==========
+
+    private Map<String, Object> parseCommandParameters(String parametersJson)
+            throws JsonProcessingException {
+        if (parametersJson == null || parametersJson.isBlank()) {
+            return Map.of();
+        }
+        return objectMapper.readValue(
+                parametersJson, new TypeReference<Map<String, Object>>() {});
+    }
 
     private Instant parseInstant(Object value) {
         if (value == null) return null;

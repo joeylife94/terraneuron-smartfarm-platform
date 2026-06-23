@@ -164,7 +164,11 @@ class PlanRejectedEvent(CloudEventBase):
 # ============ Command Execution Events ============
 
 class CommandExecutedData(BaseModel):
-    """Data payload for terra.ops.command.executed"""
+    """Historical notification payload for terra.ops.command.executed.
+
+    This is distinct from the terra.ops.command.execute request sent by
+    terra-ops to terra-sense on terra.control.command.
+    """
     trace_id: str
     plan_id: str
     command_id: str = Field(default_factory=lambda: f"cmd-{uuid.uuid4().hex[:8]}")
@@ -179,7 +183,7 @@ class CommandExecutedData(BaseModel):
 
 
 class CommandExecutedEvent(CloudEventBase):
-    """CloudEvents compliant Command Execution Event"""
+    """Historical command-executed notification model, not the runtime request."""
     type: str = "terra.ops.command.executed"
     source: str = "//terraneuron/terra-ops"
     data: CommandExecutedData

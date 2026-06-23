@@ -154,6 +154,8 @@ public class DeviceCommandConsumer {
                 return objectMapper.readValue((String) params,
                         new TypeReference<Map<String, Object>>() {});
             } catch (Exception e) {
+                log.warn("⚠️ Failed to parse legacy string parameters as JSON; preserving raw value: {}",
+                        e.getMessage());
                 return Map.of("raw", params);
             }
         }

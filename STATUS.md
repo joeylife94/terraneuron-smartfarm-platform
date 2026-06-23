@@ -1,6 +1,6 @@
 # TerraNeuron — Implementation Status
 
-> **Last updated:** 2026-06-22
+> **Last updated:** 2026-06-23
 > **Scope of this document:** the single source of truth for what is actually implemented
 > in the current codebase. It supersedes the historical `AUDIT_REPORT.md` and
 > `docs/IMPLEMENTATION_GAPS.md`, which described an earlier repository state and contradicted
@@ -30,6 +30,11 @@ notes below are deliberately factual and verified against the current `main`-der
   and `InsightEventParser`. Both are unit-tested.
 - **Kafka consumers** persist action plans and insights to MySQL; approved/executed plans are
   published to the `terra.control.command` topic.
+- **Command and feedback event contracts are documented** as Draft 7 JSON Schemas for
+  `terra.ops.command.execute` on `terra.control.command` and
+  `terra.sense.command.feedback` on `terra.control.feedback`. A unit test loads every contract
+  schema and validates all embedded examples. Command `parameters` are published as an object;
+  terra-sense retains support for the legacy JSON-string representation.
 - **Kafka consumer retry and dead-letter handling** is implemented for all three terra-ops
   listeners. A shared `DefaultErrorHandler` retries failures twice with a fixed one-second
   backoff, then `DeadLetterPublishingRecoverer` publishes the record to `<source-topic>.DLT`.
@@ -80,13 +85,23 @@ notes below are deliberately factual and verified against the current `main`-der
 - **Retired stale audit docs** (`AUDIT_REPORT.md`, `docs/IMPLEMENTATION_GAPS.md`) in favor of
   this document.
 
-## Recently fixed (this PR: "add Kafka retry and DLQ handling")
+## Recently fixed (PR #7: "add Kafka retry and DLQ handling")
 
 - **Listener exceptions now propagate** from the action-plan, insight, and command-feedback
   consumers instead of being logged and swallowed.
 - **Bounded retry and dead-letter recovery** now retries each failed record twice and publishes
   exhausted records to the corresponding `.DLT` topic. Consumer auto-commit is explicitly
   disabled and record acknowledgment is explicit.
+
+## Recently fixed (PR #8: "add command and feedback schemas")
+
+- **Added command and feedback JSON Schemas** matching the live terra-ops → terra-sense command
+  request and terra-sense → terra-ops feedback paths.
+- **Added schema/example consistency coverage** for every contract file. This does not add
+  runtime JSON Schema validation; that remains a known gap.
+- **Normalized command `parameters` at publication** from the entity's stored JSON text to a
+  JSON object and included `farm_id` explicitly in the command payload. The terra-sense
+  consumer remains backward-compatible with JSON-string parameters.
 
 ## Recommended next PRs
 
