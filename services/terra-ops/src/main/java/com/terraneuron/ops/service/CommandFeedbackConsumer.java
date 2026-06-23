@@ -28,6 +28,7 @@ public class CommandFeedbackConsumer {
 
     private final ActionPlanRepository actionPlanRepository;
     private final AuditService auditService;
+    private final ContractSchemaValidator contractSchemaValidator;
 
     @KafkaListener(
             topics = "terra.control.feedback",
@@ -36,6 +37,9 @@ public class CommandFeedbackConsumer {
     @Transactional
     public void onFeedback(Map<String, Object> feedbackEvent) {
         try {
+            contractSchemaValidator.validate(
+                    ContractSchemaValidator.FEEDBACK_SCHEMA, feedbackEvent);
+
             @SuppressWarnings("unchecked")
             Map<String, Object> data = (Map<String, Object>) feedbackEvent.get("data");
             if (data == null) {

@@ -26,7 +26,8 @@ class KafkaListenerFailurePropagationTest {
         AuditService auditService = mock(AuditService.class);
         Map<String, Object> invalidEvent = Map.of("unexpected", "payload");
         when(parser.parse(invalidEvent)).thenReturn(Optional.empty());
-        KafkaConsumerService consumer = new KafkaConsumerService(repository, parser, auditService);
+        KafkaConsumerService consumer = new KafkaConsumerService(
+                repository, parser, auditService, contractSchemaValidator());
 
         assertThatThrownBy(() -> consumer.consumeInsight(invalidEvent))
                 .isInstanceOf(IllegalStateException.class)
@@ -44,7 +45,8 @@ class KafkaListenerFailurePropagationTest {
                 mock(AuditService.class),
                 mock(ObjectMapper.class),
                 mockKafkaTemplate(),
-                validator);
+                validator,
+                contractSchemaValidator());
 
         assertThatThrownBy(() -> service.consumeActionPlan(invalidEvent))
                 .isInstanceOf(IllegalStateException.class)
@@ -55,7 +57,8 @@ class KafkaListenerFailurePropagationTest {
     void commandFeedbackListenerPropagatesInvalidPayloadFailure() {
         CommandFeedbackConsumer consumer = new CommandFeedbackConsumer(
                 mock(ActionPlanRepository.class),
-                mock(AuditService.class));
+                mock(AuditService.class),
+                contractSchemaValidator());
 
         assertThatThrownBy(() -> consumer.onFeedback(Map.of("type", "feedback")))
                 .isInstanceOf(IllegalStateException.class)
@@ -85,7 +88,8 @@ class KafkaListenerFailurePropagationTest {
                 .build();
         when(parser.parse(event)).thenReturn(Optional.of(insight));
         when(repository.save(insight)).thenReturn(savedInsight);
-        KafkaConsumerService consumer = new KafkaConsumerService(repository, parser, auditService);
+        KafkaConsumerService consumer = new KafkaConsumerService(
+                repository, parser, auditService, contractSchemaValidator());
 
         consumer.consumeInsight(event);
 
@@ -115,7 +119,8 @@ class KafkaListenerFailurePropagationTest {
                 .build();
         when(parser.parse(event)).thenReturn(Optional.of(insight));
         when(repository.save(insight)).thenReturn(savedInsight);
-        KafkaConsumerService consumer = new KafkaConsumerService(repository, parser, auditService);
+        KafkaConsumerService consumer = new KafkaConsumerService(
+                repository, parser, auditService, contractSchemaValidator());
 
         consumer.consumeInsight(event);
 
@@ -126,5 +131,9 @@ class KafkaListenerFailurePropagationTest {
     @SuppressWarnings("unchecked")
     private KafkaTemplate<String, Object> mockKafkaTemplate() {
         return mock(KafkaTemplate.class);
+    }
+
+    private ContractSchemaValidator contractSchemaValidator() {
+        return new ContractSchemaValidator(new ObjectMapper());
     }
 }

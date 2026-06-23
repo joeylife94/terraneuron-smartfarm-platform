@@ -47,6 +47,7 @@ public class KafkaConsumerService {
     private final InsightRepository insightRepository;
     private final InsightEventParser insightEventParser;
     private final AuditService auditService;
+    private final ContractSchemaValidator contractSchemaValidator;
 
     /**
      * Kafka listener for processed-insights topic
@@ -56,6 +57,12 @@ public class KafkaConsumerService {
     public void consumeInsight(Map<String, Object> messageData) {
         try {
             log.debug("📥 Kafka Received raw message: {}", messageData.keySet());
+
+            // Legacy flat insights remain supported. Canonical CloudEvents are strict.
+            if (messageData.containsKey("specversion") && messageData.containsKey("type")) {
+                contractSchemaValidator.validate(
+                        ContractSchemaValidator.PROCESSED_INSIGHT_SCHEMA, messageData);
+            }
 
             // Parse the message (handles both CloudEvents and legacy formats)
             Optional<Insight> insightOpt = insightEventParser.parse(messageData);

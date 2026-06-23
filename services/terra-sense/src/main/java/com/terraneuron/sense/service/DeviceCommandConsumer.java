@@ -10,6 +10,7 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -33,6 +34,7 @@ public class DeviceCommandConsumer {
     private final MqttGatewayService mqttGateway;
     private final ObjectMapper objectMapper;
     private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final ContractSchemaValidator contractSchemaValidator;
 
     private static final String FEEDBACK_TOPIC = "terra.control.feedback";
 
@@ -45,12 +47,15 @@ public class DeviceCommandConsumer {
             containerFactory = "commandListenerContainerFactory"
     )
     public void onCommand(Map<String, Object> commandEvent) {
+        Map<String, Object> normalizedEvent = normalizeLegacyParameters(commandEvent);
+        contractSchemaValidator.validate(ContractSchemaValidator.COMMAND_SCHEMA, normalizedEvent);
+
         try {
             log.info("📥 제어 명령 수신 (Kafka → MQTT bridge)");
 
             // CloudEvents 포맷에서 data 추출
             @SuppressWarnings("unchecked")
-            Map<String, Object> data = (Map<String, Object>) commandEvent.get("data");
+            Map<String, Object> data = (Map<String, Object>) normalizedEvent.get("data");
             if (data == null) {
                 log.error("❌ 잘못된 CloudEvent: 'data' 필드 누락");
                 return;
@@ -68,7 +73,7 @@ public class DeviceCommandConsumer {
 
             // farmId 추출 — commandEvent 키 또는 data에서 가져오기
             String farmId = (String) data.getOrDefault("farm_id",
-                    commandEvent.getOrDefault("key", "unknown"));
+                    normalizedEvent.getOrDefault("key", "unknown"));
 
             DeviceCommand cmd = DeviceCommand.builder()
                     .commandId(commandId)
@@ -96,7 +101,7 @@ public class DeviceCommandConsumer {
             // 실패 피드백
             try {
                 @SuppressWarnings("unchecked")
-                Map<String, Object> data = (Map<String, Object>) commandEvent.get("data");
+                Map<String, Object> data = (Map<String, Object>) normalizedEvent.get("data");
                 if (data != null) {
                     sendFeedback(
                             (String) data.get("trace_id"),
@@ -110,6 +115,30 @@ public class DeviceCommandConsumer {
                 }
             } catch (Exception ignored) {}
         }
+    }
+
+    private Map<String, Object> normalizeLegacyParameters(Map<String, Object> commandEvent) {
+        if (commandEvent == null) {
+            return null;
+        }
+
+        Object dataValue = commandEvent.get("data");
+        if (!(dataValue instanceof Map<?, ?> data)) {
+            return commandEvent;
+        }
+
+        Object parameters = data.get("parameters");
+        if (!(parameters instanceof String)) {
+            return commandEvent;
+        }
+
+        Map<String, Object> normalizedData = new LinkedHashMap<>();
+        data.forEach((key, value) -> normalizedData.put(String.valueOf(key), value));
+        normalizedData.put("parameters", parseParameters(parameters));
+
+        Map<String, Object> normalizedEvent = new LinkedHashMap<>(commandEvent);
+        normalizedEvent.put("data", normalizedData);
+        return normalizedEvent;
     }
 
     /**

@@ -25,9 +25,10 @@ notes below are deliberately factual and verified against the current `main`-der
   requires approval can be approved and proceeds to execution. See
   [`ActionPlanService.approvePlan`](services/terra-ops/src/main/java/com/terraneuron/ops/service/ActionPlanService.java).
 - **4-layer SafetyValidator** runs on every approval (see advisory note below).
-- **CloudEvents v1.0 envelope validation** for inbound events:
-  [`ActionPlanEventValidator`](services/terra-ops/src/main/java/com/terraneuron/ops/service/ActionPlanEventValidator.java)
-  and `InsightEventParser`. Both are unit-tested.
+- **Runtime JSON Schema validation** is enforced for canonical CloudEvents on all four ingress
+  paths. Both services load the packaged canonical schemas from `docs/contracts`; terra-ops
+  validates processed insights, action plans, and command feedback, while terra-sense validates
+  commands after normalizing legacy string parameters.
 - **Kafka consumers** persist action plans and insights to MySQL; approved/executed plans are
   published to the `terra.control.command` topic.
 - **Command and feedback event contracts are documented** as Draft 7 JSON Schemas for
@@ -67,8 +68,6 @@ notes below are deliberately factual and verified against the current `main`-der
 
 - **Docker Compose startup is covered by the repository E2E smoke test**, but production-like
   resilience and external-service behavior are not exhaustively verified.
-- **No full runtime JSON Schema validation.** Inbound events are checked for the CloudEvents
-  envelope shape, not validated against `docs/contracts/*.schema.json`.
 - **DB-backed auth and secrets management** beyond `JWT_SECRET` are not implemented.
 
 ## Recently fixed (core TerraNeuron audit findings)
@@ -97,8 +96,8 @@ notes below are deliberately factual and verified against the current `main`-der
 
 - **Added command and feedback JSON Schemas** matching the live terra-ops → terra-sense command
   request and terra-sense → terra-ops feedback paths.
-- **Added schema/example consistency coverage** for every contract file. This does not add
-  runtime JSON Schema validation; that remains a known gap.
+- **Added schema/example consistency coverage** for every contract file. Runtime enforcement
+  was subsequently added in PR #11.
 - **Normalized command `parameters` at publication** from the entity's stored JSON text to a
   JSON object and included `farm_id` explicitly in the command payload. The terra-sense
   consumer remains backward-compatible with JSON-string parameters.
@@ -111,10 +110,19 @@ notes below are deliberately factual and verified against the current `main`-der
 - **Insight detection is now recorded in audit logs** after the insight is saved, using the
   persisted trace ID or a saved-insight-ID fallback for legacy events without one.
 
+## Recently fixed (PR #11: "add runtime schema validation")
+
+- **Canonical CloudEvents are runtime-validated** against the corresponding schemas in
+  `docs/contracts` before domain parsing or processing.
+- **Validation failures propagate** to the listener container instead of being caught and
+  skipped; terra-ops sends them through its existing Kafka retry/DLQ handling.
+- **Legacy compatibility remains intact:** legacy flat insight events are still parsed without
+  claiming schema validation, and legacy JSON-string command parameters are normalized to an
+  object before command-schema validation.
+
 ## Recommended next PRs
 
-1. Full runtime JSON Schema validation against `docs/contracts/*.schema.json`.
-2. DB-backed authentication (replace hardcoded users, hash with BCrypt) and broader secrets
+1. DB-backed authentication (replace hardcoded users, hash with BCrypt) and broader secrets
    management.
-3. Promote SafetyValidator layers 2/4 from advisory warnings to enforced checks where the
+2. Promote SafetyValidator layers 2/4 from advisory warnings to enforced checks where the
    domain requires hard gating.
