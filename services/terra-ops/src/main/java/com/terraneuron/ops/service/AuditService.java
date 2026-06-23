@@ -215,6 +215,20 @@ public class AuditService {
 
     // ========== Private Helper Methods ==========
 
+    /**
+     * Safely extract a prefix of traceId for log output.
+     * Handles null, blank, and short strings without throwing exceptions.
+     *
+     * @param traceId the trace ID to truncate
+     * @return a safe prefix for logging, or "no-trace" if traceId is null/blank
+     */
+    private String tracePrefix(String traceId) {
+        if (traceId == null || traceId.isBlank()) {
+            return "no-trace";
+        }
+        return traceId.length() <= 20 ? traceId : traceId.substring(0, 20);
+    }
+
     private AuditLog createLog(
             String traceId,
             AuditLog.EventType eventType,
@@ -247,7 +261,7 @@ public class AuditService {
                 .build();
 
         AuditLog saved = auditLogRepository.save(auditLog);
-        log.info("📝 Audit: [{}] {} - {} - {}", traceId.substring(0, 20), eventType, entityType, action);
+        log.info("📝 Audit: [{}] {} - {} - {}", tracePrefix(traceId), eventType, entityType, action);
 
         return saved;
     }
