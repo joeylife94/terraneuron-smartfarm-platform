@@ -39,10 +39,18 @@ class InsightEventParserTest {
         assertTrue(result.isPresent());
         Insight insight = result.get();
         
+        assertEquals("trace-uuid-123", insight.getTraceId());
         assertEquals("farm-001", insight.getFarmId());
+        assertEquals("sensor-temp-01", insight.getAssetId());
+        assertEquals("sensor", insight.getAssetType());
+        assertEquals("temperature", insight.getSensorType());
         assertEquals("ANOMALY", insight.getStatus());
+        assertEquals("critical", insight.getSeverity());
+        assertEquals(42.5, insight.getRawValue());
+        assertEquals(0.95, insight.getConfidence());
         assertEquals("Temperature 42.5°C exceeds threshold", insight.getMessage());
         assertEquals("High temperature detected by sensor", insight.getLlmRecommendation());
+        assertEquals("Similar incidents on record", insight.getRagContext());
         assertNotNull(insight.getTimestamp());
     }
     
@@ -138,7 +146,11 @@ class InsightEventParserTest {
         Insight insight = result.get();
         
         assertEquals("farm-002", insight.getFarmId());
+        assertEquals("humidity", insight.getSensorType());
         assertEquals("NORMAL", insight.getStatus());
+        assertEquals("info", insight.getSeverity());
+        assertEquals(65.0, insight.getRawValue());
+        assertEquals(0.98, insight.getConfidence());
         assertEquals("Humidity within normal range", insight.getMessage());
     }
     

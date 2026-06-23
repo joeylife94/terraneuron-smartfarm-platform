@@ -23,9 +23,10 @@ class KafkaListenerFailurePropagationTest {
     void insightListenerPropagatesInvalidPayloadFailure() {
         InsightRepository repository = mock(InsightRepository.class);
         InsightEventParser parser = mock(InsightEventParser.class);
+        AuditService auditService = mock(AuditService.class);
         Map<String, Object> invalidEvent = Map.of("unexpected", "payload");
         when(parser.parse(invalidEvent)).thenReturn(Optional.empty());
-        KafkaConsumerService consumer = new KafkaConsumerService(repository, parser);
+        KafkaConsumerService consumer = new KafkaConsumerService(repository, parser, auditService);
 
         assertThatThrownBy(() -> consumer.consumeInsight(invalidEvent))
                 .isInstanceOf(IllegalStateException.class)
@@ -62,23 +63,64 @@ class KafkaListenerFailurePropagationTest {
     }
 
     @Test
-    void insightListenerStillPersistsValidPayload() {
+    void insightListenerPersistsValidPayloadAndAuditsDetection() {
         InsightRepository repository = mock(InsightRepository.class);
         InsightEventParser parser = mock(InsightEventParser.class);
+        AuditService auditService = mock(AuditService.class);
         Map<String, Object> event = Map.of("farmId", "farm-1", "status", "NORMAL");
         Insight insight = Insight.builder()
+                .traceId("trace-uuid-123")
                 .farmId("farm-1")
                 .status("NORMAL")
                 .message("All good")
                 .timestamp(Instant.now())
                 .build();
+        Insight savedInsight = Insight.builder()
+                .id(42L)
+                .traceId("trace-uuid-123")
+                .farmId("farm-1")
+                .status("NORMAL")
+                .message("All good")
+                .timestamp(insight.getTimestamp())
+                .build();
         when(parser.parse(event)).thenReturn(Optional.of(insight));
-        when(repository.save(insight)).thenReturn(insight);
-        KafkaConsumerService consumer = new KafkaConsumerService(repository, parser);
+        when(repository.save(insight)).thenReturn(savedInsight);
+        KafkaConsumerService consumer = new KafkaConsumerService(repository, parser, auditService);
 
         consumer.consumeInsight(event);
 
         verify(repository).save(insight);
+        verify(auditService).logInsightDetected(
+                "trace-uuid-123", "42", "farm-1", "NORMAL", "All good");
+    }
+
+    @Test
+    void insightListenerUsesPersistedIdWhenTraceIdIsMissing() {
+        InsightRepository repository = mock(InsightRepository.class);
+        InsightEventParser parser = mock(InsightEventParser.class);
+        AuditService auditService = mock(AuditService.class);
+        Map<String, Object> event = Map.of("farmId", "farm-1", "status", "NORMAL");
+        Insight insight = Insight.builder()
+                .farmId("farm-1")
+                .status("NORMAL")
+                .message("Legacy insight")
+                .timestamp(Instant.now())
+                .build();
+        Insight savedInsight = Insight.builder()
+                .id(42L)
+                .farmId("farm-1")
+                .status("NORMAL")
+                .message("Legacy insight")
+                .timestamp(insight.getTimestamp())
+                .build();
+        when(parser.parse(event)).thenReturn(Optional.of(insight));
+        when(repository.save(insight)).thenReturn(savedInsight);
+        KafkaConsumerService consumer = new KafkaConsumerService(repository, parser, auditService);
+
+        consumer.consumeInsight(event);
+
+        verify(auditService).logInsightDetected(
+                "insight-detected-id-42", "42", "farm-1", "NORMAL", "Legacy insight");
     }
 
     @SuppressWarnings("unchecked")

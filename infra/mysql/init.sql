@@ -28,17 +28,24 @@ CREATE TABLE IF NOT EXISTS sensors (
 
 -- AI 분석 결과 저장 테이블
 CREATE TABLE IF NOT EXISTS insights (
-    insight_id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    sensor_id BIGINT NOT NULL,
-    insight_type VARCHAR(50) NOT NULL,
-    severity VARCHAR(20),
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    trace_id VARCHAR(100),
+    farm_id VARCHAR(255) NOT NULL,
+    asset_id VARCHAR(100),
+    asset_type VARCHAR(50),
+    sensor_type VARCHAR(50),
+    status VARCHAR(50) NOT NULL,
+    severity VARCHAR(50),
     message TEXT,
-    confidence_score DECIMAL(5,2),
-    detected_at TIMESTAMP NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (sensor_id) REFERENCES sensors(sensor_id) ON DELETE CASCADE,
-    INDEX idx_detected_at (detected_at),
-    INDEX idx_sensor_severity (sensor_id, severity)
+    raw_value DOUBLE,
+    confidence DOUBLE,
+    llm_recommendation TEXT,
+    rag_context TEXT,
+    timestamp TIMESTAMP NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_farm_id (farm_id),
+    INDEX idx_status (status),
+    INDEX idx_timestamp (timestamp)
 );
 
 -- 알림 테이블
@@ -49,7 +56,7 @@ CREATE TABLE IF NOT EXISTS alerts (
     sent_at TIMESTAMP,
     acknowledged_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (insight_id) REFERENCES insights(insight_id) ON DELETE CASCADE
+    FOREIGN KEY (insight_id) REFERENCES insights(id) ON DELETE CASCADE
 );
 
 -- ============================================================

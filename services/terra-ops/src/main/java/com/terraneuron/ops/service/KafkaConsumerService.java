@@ -46,6 +46,7 @@ public class KafkaConsumerService {
 
     private final InsightRepository insightRepository;
     private final InsightEventParser insightEventParser;
+    private final AuditService auditService;
 
     /**
      * Kafka listener for processed-insights topic
@@ -73,6 +74,17 @@ public class KafkaConsumerService {
 
             // Save to database
             Insight saved = insightRepository.save(insight);
+            // Legacy events do not carry a trace ID. Keep their audit records queryable
+            // with a deterministic fallback tied to the newly persisted insight.
+            String auditTraceId = saved.getTraceId() != null && !saved.getTraceId().isBlank()
+                    ? saved.getTraceId()
+                    : "insight-detected-id-" + saved.getId();
+            auditService.logInsightDetected(
+                    auditTraceId,
+                    String.valueOf(saved.getId()),
+                    saved.getFarmId(),
+                    saved.getStatus(),
+                    saved.getMessage());
             log.info("✅ Insight saved to database: ID={}", saved.getId());
 
         } catch (Exception e) {
