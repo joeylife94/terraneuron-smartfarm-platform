@@ -82,9 +82,20 @@ jobs:
           flake8 src --count --select=E9,F63,F7,F82 --show-source --statistics
           
       - name: 🧪 Run Tests
+        shell: bash
         run: |
           cd services/terra-cortex
-          pytest --cov=src --cov-report=xml || echo "No tests found"
+          set +e
+          pytest --cov=src --cov-report=xml
+          test_status=$?
+          set -e
+
+          if [ "${test_status}" -eq 5 ]; then
+            echo "::warning::No terra-cortex tests were collected"
+            exit 0
+          fi
+
+          exit "${test_status}"
 
   # ========== Docker 이미지 빌드 & 푸시 ==========
   build-and-push-images:
@@ -123,8 +134,11 @@ jobs:
     name: E2E Integration Test
     needs: [build-java-services, build-python-service]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       JWT_SECRET: DEMO_ONLY_E2E_CI_JWT_SECRET_32_CHARS_MIN
+      E2E_POLL_TIMEOUT_SECONDS: '90'
+      E2E_POLL_INTERVAL_SECONDS: '2'
     
     steps:
       - name: 📥 Checkout Repository
@@ -165,6 +179,9 @@ jobs:
 
       - name: 📦 Install Test Dependencies
         run: pip install requests
+
+      - name: 🔎 Validate E2E Test Syntax
+        run: python -m py_compile tests/neural-flow-test.py
 
       - name: 🧪 Run E2E Tests
         run: python tests/neural-flow-test.py
