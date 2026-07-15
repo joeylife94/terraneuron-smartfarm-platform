@@ -15,6 +15,10 @@ services:
     environment:
       KAFKA_NUM_PARTITIONS: 3
 
+  mysql:
+    volumes:
+      - ./infra/mysql/command_outbox.sql:/docker-entrypoint-initdb.d/20-command-outbox.sql
+
   terra-gateway:
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-local-dev}

@@ -1,7 +1,5 @@
 package com.terraneuron.ops.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.terraneuron.ops.entity.ActionPlan;
 import com.terraneuron.ops.repository.ActionPlanRepository;
@@ -11,7 +9,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.kafka.annotation.KafkaListener;
-import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,7 +17,6 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.TimeUnit;
 
 /**
  * Action Plan Service
@@ -35,12 +31,9 @@ public class ActionPlanService {
     private final SafetyValidator safetyValidator;
     private final AuditService auditService;
     private final ObjectMapper objectMapper;
-    private final KafkaTemplate<String, Object> kafkaTemplate;
     private final ActionPlanEventValidator eventValidator;
     private final ContractSchemaValidator contractSchemaValidator;
-
-    private static final String COMMAND_TOPIC = "terra.control.command";
-    private static final long COMMAND_DISPATCH_TIMEOUT_SECONDS = 10;
+    private final CommandOutboxService commandOutboxService;
 
     /**
      * Kafka consumer for action-plans topic
@@ -165,7 +158,9 @@ public class ActionPlanService {
         log.info("✅ Plan approved: {} by {}", planId, approvedBy);
         auditService.logPlanApproved(plan, approvedBy, notes);
 
-        dispatchPlan(plan);
+        // The plan transition and command event are committed atomically in MySQL.
+        // Kafka publication is performed asynchronously by CommandOutboxPublisher.
+        commandOutboxService.enqueue(plan);
         return plan;
     }
 
@@ -185,78 +180,6 @@ public class ActionPlanService {
         log.info("❌ Plan rejected: {} by {} - Reason: {}", planId, rejectedBy, reason);
         auditService.logPlanRejected(plan, rejectedBy, reason);
         return plan;
-    }
-
-    /**
-     * Dispatch an approved plan to Kafka.
-     * Kafka acknowledgement proves transport acceptance, not physical execution.
-     */
-    @Transactional
-    public void dispatchPlan(ActionPlan plan) {
-        if (!plan.canBeDispatched()) {
-            log.warn("⚠️ Plan cannot be dispatched: {} (status={})", plan.getPlanId(), plan.getStatus());
-            return;
-        }
-
-        String commandId = "cmd-" + java.util.UUID.randomUUID();
-
-        try {
-            Map<String, Object> parameters = parseCommandParameters(plan.getParameters());
-
-            Map<String, Object> commandEvent = Map.of(
-                    "specversion", "1.0",
-                    "type", "terra.ops.command.execute",
-                    "source", "//terraneuron/terra-ops",
-                    "id", java.util.UUID.randomUUID().toString(),
-                    "time", Instant.now().toString(),
-                    "datacontenttype", "application/json",
-                    "data", Map.of(
-                            "trace_id", plan.getTraceId(),
-                            "plan_id", plan.getPlanId(),
-                            "command_id", commandId,
-                            "farm_id", plan.getFarmId(),
-                            "target_asset_id", plan.getTargetAssetId(),
-                            "action_type", plan.getActionType(),
-                            "parameters", parameters,
-                            "executed_by", plan.getApprovedBy()
-                    )
-            );
-
-            plan.setCommandId(commandId);
-            plan.setStatus(ActionPlan.PlanStatus.DISPATCHING);
-            plan.setExecutionResult("PUBLISHING_TO_KAFKA");
-            plan.setExecutionError(null);
-            plan.setDispatchedAt(null);
-            plan.setDeliveredAt(null);
-            plan.setAckDeadlineAt(null);
-            plan.setExecutedAt(null);
-            actionPlanRepository.save(plan);
-
-            kafkaTemplate.send(COMMAND_TOPIC, plan.getFarmId(), commandEvent)
-                    .get(COMMAND_DISPATCH_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-
-            plan.setStatus(ActionPlan.PlanStatus.DISPATCHED);
-            plan.setDispatchedAt(Instant.now());
-            plan.setExecutionResult("KAFKA_ACKNOWLEDGED");
-            actionPlanRepository.save(plan);
-
-            log.info("📤 Command dispatched: plan={} command={} asset={} action={}",
-                    plan.getPlanId(), commandId, plan.getTargetAssetId(), plan.getActionType());
-
-        } catch (Exception e) {
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-            }
-
-            String error = rootCauseMessage(e);
-            log.error("❌ Failed to dispatch plan {}: {}", plan.getPlanId(), error, e);
-            plan.setStatus(ActionPlan.PlanStatus.DISPATCH_FAILED);
-            plan.setExecutionResult("DISPATCH_FAILED");
-            plan.setExecutionError(error);
-            actionPlanRepository.save(plan);
-
-            auditService.logCommandExecuted(plan, false, null, error);
-        }
     }
 
     private void triggerSafetyAlert(ActionPlan plan, SafetyValidator.ValidationResult validationResult) {
@@ -341,28 +264,11 @@ public class ActionPlanService {
         );
     }
 
-    private Map<String, Object> parseCommandParameters(String parametersJson)
-            throws JsonProcessingException {
-        if (parametersJson == null || parametersJson.isBlank()) {
-            return Map.of();
-        }
-        return objectMapper.readValue(
-                parametersJson, new TypeReference<Map<String, Object>>() {});
-    }
-
     private Instant parseInstant(Object value) {
         if (value == null) return null;
         if (value instanceof String) {
             return Instant.parse((String) value);
         }
         return null;
-    }
-
-    private String rootCauseMessage(Exception exception) {
-        Throwable cause = exception;
-        while (cause.getCause() != null) {
-            cause = cause.getCause();
-        }
-        return cause.getMessage() != null ? cause.getMessage() : cause.getClass().getSimpleName();
     }
 }
