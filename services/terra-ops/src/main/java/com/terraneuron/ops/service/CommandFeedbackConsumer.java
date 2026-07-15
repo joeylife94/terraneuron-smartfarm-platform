@@ -2,33 +2,38 @@ package com.terraneuron.ops.service;
 
 import com.terraneuron.ops.entity.ActionPlan;
 import com.terraneuron.ops.repository.ActionPlanRepository;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.Map;
-import java.util.Optional;
 
 /**
- * 제어 명령 피드백 소비자
- *
- * 루프 완성:
- *   AI 분석 → 액션플랜 → 승인 → 명령 전송 → MQTT 디바이스 → 피드백 → 이 Consumer → DB 갱신
- *
- * Kafka 토픽: terra.control.feedback
- * 발신: terra-sense (DeviceCommandConsumer)
+ * Consumes transport and device feedback for a dispatched command.
+ * A plan reaches EXECUTED only when feedback is correlated to its persisted command ID.
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class CommandFeedbackConsumer {
 
     private final ActionPlanRepository actionPlanRepository;
     private final AuditService auditService;
     private final ContractSchemaValidator contractSchemaValidator;
+    private final long ackTimeoutSeconds;
+
+    public CommandFeedbackConsumer(
+            ActionPlanRepository actionPlanRepository,
+            AuditService auditService,
+            ContractSchemaValidator contractSchemaValidator,
+            @Value("${app.command.ack-timeout-seconds:120}") long ackTimeoutSeconds) {
+        this.actionPlanRepository = actionPlanRepository;
+        this.auditService = auditService;
+        this.contractSchemaValidator = contractSchemaValidator;
+        this.ackTimeoutSeconds = ackTimeoutSeconds;
+    }
 
     @KafkaListener(
             topics = "terra.control.feedback",
@@ -46,71 +51,131 @@ public class CommandFeedbackConsumer {
                 throw new IllegalArgumentException("Invalid command feedback event: missing data field");
             }
 
-            String traceId = (String) data.getOrDefault("trace_id", "");
-            String commandId = (String) data.getOrDefault("command_id", "");
-            String planId = (String) data.getOrDefault("plan_id", "");
-            String status = (String) data.getOrDefault("status", "UNKNOWN");
+            String traceId = requiredString(data, "trace_id");
+            String commandId = requiredString(data, "command_id");
+            String planId = requiredString(data, "plan_id");
+            String status = requiredString(data, "status");
             String error = (String) data.getOrDefault("error", "");
-            String farmId = (String) data.getOrDefault("farm_id", "");
-            String assetId = (String) data.getOrDefault("target_asset_id", "");
+            String farmId = requiredString(data, "farm_id");
+            String assetId = requiredString(data, "target_asset_id");
 
-            log.info("📥 명령 피드백 수신: plan={}, cmd={}, status={}", planId, commandId, status);
+            log.info("📥 Command feedback: plan={} command={} status={}", planId, commandId, status);
 
-            if (planId != null && !planId.isEmpty()) {
-                Optional<ActionPlan> optPlan = actionPlanRepository.findByPlanId(planId);
-                if (optPlan.isPresent()) {
-                    ActionPlan plan = optPlan.get();
-                    updatePlanFromFeedback(plan, status, error, commandId);
-                } else {
-                    log.warn("⚠️ 피드백 대상 플랜 없음: {}", planId);
-                }
-            }
+            ActionPlan plan = actionPlanRepository.findByCommandId(commandId)
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            "No action plan found for command_id=" + commandId));
 
-            // Only terminal device outcomes are recorded as execution audit events.
-            if ("EXECUTED".equals(status) || "FAILED".equals(status)) {
+            validateCorrelation(plan, planId, farmId, assetId);
+            boolean changed = updatePlanFromFeedback(plan, status, error);
+
+            if (changed && ("EXECUTED".equals(status) || "FAILED".equals(status))) {
                 auditService.logCommandFeedback(
                         traceId, commandId, planId, farmId, assetId, status, error);
             }
 
         } catch (Exception e) {
-            log.error("❌ 피드백 처리 실패: {}", e.getMessage(), e);
+            log.error("❌ Failed to process command feedback: {}", e.getMessage(), e);
             throw new IllegalStateException("Failed to process command feedback event", e);
         }
     }
 
-    private void updatePlanFromFeedback(ActionPlan plan, String status, String error, String commandId) {
+    private boolean updatePlanFromFeedback(ActionPlan plan, String status, String error) {
+        ActionPlan.PlanStatus current = plan.getStatus();
+        Instant now = Instant.now();
+
         switch (status) {
             case "DELIVERED":
-                // MQTT publish success proves delivery to the broker, not device execution.
-                plan.setStatus(ActionPlan.PlanStatus.DELIVERED);
-                plan.setExecutionResult("MQTT_PUBLISH_CONFIRMED:" + commandId);
-                plan.setExecutionError(null);
-                log.info("   📡 MQTT 전달 확인: plan={} cmd={}", plan.getPlanId(), commandId);
-                break;
+                if (current == ActionPlan.PlanStatus.DISPATCHED) {
+                    plan.setStatus(ActionPlan.PlanStatus.DELIVERED);
+                    plan.setDeliveredAt(now);
+                    plan.setAckDeadlineAt(now.plusSeconds(ackTimeoutSeconds));
+                    plan.setExecutionResult("MQTT_PUBLISH_CONFIRMED");
+                    plan.setExecutionError(null);
+                    actionPlanRepository.save(plan);
+                    log.info("   📡 MQTT delivery confirmed: plan={} command={} deadline={}",
+                            plan.getPlanId(), plan.getCommandId(), plan.getAckDeadlineAt());
+                    return true;
+                }
+                if (current == ActionPlan.PlanStatus.DELIVERED || current == ActionPlan.PlanStatus.EXECUTED) {
+                    log.info("   ℹ️ Ignoring duplicate or late DELIVERED feedback: plan={} status={}",
+                            plan.getPlanId(), current);
+                    return false;
+                }
+                throw invalidTransition(plan, status);
 
             case "EXECUTED":
-                // This feedback must originate from an actual device-confirmed completion path.
-                plan.setStatus(ActionPlan.PlanStatus.EXECUTED);
-                plan.setExecutedAt(Instant.now());
-                plan.setExecutionResult("DEVICE_CONFIRMED:" + commandId);
-                plan.setExecutionError(null);
-                log.info("   ✅ 디바이스 실행 확인: plan={} cmd={}", plan.getPlanId(), commandId);
-                break;
+                if (current == ActionPlan.PlanStatus.DISPATCHED
+                        || current == ActionPlan.PlanStatus.DELIVERED
+                        || current == ActionPlan.PlanStatus.ACK_TIMEOUT) {
+                    boolean late = current == ActionPlan.PlanStatus.ACK_TIMEOUT;
+                    plan.setStatus(ActionPlan.PlanStatus.EXECUTED);
+                    plan.setExecutedAt(now);
+                    plan.setAckDeadlineAt(null);
+                    plan.setExecutionResult(late ? "DEVICE_CONFIRMED_LATE" : "DEVICE_CONFIRMED");
+                    plan.setExecutionError(null);
+                    actionPlanRepository.save(plan);
+                    log.info("   ✅ Device execution confirmed: plan={} command={} late={}",
+                            plan.getPlanId(), plan.getCommandId(), late);
+                    return true;
+                }
+                if (current == ActionPlan.PlanStatus.EXECUTED) {
+                    log.info("   ℹ️ Ignoring duplicate EXECUTED feedback: plan={}", plan.getPlanId());
+                    return false;
+                }
+                throw invalidTransition(plan, status);
 
             case "FAILED":
-                // The current terra-sense bridge emits FAILED only when MQTT publication fails.
-                plan.setStatus(ActionPlan.PlanStatus.DELIVERY_FAILED);
-                plan.setExecutionResult("MQTT_DELIVERY_FAILED:" + commandId);
+                if (current == ActionPlan.PlanStatus.DISPATCHED) {
+                    plan.setStatus(ActionPlan.PlanStatus.DELIVERY_FAILED);
+                    plan.setExecutionResult("MQTT_DELIVERY_FAILED");
+                } else if (current == ActionPlan.PlanStatus.DELIVERED
+                        || current == ActionPlan.PlanStatus.ACK_TIMEOUT) {
+                    plan.setStatus(ActionPlan.PlanStatus.EXECUTION_FAILED);
+                    plan.setExecutionResult("DEVICE_EXECUTION_FAILED");
+                    plan.setAckDeadlineAt(null);
+                } else if (current == ActionPlan.PlanStatus.DELIVERY_FAILED
+                        || current == ActionPlan.PlanStatus.EXECUTION_FAILED) {
+                    log.info("   ℹ️ Ignoring duplicate FAILED feedback: plan={} status={}",
+                            plan.getPlanId(), current);
+                    return false;
+                } else {
+                    throw invalidTransition(plan, status);
+                }
+
                 plan.setExecutionError(error);
-                log.warn("   ❌ 명령 전달 실패: plan={} cmd={} error={}",
-                        plan.getPlanId(), commandId, error);
-                break;
+                actionPlanRepository.save(plan);
+                log.warn("   ❌ Command failure: plan={} command={} state={} error={}",
+                        plan.getPlanId(), plan.getCommandId(), plan.getStatus(), error);
+                return true;
 
             default:
-                plan.setExecutionResult("FEEDBACK:" + status + ":" + commandId);
-                log.info("   ℹ️ 피드백: {} → {}", plan.getPlanId(), status);
+                throw new IllegalArgumentException("Unsupported feedback status: " + status);
         }
+    }
 
-        actionPlanRepository.save(plan);
+    private void validateCorrelation(ActionPlan plan, String planId, String farmId, String assetId) {
+        if (!plan.getPlanId().equals(planId)) {
+            throw new IllegalArgumentException("Feedback plan_id does not match command owner");
+        }
+        if (!plan.getFarmId().equals(farmId)) {
+            throw new IllegalArgumentException("Feedback farm_id does not match command owner");
+        }
+        if (!plan.getTargetAssetId().equals(assetId)) {
+            throw new IllegalArgumentException("Feedback target_asset_id does not match command owner");
+        }
+    }
+
+    private String requiredString(Map<String, Object> data, String field) {
+        Object value = data.get(field);
+        if (!(value instanceof String text) || text.isBlank()) {
+            throw new IllegalArgumentException("Invalid command feedback event: missing " + field);
+        }
+        return text;
+    }
+
+    private IllegalStateException invalidTransition(ActionPlan plan, String feedbackStatus) {
+        return new IllegalStateException(
+                "Cannot apply " + feedbackStatus + " feedback to plan " + plan.getPlanId()
+                        + " in status " + plan.getStatus());
     }
 }
