@@ -118,7 +118,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [terra-sense, terra-cortex, terra-ops]
+        include:
+          - service: terra-sense
+            context: .
+            dockerfile: ./services/terra-sense/Dockerfile
+          - service: terra-cortex
+            context: ./services/terra-cortex
+            dockerfile: ./services/terra-cortex/Dockerfile
+          - service: terra-ops
+            context: .
+            dockerfile: ./services/terra-ops/Dockerfile
     
     steps:
       - name: 📥 Checkout Repository
@@ -134,8 +143,8 @@ jobs:
       - name: 🏗️ Build and Push Docker Image
         uses: docker/build-push-action@v5
         with:
-          context: ./services/${{ matrix.service }}
-          file: ./services/${{ matrix.service }}/Dockerfile
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
           push: true
           tags: |
             ${{ env.DOCKER_REGISTRY }}/${{ github.repository_owner }}/terraneuron-${{ matrix.service }}:latest
