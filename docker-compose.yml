@@ -8,7 +8,7 @@ services:
     container_name: terraneuron-redis
     ports:
       - "6379:6379"
-    command: redis-server --requirepass terra2025
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-terra2025}"]
     networks:
       - terraneuron-net
 
@@ -47,7 +47,7 @@ services:
     container_name: terraneuron-mysql
     environment:
       MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: terra_db
+      MYSQL_DATABASE: terra_ops
       MYSQL_USER: terra
       MYSQL_PASSWORD: terra2025
     ports:
@@ -126,7 +126,7 @@ services:
     image: danielqsj/kafka-exporter:latest
     container_name: terraneuron-kafka-exporter
     command:
-      - '--kafka.server=kafka:29092'
+      - '--kafka.server=kafka:9092'
     ports:
       - "9308:9308"
     depends_on:
@@ -138,7 +138,7 @@ services:
     image: prom/mysqld-exporter:latest
     container_name: terraneuron-mysql-exporter
     environment:
-      DATA_SOURCE_NAME: "terra:terra2025@(mysql:3306)/terra_db"
+      DATA_SOURCE_NAME: "terra:terra2025@(mysql:3306)/terra_ops"
     ports:
       - "9104:9104"
     depends_on:
@@ -161,6 +161,7 @@ services:
     environment:
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      REDIS_PASSWORD: "${REDIS_PASSWORD:-terra2025}"
       CORS_ALLOWED_ORIGINS: "${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:3001}"
     ports:
       - "8000:8000"
@@ -245,7 +246,7 @@ services:
       - mysql
     environment:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/terra_db
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/terra_ops
       SPRING_DATASOURCE_USERNAME: terra
       SPRING_DATASOURCE_PASSWORD: terra2025
       JWT_SECRET: "${JWT_SECRET:?JWT_SECRET is required. Copy .env.example to .env and set a local demo secret.}"
