@@ -1,0 +1,11 @@
+.git
+.github
+**/.gradle
+**/build
+**/node_modules
+**/__pycache__
+**/.pytest_cache
+**/.coverage
+**/coverage.xml
+**/*.log
+.env
