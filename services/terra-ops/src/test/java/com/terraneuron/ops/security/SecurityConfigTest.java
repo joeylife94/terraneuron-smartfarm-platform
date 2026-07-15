@@ -21,11 +21,11 @@ import java.time.Instant;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.blankOrNullString;
+import static org.hamcrest.Matchers.not;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -82,7 +82,7 @@ class SecurityConfigTest {
                         .header(HttpHeaders.AUTHORIZATION, bearer(viewerToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"approvedBy":"viewer","notes":"attempt"}
+                                {"approvedBy":"admin","notes":"attempt"}
                                 """))
                 .andExpect(status().isForbidden());
 
@@ -90,34 +90,81 @@ class SecurityConfigTest {
                         .header(HttpHeaders.AUTHORIZATION, bearer(viewerToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"rejectedBy":"viewer","reason":"attempt"}
+                                {"rejectedBy":"admin","reason":"attempt"}
                                 """))
                 .andExpect(status().isForbidden());
     }
 
     @Test
-    void operatorCanApproveAndRejectActions() throws Exception {
+    void operatorIdentityComesFromJwtInsteadOfRequestBody() throws Exception {
         String operatorToken = login("operator", "operator123");
-        when(actionPlanService.approvePlan(eq("plan-1"), anyString(), any()))
-                .thenReturn(actionPlan("plan-1"));
-        when(actionPlanService.rejectPlan(eq("plan-1"), anyString(), anyString()))
-                .thenReturn(actionPlan("plan-1"));
+        when(actionPlanService.approvePlan(eq("plan-1"), eq("operator"), eq("ok")))
+                .thenReturn(actionPlan("plan-1", ActionPlan.PlanStatus.EXECUTED));
+        when(actionPlanService.rejectPlan(eq("plan-2"), eq("operator"), eq("not needed")))
+                .thenReturn(actionPlan("plan-2", ActionPlan.PlanStatus.REJECTED));
 
         mockMvc.perform(post("/api/actions/plan-1/approve")
                         .header(HttpHeaders.AUTHORIZATION, bearer(operatorToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"approvedBy":"operator","notes":"ok"}
+                                {"approvedBy":"admin","notes":"ok"}
                                 """))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("executed"))
+                .andExpect(jsonPath("$.planStatus").value("EXECUTED"));
 
-        mockMvc.perform(post("/api/actions/plan-1/reject")
+        mockMvc.perform(post("/api/actions/plan-2/reject")
                         .header(HttpHeaders.AUTHORIZATION, bearer(operatorToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"rejectedBy":"operator","reason":"not needed"}
+                                {"rejectedBy":"admin","reason":"not needed"}
                                 """))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("rejected"))
+                .andExpect(jsonPath("$.planStatus").value("REJECTED"));
+
+        verify(actionPlanService).approvePlan("plan-1", "operator", "ok");
+        verify(actionPlanService).rejectPlan("plan-2", "operator", "not needed");
+    }
+
+    @Test
+    void safetyRejectedApprovalIsNotReportedAsSuccess() throws Exception {
+        String operatorToken = login("operator", "operator123");
+        ActionPlan rejected = actionPlan("plan-safety", ActionPlan.PlanStatus.REJECTED);
+        rejected.setRejectionReason("Safety validation failed at logical layer");
+        when(actionPlanService.approvePlan(eq("plan-safety"), eq("operator"), any()))
+                .thenReturn(rejected);
+
+        mockMvc.perform(post("/api/actions/plan-safety/approve")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(operatorToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"notes":"approve if safe"}
+                                """))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.status").value("rejected"))
+                .andExpect(jsonPath("$.planStatus").value("REJECTED"))
+                .andExpect(jsonPath("$.reason").value("Safety validation failed at logical layer"));
+    }
+
+    @Test
+    void executionFailureIsNotReportedAsSuccess() throws Exception {
+        String operatorToken = login("operator", "operator123");
+        ActionPlan failed = actionPlan("plan-failed", ActionPlan.PlanStatus.FAILED);
+        failed.setExecutionError("Kafka unavailable");
+        when(actionPlanService.approvePlan(eq("plan-failed"), eq("operator"), any()))
+                .thenReturn(failed);
+
+        mockMvc.perform(post("/api/actions/plan-failed/approve")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(operatorToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"notes":"approve"}
+                                """))
+                .andExpect(status().isBadGateway())
+                .andExpect(jsonPath("$.status").value("failed"))
+                .andExpect(jsonPath("$.planStatus").value("FAILED"))
+                .andExpect(jsonPath("$.error").value("Kafka unavailable"));
     }
 
     @Test
@@ -150,7 +197,7 @@ class SecurityConfigTest {
         return "Bearer " + token;
     }
 
-    private static ActionPlan actionPlan(String planId) {
+    private static ActionPlan actionPlan(String planId, ActionPlan.PlanStatus status) {
         return ActionPlan.builder()
                 .planId(planId)
                 .traceId("trace-1")
@@ -158,7 +205,7 @@ class SecurityConfigTest {
                 .targetAssetId("device-1")
                 .actionCategory("irrigation")
                 .actionType("turn_on")
-                .status(ActionPlan.PlanStatus.PENDING)
+                .status(status)
                 .priority(ActionPlan.ActionPriority.MEDIUM)
                 .generatedAt(Instant.now())
                 .build();

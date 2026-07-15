@@ -12,10 +12,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.security.Principal;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -36,7 +39,7 @@ public class ActionController {
     // ========== Pending Plans Endpoints ==========
 
     @GetMapping("/pending")
-    @Operation(summary = "Get all pending action plans", 
+    @Operation(summary = "Get all pending action plans",
                description = "Returns all action plans awaiting human approval, ordered by priority")
     public ResponseEntity<List<ActionPlan>> getPendingPlans() {
         log.info("📋 GET /api/actions/pending");
@@ -79,26 +82,24 @@ public class ActionController {
     // ========== Approval/Rejection Endpoints ==========
 
     @PostMapping("/{planId}/approve")
-    @Operation(summary = "Approve an action plan", 
-               description = "Approves the plan and triggers execution after 4-layer safety validation")
+    @Operation(summary = "Approve an action plan",
+               description = "Approves the plan and runs configured safety validation before execution")
     public ResponseEntity<?> approvePlan(
             @Parameter(description = "Plan ID") @PathVariable String planId,
-            @RequestBody ApprovalRequest request) {
-        log.info("✅ POST /api/actions/{}/approve by {}", planId, request.getApprovedBy());
-        
+            @RequestBody ApprovalRequest request,
+            Principal principal) {
+        String actor = principal.getName();
+        log.info("✅ POST /api/actions/{}/approve by {}", planId, actor);
+
         try {
             ActionPlan approvedPlan = actionPlanService.approvePlan(
-                    planId, 
-                    request.getApprovedBy(), 
+                    planId,
+                    actor,
                     request.getNotes()
             );
-            
-            return ResponseEntity.ok(Map.of(
-                    "status", "success",
-                    "message", "Plan approved and executed",
-                    "plan", approvedPlan
-            ));
-            
+
+            return approvalResponse(approvedPlan);
+
         } catch (IllegalArgumentException e) {
             return ResponseEntity.notFound().build();
         } catch (IllegalStateException e) {
@@ -113,22 +114,25 @@ public class ActionController {
     @Operation(summary = "Reject an action plan")
     public ResponseEntity<?> rejectPlan(
             @Parameter(description = "Plan ID") @PathVariable String planId,
-            @RequestBody RejectionRequest request) {
-        log.info("❌ POST /api/actions/{}/reject by {}", planId, request.getRejectedBy());
-        
+            @RequestBody RejectionRequest request,
+            Principal principal) {
+        String actor = principal.getName();
+        log.info("❌ POST /api/actions/{}/reject by {}", planId, actor);
+
         try {
             ActionPlan rejectedPlan = actionPlanService.rejectPlan(
-                    planId, 
-                    request.getRejectedBy(), 
+                    planId,
+                    actor,
                     request.getReason()
             );
-            
+
             return ResponseEntity.ok(Map.of(
-                    "status", "success",
+                    "status", "rejected",
                     "message", "Plan rejected",
+                    "planStatus", rejectedPlan.getStatus().name(),
                     "plan", rejectedPlan
             ));
-            
+
         } catch (IllegalArgumentException e) {
             return ResponseEntity.notFound().build();
         } catch (IllegalStateException e) {
@@ -137,6 +141,42 @@ public class ActionController {
                     "message", e.getMessage()
             ));
         }
+    }
+
+    private ResponseEntity<?> approvalResponse(ActionPlan plan) {
+        String planStatus = plan.getStatus().name();
+        String responseStatus = planStatus.toLowerCase(Locale.ROOT);
+
+        if (plan.getStatus() == ActionPlan.PlanStatus.REJECTED) {
+            return ResponseEntity.unprocessableEntity().body(Map.of(
+                    "status", responseStatus,
+                    "message", "Plan rejected by safety validation",
+                    "planStatus", planStatus,
+                    "reason", defaultIfBlank(plan.getRejectionReason(), "Safety validation rejected the plan"),
+                    "plan", plan
+            ));
+        }
+
+        if (plan.getStatus() == ActionPlan.PlanStatus.FAILED) {
+            return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of(
+                    "status", responseStatus,
+                    "message", "Plan approval completed but execution failed",
+                    "planStatus", planStatus,
+                    "error", defaultIfBlank(plan.getExecutionError(), "Execution failed without an error message"),
+                    "plan", plan
+            ));
+        }
+
+        return ResponseEntity.ok(Map.of(
+                "status", responseStatus,
+                "message", "Plan approval completed",
+                "planStatus", planStatus,
+                "plan", plan
+        ));
+    }
+
+    private String defaultIfBlank(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value;
     }
 
     // ========== Statistics Endpoint ==========
@@ -160,7 +200,7 @@ public class ActionController {
     }
 
     @GetMapping("/audit/trace/{traceId}")
-    @Operation(summary = "Get complete audit trail by trace ID", 
+    @Operation(summary = "Get complete audit trail by trace ID",
                description = "Returns all audit events for a distributed trace")
     public ResponseEntity<List<AuditLog>> getAuditTrailByTrace(
             @Parameter(description = "Trace ID for distributed tracing") @PathVariable String traceId) {
@@ -173,13 +213,11 @@ public class ActionController {
 
     @lombok.Data
     public static class ApprovalRequest {
-        private String approvedBy;
         private String notes;
     }
 
     @lombok.Data
     public static class RejectionRequest {
-        private String rejectedBy;
         private String reason;
     }
 }
