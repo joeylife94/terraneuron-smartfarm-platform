@@ -86,8 +86,9 @@ jobs:
         run: |
           cd services/terra-cortex
           set +e
-          pytest --cov=src --cov-report=xml
-          test_status=$?
+          set -o pipefail
+          pytest --cov=src --cov-report=xml --junitxml=pytest-results.xml 2>&1 | tee pytest-output.log
+          test_status=${PIPESTATUS[0]}
           set -e
 
           if [ "${test_status}" -eq 5 ]; then
@@ -96,6 +97,17 @@ jobs:
           fi
 
           exit "${test_status}"
+
+      - name: 📊 Upload Python Test Diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-terra-cortex
+          if-no-files-found: error
+          path: |
+            services/terra-cortex/pytest-output.log
+            services/terra-cortex/pytest-results.xml
+            services/terra-cortex/coverage.xml
 
   # ========== Docker 이미지 빌드 & 푸시 ==========
   build-and-push-images:
