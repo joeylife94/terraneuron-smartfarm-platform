@@ -41,7 +41,13 @@ jobs:
         
       - name: 🏗️ Build with Gradle
         working-directory: services/${{ matrix.service }}
-        run: gradle build --no-daemon
+        shell: bash
+        run: |
+          set +e
+          gradle build --no-daemon --console=plain > gradle-build.log 2>&1
+          status=$?
+          cat gradle-build.log
+          exit "${status}"
           
       - name: 🧪 Run Tests
         working-directory: services/${{ matrix.service }}
@@ -52,7 +58,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-results-${{ matrix.service }}
-          path: services/${{ matrix.service }}/build/test-results/
+          if-no-files-found: warn
+          path: |
+            services/${{ matrix.service }}/build/test-results/
+            services/${{ matrix.service }}/gradle-build.log
 
   # ========== Python 서비스 빌드 & 테스트 ==========
   build-python-service:
