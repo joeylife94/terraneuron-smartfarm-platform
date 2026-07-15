@@ -49,7 +49,7 @@ class DeviceCommandConsumerTest {
 
     @Test
     void consumesObjectParametersAndPublishesContractFeedback() {
-        stubNewCommandAndFeedback();
+        stubPublishableCommandAndFeedback();
         Map<String, Object> commandEvent = commandEvent(Map.of(
                 "duration_minutes", 30,
                 "speed_level", "high"));
@@ -58,6 +58,7 @@ class DeviceCommandConsumerTest {
 
         ArgumentCaptor<DeviceCommand> commandCaptor = ArgumentCaptor.forClass(DeviceCommand.class);
         verify(mqttGateway).publishCommand(commandCaptor.capture());
+        verify(commandRegistry).markPublished("cmd-1a2b3c4d");
         assertThat(commandCaptor.getValue().getFarmId()).isEqualTo("farm-001");
         assertThat(commandCaptor.getValue().getParameters()).containsEntry("duration_minutes", 30);
 
@@ -83,7 +84,7 @@ class DeviceCommandConsumerTest {
 
     @Test
     void continuesToAcceptLegacyJsonStringParameters() {
-        stubNewCommandAndFeedback();
+        stubPublishableCommandAndFeedback();
 
         consumer.onCommand(commandEvent("{\"duration_minutes\":15}"));
 
@@ -94,17 +95,33 @@ class DeviceCommandConsumerTest {
     }
 
     @Test
-    void pendingDuplicateReplaysFeedbackWithoutRepublishingMqttCommand() {
+    void publishedDuplicateReplaysFeedbackWithoutRepublishingMqttCommand() {
         when(commandRegistry.register(any(DeviceCommand.class)))
                 .thenReturn(new CommandRegistry.Registration(
-                        CommandRegistry.RegistrationState.PENDING));
+                        CommandRegistry.RegistrationState.PUBLISHED));
         stubFeedbackSuccess();
 
         consumer.onCommand(commandEvent(Map.of("duration_minutes", 30)));
 
         verify(mqttGateway, never()).publishCommand(any(DeviceCommand.class));
+        verify(commandRegistry, never()).markPublished("cmd-1a2b3c4d");
         verify(kafkaTemplate).send(
                 eq("terra.control.feedback"), eq("farm-001"), any());
+    }
+
+    @Test
+    void activePublishLeaseDoesNotClaimFalseDelivery() {
+        when(commandRegistry.register(any(DeviceCommand.class)))
+                .thenReturn(new CommandRegistry.Registration(
+                        CommandRegistry.RegistrationState.PUBLISH_IN_PROGRESS));
+
+        assertThatThrownBy(() -> consumer.onCommand(
+                commandEvent(Map.of("duration_minutes", 30))))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("publish lease");
+
+        verify(mqttGateway, never()).publishCommand(any(DeviceCommand.class));
+        verifyNoInteractions(kafkaTemplate);
     }
 
     @Test
@@ -132,10 +149,10 @@ class DeviceCommandConsumerTest {
         verifyNoInteractions(mqttGateway, kafkaTemplate, commandRegistry);
     }
 
-    private void stubNewCommandAndFeedback() {
+    private void stubPublishableCommandAndFeedback() {
         when(commandRegistry.register(any(DeviceCommand.class)))
                 .thenReturn(new CommandRegistry.Registration(
-                        CommandRegistry.RegistrationState.NEW));
+                        CommandRegistry.RegistrationState.SHOULD_PUBLISH));
         stubFeedbackSuccess();
     }
 
