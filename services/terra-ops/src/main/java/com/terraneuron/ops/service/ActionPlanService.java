@@ -20,6 +20,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Action Plan Service
@@ -39,6 +40,7 @@ public class ActionPlanService {
     private final ContractSchemaValidator contractSchemaValidator;
 
     private static final String COMMAND_TOPIC = "terra.control.command";
+    private static final long COMMAND_DISPATCH_TIMEOUT_SECONDS = 10;
 
     /**
      * Kafka consumer for action-plans topic
@@ -52,7 +54,6 @@ public class ActionPlanService {
 
             contractSchemaValidator.validate(
                     ContractSchemaValidator.ACTION_PLAN_SCHEMA, planEvent);
-
             // Validate CloudEvents v1.0 envelope
             Optional<Map<String, Object>> validatedData = eventValidator.validate(planEvent);
             if (validatedData.isEmpty()) {
@@ -201,8 +202,8 @@ public class ActionPlanService {
         log.info("✅ Plan approved: {} by {}", planId, approvedBy);
         auditService.logPlanApproved(plan, approvedBy, notes);
 
-        // Execute the approved plan
-        executePlan(plan);
+        // Dispatch the approved plan. Device execution is confirmed only by feedback.
+        dispatchPlan(plan);
 
         return plan;
     }
@@ -230,19 +231,23 @@ public class ActionPlanService {
     }
 
     /**
-     * Execute an approved plan by sending command to control topic
+     * Dispatch an approved plan to Kafka.
+     *
+     * Kafka acknowledgement proves only that the command was accepted by the transport.
+     * It must never be treated as physical device execution.
      */
     @Transactional
-    public void executePlan(ActionPlan plan) {
-        if (!plan.canBeExecuted()) {
-            log.warn("⚠️ Plan cannot be executed: {}", plan.getPlanId());
+    public void dispatchPlan(ActionPlan plan) {
+        if (!plan.canBeDispatched()) {
+            log.warn("⚠️ Plan cannot be dispatched: {} (status={})", plan.getPlanId(), plan.getStatus());
             return;
         }
+
+        String commandId = "cmd-" + java.util.UUID.randomUUID().toString().substring(0, 8);
 
         try {
             Map<String, Object> parameters = parseCommandParameters(plan.getParameters());
 
-            // Build command event
             Map<String, Object> commandEvent = Map.of(
                     "specversion", "1.0",
                     "type", "terra.ops.command.execute",
@@ -253,7 +258,7 @@ public class ActionPlanService {
                     "data", Map.of(
                             "trace_id", plan.getTraceId(),
                             "plan_id", plan.getPlanId(),
-                            "command_id", "cmd-" + java.util.UUID.randomUUID().toString().substring(0, 8),
+                            "command_id", commandId,
                             "farm_id", plan.getFarmId(),
                             "target_asset_id", plan.getTargetAssetId(),
                             "action_type", plan.getActionType(),
@@ -262,25 +267,34 @@ public class ActionPlanService {
                     )
             );
 
-            // Send to control topic
-            kafkaTemplate.send(COMMAND_TOPIC, plan.getFarmId(), commandEvent);
-            
-            // Update plan status
-            plan.setStatus(ActionPlan.PlanStatus.EXECUTED);
-            plan.setExecutedAt(Instant.now());
-            plan.setExecutionResult("SENT_TO_DEVICE");
+            plan.setStatus(ActionPlan.PlanStatus.DISPATCHING);
+            plan.setExecutionResult("PUBLISHING_TO_KAFKA:" + commandId);
+            plan.setExecutionError(null);
             actionPlanRepository.save(plan);
 
-            log.info("📤 Command sent: {} -> {} ({})", plan.getPlanId(), plan.getTargetAssetId(), plan.getActionType());
-            auditService.logCommandExecuted(plan, true, "SENT_TO_DEVICE", null);
+            kafkaTemplate.send(COMMAND_TOPIC, plan.getFarmId(), commandEvent)
+                    .get(COMMAND_DISPATCH_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+            plan.setStatus(ActionPlan.PlanStatus.DISPATCHED);
+            plan.setExecutionResult("KAFKA_ACKNOWLEDGED:" + commandId);
+            actionPlanRepository.save(plan);
+
+            log.info("📤 Command dispatched: plan={} command={} asset={} action={}",
+                    plan.getPlanId(), commandId, plan.getTargetAssetId(), plan.getActionType());
 
         } catch (Exception e) {
-            log.error("❌ Failed to execute plan {}: {}", plan.getPlanId(), e.getMessage());
-            plan.setStatus(ActionPlan.PlanStatus.FAILED);
-            plan.setExecutionError(e.getMessage());
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+
+            String error = rootCauseMessage(e);
+            log.error("❌ Failed to dispatch plan {}: {}", plan.getPlanId(), error, e);
+            plan.setStatus(ActionPlan.PlanStatus.DISPATCH_FAILED);
+            plan.setExecutionResult("DISPATCH_FAILED:" + commandId);
+            plan.setExecutionError(error);
             actionPlanRepository.save(plan);
-            
-            auditService.logCommandExecuted(plan, false, null, e.getMessage());
+
+            auditService.logCommandExecuted(plan, false, null, error);
         }
     }
 
@@ -290,7 +304,7 @@ public class ActionPlanService {
     private void triggerSafetyAlert(ActionPlan plan, SafetyValidator.ValidationResult validationResult) {
         try {
             String alertId = "alert-" + java.util.UUID.randomUUID().toString().substring(0, 8);
-            
+
             auditService.logAlertTriggered(
                     plan.getTraceId(),
                     alertId,
@@ -299,9 +313,9 @@ public class ActionPlanService {
                     "Safety validation failed for action plan. Manual intervention required. " +
                             "Failed layer: " + validationResult.getFailedLayer()
             );
-            
+
             log.info("🚨 Safety alert triggered for plan: {}", plan.getPlanId());
-            
+
         } catch (Exception e) {
             log.error("Failed to trigger safety alert: {}", e.getMessage());
         }
@@ -314,7 +328,7 @@ public class ActionPlanService {
     @Transactional
     public void expireOldPlans() {
         Instant now = Instant.now();
-        
+
         // Expire pending plans
         List<ActionPlan> expiredPending = actionPlanRepository.findExpiredPendingPlans(now);
         for (ActionPlan plan : expiredPending) {
@@ -323,12 +337,12 @@ public class ActionPlanService {
             log.info("⏰ Plan expired: {}", plan.getPlanId());
         }
 
-        // Expire approved but not executed plans
+        // Expire approved but not dispatched plans
         List<ActionPlan> expiredApproved = actionPlanRepository.findExpiredApprovedPlans(now);
         for (ActionPlan plan : expiredApproved) {
             plan.setStatus(ActionPlan.PlanStatus.EXPIRED);
             actionPlanRepository.save(plan);
-            log.info("⏰ Approved plan expired without execution: {}", plan.getPlanId());
+            log.info("⏰ Approved plan expired without dispatch: {}", plan.getPlanId());
         }
     }
 
@@ -336,12 +350,21 @@ public class ActionPlanService {
      * Get plan statistics
      */
     public Map<String, Long> getPlanStatistics() {
+        long inFlight = actionPlanRepository.countByStatus(ActionPlan.PlanStatus.DISPATCHING)
+                + actionPlanRepository.countByStatus(ActionPlan.PlanStatus.DISPATCHED)
+                + actionPlanRepository.countByStatus(ActionPlan.PlanStatus.DELIVERED);
+        long failed = actionPlanRepository.countByStatus(ActionPlan.PlanStatus.DISPATCH_FAILED)
+                + actionPlanRepository.countByStatus(ActionPlan.PlanStatus.DELIVERY_FAILED)
+                + actionPlanRepository.countByStatus(ActionPlan.PlanStatus.EXECUTION_FAILED)
+                + actionPlanRepository.countByStatus(ActionPlan.PlanStatus.FAILED);
+
         return Map.of(
                 "pending", actionPlanRepository.countByStatus(ActionPlan.PlanStatus.PENDING),
                 "approved", actionPlanRepository.countByStatus(ActionPlan.PlanStatus.APPROVED),
+                "in_flight", inFlight,
                 "rejected", actionPlanRepository.countByStatus(ActionPlan.PlanStatus.REJECTED),
                 "executed", actionPlanRepository.countByStatus(ActionPlan.PlanStatus.EXECUTED),
-                "failed", actionPlanRepository.countByStatus(ActionPlan.PlanStatus.FAILED),
+                "failed", failed,
                 "expired", actionPlanRepository.countByStatus(ActionPlan.PlanStatus.EXPIRED),
                 "pending_critical", actionPlanRepository.countPendingByPriority(ActionPlan.ActionPriority.CRITICAL),
                 "pending_high", actionPlanRepository.countPendingByPriority(ActionPlan.ActionPriority.HIGH)
@@ -365,5 +388,13 @@ public class ActionPlanService {
             return Instant.parse((String) value);
         }
         return null;
+    }
+
+    private String rootCauseMessage(Exception exception) {
+        Throwable cause = exception;
+        while (cause.getCause() != null) {
+            cause = cause.getCause();
+        }
+        return cause.getMessage() != null ? cause.getMessage() : cause.getClass().getSimpleName();
     }
 }
