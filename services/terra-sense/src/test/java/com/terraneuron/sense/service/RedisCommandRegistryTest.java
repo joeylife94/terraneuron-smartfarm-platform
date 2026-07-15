@@ -19,6 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -44,8 +45,8 @@ class RedisCommandRegistryTest {
     @BeforeEach
     void setUp() {
         objectMapper = new ObjectMapper().findAndRegisterModules();
-        when(redisTemplate.opsForValue()).thenReturn(values);
-        when(redisTemplate.opsForSet()).thenReturn(sets);
+        lenient().when(redisTemplate.opsForValue()).thenReturn(values);
+        lenient().when(redisTemplate.opsForSet()).thenReturn(sets);
         registry = new RedisCommandRegistry(redisTemplate, objectMapper, 3600, 7200, 30);
     }
 
