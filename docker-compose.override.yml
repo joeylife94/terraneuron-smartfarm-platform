@@ -1,14 +1,39 @@
 services:
+  redis:
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+      - --requirepass
+      - ${REDIS_PASSWORD:-local-dev}
+    volumes:
+      - redis-data:/data
+
   kafka:
     environment:
       KAFKA_NUM_PARTITIONS: 3
+
+  terra-gateway:
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-local-dev}
 
   terra-sense:
     build:
       context: .
       dockerfile: services/terra-sense/Dockerfile
+    depends_on:
+      - redis
+    environment:
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:-local-dev}
 
   terra-ops:
     build:
       context: .
       dockerfile: services/terra-ops/Dockerfile
+
+volumes:
+  redis-data:

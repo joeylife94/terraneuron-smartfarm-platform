@@ -9,14 +9,19 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.support.SendResult;
 
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class DeviceCommandConsumerTest {
@@ -25,6 +30,8 @@ class DeviceCommandConsumerTest {
     private MqttGatewayService mqttGateway;
     @Mock
     private KafkaTemplate<String, Object> kafkaTemplate;
+    @Mock
+    private CommandRegistry commandRegistry;
 
     private DeviceCommandConsumer consumer;
 
@@ -35,11 +42,14 @@ class DeviceCommandConsumerTest {
                 mqttGateway,
                 objectMapper,
                 kafkaTemplate,
-                new ContractSchemaValidator(objectMapper));
+                new ContractSchemaValidator(objectMapper),
+                commandRegistry,
+                10);
     }
 
     @Test
     void consumesObjectParametersAndPublishesContractFeedback() {
+        stubPublishableCommandAndFeedback();
         Map<String, Object> commandEvent = commandEvent(Map.of(
                 "duration_minutes", 30,
                 "speed_level", "high"));
@@ -48,6 +58,7 @@ class DeviceCommandConsumerTest {
 
         ArgumentCaptor<DeviceCommand> commandCaptor = ArgumentCaptor.forClass(DeviceCommand.class);
         verify(mqttGateway).publishCommand(commandCaptor.capture());
+        verify(commandRegistry).markPublished("cmd-1a2b3c4d");
         assertThat(commandCaptor.getValue().getFarmId()).isEqualTo("farm-001");
         assertThat(commandCaptor.getValue().getParameters()).containsEntry("duration_minutes", 30);
 
@@ -73,12 +84,56 @@ class DeviceCommandConsumerTest {
 
     @Test
     void continuesToAcceptLegacyJsonStringParameters() {
+        stubPublishableCommandAndFeedback();
+
         consumer.onCommand(commandEvent("{\"duration_minutes\":15}"));
 
         ArgumentCaptor<DeviceCommand> commandCaptor = ArgumentCaptor.forClass(DeviceCommand.class);
         verify(mqttGateway).publishCommand(commandCaptor.capture());
         assertThat(commandCaptor.getValue().getParameters())
                 .containsEntry("duration_minutes", 15);
+    }
+
+    @Test
+    void publishedDuplicateReplaysFeedbackWithoutRepublishingMqttCommand() {
+        when(commandRegistry.register(any(DeviceCommand.class)))
+                .thenReturn(new CommandRegistry.Registration(
+                        CommandRegistry.RegistrationState.PUBLISHED));
+        stubFeedbackSuccess();
+
+        consumer.onCommand(commandEvent(Map.of("duration_minutes", 30)));
+
+        verify(mqttGateway, never()).publishCommand(any(DeviceCommand.class));
+        verify(commandRegistry, never()).markPublished("cmd-1a2b3c4d");
+        verify(kafkaTemplate).send(
+                eq("terra.control.feedback"), eq("farm-001"), any());
+    }
+
+    @Test
+    void activePublishLeaseDoesNotClaimFalseDelivery() {
+        when(commandRegistry.register(any(DeviceCommand.class)))
+                .thenReturn(new CommandRegistry.Registration(
+                        CommandRegistry.RegistrationState.PUBLISH_IN_PROGRESS));
+
+        assertThatThrownBy(() -> consumer.onCommand(
+                commandEvent(Map.of("duration_minutes", 30))))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("publish lease");
+
+        verify(mqttGateway, never()).publishCommand(any(DeviceCommand.class));
+        verifyNoInteractions(kafkaTemplate);
+    }
+
+    @Test
+    void completedDuplicateIsFullySuppressed() {
+        when(commandRegistry.register(any(DeviceCommand.class)))
+                .thenReturn(new CommandRegistry.Registration(
+                        CommandRegistry.RegistrationState.COMPLETED));
+
+        consumer.onCommand(commandEvent(Map.of("duration_minutes", 30)));
+
+        verify(mqttGateway, never()).publishCommand(any(DeviceCommand.class));
+        verifyNoInteractions(kafkaTemplate);
     }
 
     @Test
@@ -91,7 +146,21 @@ class DeviceCommandConsumerTest {
         assertThatThrownBy(() -> consumer.onCommand(invalidEvent))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("command.schema.json");
-        verifyNoInteractions(mqttGateway, kafkaTemplate);
+        verifyNoInteractions(mqttGateway, kafkaTemplate, commandRegistry);
+    }
+
+    private void stubPublishableCommandAndFeedback() {
+        when(commandRegistry.register(any(DeviceCommand.class)))
+                .thenReturn(new CommandRegistry.Registration(
+                        CommandRegistry.RegistrationState.SHOULD_PUBLISH));
+        stubFeedbackSuccess();
+    }
+
+    private void stubFeedbackSuccess() {
+        CompletableFuture<SendResult<String, Object>> future =
+                CompletableFuture.completedFuture(null);
+        when(kafkaTemplate.send(eq("terra.control.feedback"), eq("farm-001"), any()))
+                .thenReturn(future);
     }
 
     private Map<String, Object> commandEvent(Object parameters) {
