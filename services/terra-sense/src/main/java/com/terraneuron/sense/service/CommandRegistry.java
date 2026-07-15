@@ -8,13 +8,15 @@ import java.util.Optional;
 /**
  * Durable command correlation and idempotency boundary.
  *
- * A command must be registered before MQTT publication. The registration survives
- * Terra-Sense restarts and prevents Kafka redelivery from publishing the same
- * physical command more than once.
+ * A command must obtain a publish lease before MQTT publication. Once MQTT
+ * publication succeeds, the command is marked PUBLISHED so Kafka redelivery can
+ * replay feedback without repeating the physical command.
  */
 public interface CommandRegistry {
 
     Registration register(DeviceCommand command);
+
+    void markPublished(String commandId);
 
     Optional<DeviceCommand> findPending(String commandId);
 
@@ -25,30 +27,35 @@ public interface CommandRegistry {
      */
     boolean claimCompletion(String commandId, String terminalStatus, String error);
 
-    /** Remove the pending command after terminal feedback is acknowledged by Kafka. */
+    /** Remove pending publication data after terminal feedback is acknowledged by Kafka. */
     void finishCompletion(String commandId);
 
     /** Release a completion claim when terminal feedback could not be published. */
     void rollbackCompletion(String commandId);
 
-    /** Release a newly registered command when MQTT publication failed. */
+    /** Release publication state when MQTT publication failed. */
     void releasePending(String commandId);
 
     long pendingCount();
 
     enum RegistrationState {
-        NEW,
-        PENDING,
+        SHOULD_PUBLISH,
+        PUBLISH_IN_PROGRESS,
+        PUBLISHED,
         COMPLETED
     }
 
     record Registration(RegistrationState state) {
-        public boolean isNew() {
-            return state == RegistrationState.NEW;
+        public boolean shouldPublish() {
+            return state == RegistrationState.SHOULD_PUBLISH;
         }
 
-        public boolean isPendingDuplicate() {
-            return state == RegistrationState.PENDING;
+        public boolean isPublishInProgress() {
+            return state == RegistrationState.PUBLISH_IN_PROGRESS;
+        }
+
+        public boolean isPublishedDuplicate() {
+            return state == RegistrationState.PUBLISHED;
         }
 
         public boolean isCompletedDuplicate() {
