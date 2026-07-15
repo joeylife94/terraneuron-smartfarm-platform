@@ -1,4 +1,8 @@
 services:
+  kafka:
+    environment:
+      KAFKA_NUM_PARTITIONS: 3
+
   terra-sense:
     build:
       context: .
