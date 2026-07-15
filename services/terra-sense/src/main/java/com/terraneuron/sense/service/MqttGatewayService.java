@@ -14,12 +14,12 @@ import jakarta.annotation.PostConstruct;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
-/**
- * MQTT gateway for outbound commands, inbound sensor data and device feedback.
- */
+/** MQTT gateway for outbound commands, inbound sensor data and device feedback. */
 @Slf4j
 @Service
 public class MqttGatewayService implements MqttCallback {
@@ -30,6 +30,8 @@ public class MqttGatewayService implements MqttCallback {
     private final ObjectMapper objectMapper;
     private final KafkaProducerService kafkaProducer;
     private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final CommandRegistry commandRegistry;
+    private final long feedbackTimeoutSeconds;
 
     @Value("${mqtt.topic.device-status:terra/devices/+/+/status}")
     private String deviceStatusTopicPattern;
@@ -44,61 +46,64 @@ public class MqttGatewayService implements MqttCallback {
     private boolean sensorIngestEnabled;
 
     private final ConcurrentHashMap<String, DeviceStatus> deviceStates = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, DeviceCommand> pendingCommands = new ConcurrentHashMap<>();
 
     private final AtomicLong commandsSent = new AtomicLong();
     private final AtomicLong statusReceived = new AtomicLong();
     private final AtomicLong sensorMsgReceived = new AtomicLong();
     private final AtomicLong errorCount = new AtomicLong();
 
-    public MqttGatewayService(MqttClient mqttClient, ObjectMapper objectMapper,
-                              KafkaProducerService kafkaProducer,
-                              KafkaTemplate<String, Object> kafkaTemplate) {
+    public MqttGatewayService(
+            MqttClient mqttClient,
+            ObjectMapper objectMapper,
+            KafkaProducerService kafkaProducer,
+            KafkaTemplate<String, Object> kafkaTemplate,
+            CommandRegistry commandRegistry,
+            @Value("${app.command.feedback-timeout-seconds:10}") long feedbackTimeoutSeconds) {
         this.mqttClient = mqttClient;
         this.objectMapper = objectMapper;
         this.kafkaProducer = kafkaProducer;
         this.kafkaTemplate = kafkaTemplate;
+        this.commandRegistry = commandRegistry;
+        this.feedbackTimeoutSeconds = feedbackTimeoutSeconds;
     }
 
     @PostConstruct
     public void init() {
         mqttClient.setCallback(this);
         subscribeTopics();
-        log.info("✅ MQTT Gateway initialized — listening for device status & sensor data");
+        log.info("MQTT Gateway initialized — listening for device status & sensor data");
     }
 
-    /**
-     * Publish a command and retain its correlation metadata until a physical device ACK arrives.
-     */
-    public void publishCommand(DeviceCommand cmd) {
-        if (cmd == null || cmd.getCommandId() == null || cmd.getCommandId().isBlank()) {
+    /** Publish a command already claimed by the durable command registry. */
+    public void publishCommand(DeviceCommand command) {
+        if (command == null || command.getCommandId() == null || command.getCommandId().isBlank()) {
             throw new IllegalArgumentException("Device command must contain commandId");
         }
 
-        pendingCommands.put(cmd.getCommandId(), cmd);
         try {
-            String topic = cmd.toMqttTopic();
-            String payload = objectMapper.writeValueAsString(cmd);
-            MqttMessage msg = new MqttMessage(payload.getBytes(StandardCharsets.UTF_8));
-            msg.setQos(defaultQos);
-            msg.setRetained(false);
+            String topic = command.toMqttTopic();
+            String payload = objectMapper.writeValueAsString(command);
+            MqttMessage message = new MqttMessage(payload.getBytes(StandardCharsets.UTF_8));
+            message.setQos(defaultQos);
+            message.setRetained(false);
 
-            mqttClient.publish(topic, msg);
+            mqttClient.publish(topic, message);
             commandsSent.incrementAndGet();
 
-            log.info("📤 MQTT command published: topic={} command={} asset={} action={}",
-                    topic, cmd.getCommandId(), cmd.getTargetAssetId(), cmd.getActionType());
-
+            log.info("MQTT command published: topic={} command={} asset={} action={}",
+                    topic,
+                    command.getCommandId(),
+                    command.getTargetAssetId(),
+                    command.getActionType());
         } catch (MqttException | JsonProcessingException e) {
-            pendingCommands.remove(cmd.getCommandId(), cmd);
             errorCount.incrementAndGet();
-            String assetId = cmd.getTargetAssetId() != null ? cmd.getTargetAssetId() : "unknown";
-            log.error("❌ MQTT command publish failed: asset={} command={} error={}",
-                    assetId, cmd.getCommandId(), e.getMessage(), e);
+            String assetId = command.getTargetAssetId() != null
+                    ? command.getTargetAssetId() : "unknown";
+            log.error("MQTT command publish failed: asset={} command={} error={}",
+                    assetId, command.getCommandId(), e.getMessage(), e);
             throw new MqttPublishException(
                     "Failed to publish MQTT command for asset " + assetId,
-                    e
-            );
+                    e);
         }
     }
 
@@ -113,7 +118,7 @@ public class MqttGatewayService implements MqttCallback {
     public Map<String, Object> getStats() {
         return Map.of(
                 "commands_sent", commandsSent.get(),
-                "pending_command_acks", pendingCommands.size(),
+                "pending_command_acks", commandRegistry.pendingCount(),
                 "status_received", statusReceived.get(),
                 "sensor_messages", sensorMsgReceived.get(),
                 "error_count", errorCount.get(),
@@ -124,7 +129,7 @@ public class MqttGatewayService implements MqttCallback {
 
     @Override
     public void connectionLost(Throwable cause) {
-        log.warn("⚠️ MQTT connection lost: {}. Waiting for automatic reconnect...", cause.getMessage());
+        log.warn("MQTT connection lost: {}. Waiting for automatic reconnect...", cause.getMessage());
     }
 
     @Override
@@ -139,10 +144,10 @@ public class MqttGatewayService implements MqttCallback {
             } else {
                 log.debug("Ignored MQTT message: topic={}", topic);
             }
-
         } catch (Exception e) {
             errorCount.incrementAndGet();
-            log.error("❌ MQTT message processing failed: topic={} error={}", topic, e.getMessage(), e);
+            log.error("MQTT message processing failed: topic={} error={}",
+                    topic, e.getMessage(), e);
         }
     }
 
@@ -154,21 +159,17 @@ public class MqttGatewayService implements MqttCallback {
     private void subscribeTopics() {
         try {
             mqttClient.subscribe(deviceStatusTopicPattern, defaultQos);
-            log.info("📡 MQTT subscription: {}", deviceStatusTopicPattern);
+            log.info("MQTT subscription: {}", deviceStatusTopicPattern);
 
             if (sensorIngestEnabled) {
                 mqttClient.subscribe(sensorDataTopicPattern, defaultQos);
-                log.info("📡 MQTT subscription: {}", sensorDataTopicPattern);
+                log.info("MQTT subscription: {}", sensorDataTopicPattern);
             }
-
         } catch (MqttException e) {
-            log.error("❌ MQTT subscription failed: {}", e.getMessage());
+            log.error("MQTT subscription failed: {}", e.getMessage());
         }
     }
 
-    /**
-     * Process status from terra/devices/{farmId}/{assetId}/status.
-     */
     private void handleDeviceStatus(String topic, String payload) {
         try {
             DeviceStatus status = objectMapper.readValue(payload, DeviceStatus.class);
@@ -184,32 +185,33 @@ public class MqttGatewayService implements MqttCallback {
             deviceStates.put(key, status);
             statusReceived.incrementAndGet();
 
-            log.info("📥 Device status: {} → {} ({})", key, status.getState(),
-                    status.getLastCommandId() != null ? "command:" + status.getLastCommandId() : "idle");
+            log.info("Device status: {} → {} ({})", key, status.getState(),
+                    status.getLastCommandId() != null
+                            ? "command:" + status.getLastCommandId() : "idle");
 
             if (status.hasTerminalCommandAcknowledgement()) {
                 publishDeviceAcknowledgement(status);
             }
-
         } catch (JsonProcessingException e) {
             errorCount.incrementAndGet();
-            log.warn("⚠️ Device status parsing failed: topic={}", topic);
+            log.warn("Device status parsing failed: topic={}", topic);
         }
     }
 
     private void publishDeviceAcknowledgement(DeviceStatus status) {
         String commandId = status.getLastCommandId();
-        DeviceCommand command = pendingCommands.get(commandId);
-        if (command == null) {
-            log.warn("⚠️ Ignoring unknown or duplicate device ACK: command={} asset={}",
+        Optional<DeviceCommand> pending = commandRegistry.findPending(commandId);
+        if (pending.isEmpty()) {
+            log.warn("Ignoring unknown or duplicate device ACK: command={} asset={}",
                     commandId, status.getAssetId());
             return;
         }
 
+        DeviceCommand command = pending.get();
         if (!command.getFarmId().equals(status.getFarmId())
                 || !command.getTargetAssetId().equals(status.getAssetId())) {
             errorCount.incrementAndGet();
-            log.error("❌ Device ACK identity mismatch: command={} expected={}/{} actual={}/{}",
+            log.error("Device ACK identity mismatch: command={} expected={}/{} actual={}/{}",
                     commandId,
                     command.getFarmId(), command.getTargetAssetId(),
                     status.getFarmId(), status.getAssetId());
@@ -218,8 +220,15 @@ public class MqttGatewayService implements MqttCallback {
 
         String feedbackStatus = status.getLastCommandStatus().toUpperCase();
         String error = "FAILED".equals(feedbackStatus)
-                ? (status.getLastCommandError() != null ? status.getLastCommandError() : "Device reported failure")
+                ? (status.getLastCommandError() != null
+                        ? status.getLastCommandError() : "Device reported failure")
                 : "";
+
+        if (!commandRegistry.claimCompletion(commandId, feedbackStatus, error)) {
+            log.info("Ignoring duplicate terminal device ACK: command={} status={}",
+                    commandId, feedbackStatus);
+            return;
+        }
 
         Map<String, Object> feedback = Map.of(
                 "specversion", "1.0",
@@ -240,10 +249,20 @@ public class MqttGatewayService implements MqttCallback {
                 )
         );
 
-        kafkaTemplate.send(FEEDBACK_TOPIC, command.getFarmId(), feedback);
-        pendingCommands.remove(commandId, command);
-        log.info("📤 Device ACK forwarded: command={} asset={} status={}",
-                commandId, command.getTargetAssetId(), feedbackStatus);
+        try {
+            kafkaTemplate.send(FEEDBACK_TOPIC, command.getFarmId(), feedback)
+                    .get(feedbackTimeoutSeconds, TimeUnit.SECONDS);
+            commandRegistry.finishCompletion(commandId);
+            log.info("Device ACK broker acknowledged: command={} asset={} status={}",
+                    commandId, command.getTargetAssetId(), feedbackStatus);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            commandRegistry.rollbackCompletion(commandId);
+            throw new IllegalStateException("Interrupted while forwarding device ACK", e);
+        } catch (Exception e) {
+            commandRegistry.rollbackCompletion(commandId);
+            throw new IllegalStateException("Failed to forward device ACK", e);
+        }
     }
 
     private void handleSensorData(String topic, String payload) {
@@ -261,12 +280,11 @@ public class MqttGatewayService implements MqttCallback {
             kafkaProducer.sendSensorData(data);
             sensorMsgReceived.incrementAndGet();
 
-            log.debug("📡→📤 MQTT sensor → Kafka: {}/{} = {}",
+            log.debug("MQTT sensor to Kafka: {}/{} = {}",
                     data.getFarmId(), data.getSensorType(), data.getValue());
-
         } catch (JsonProcessingException e) {
             errorCount.incrementAndGet();
-            log.warn("⚠️ MQTT sensor data parsing failed: topic={}", topic);
+            log.warn("MQTT sensor data parsing failed: topic={}", topic);
         }
     }
 
