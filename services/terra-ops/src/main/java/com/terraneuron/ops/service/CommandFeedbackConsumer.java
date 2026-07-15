@@ -56,7 +56,6 @@ public class CommandFeedbackConsumer {
 
             log.info("📥 명령 피드백 수신: plan={}, cmd={}, status={}", planId, commandId, status);
 
-            // 해당 액션 플랜 업데이트
             if (planId != null && !planId.isEmpty()) {
                 Optional<ActionPlan> optPlan = actionPlanRepository.findByPlanId(planId);
                 if (optPlan.isPresent()) {
@@ -67,8 +66,11 @@ public class CommandFeedbackConsumer {
                 }
             }
 
-            // 감사 로그
-            auditService.logCommandFeedback(traceId, commandId, planId, farmId, assetId, status, error);
+            // Only terminal device outcomes are recorded as execution audit events.
+            if ("EXECUTED".equals(status) || "FAILED".equals(status)) {
+                auditService.logCommandFeedback(
+                        traceId, commandId, planId, farmId, assetId, status, error);
+            }
 
         } catch (Exception e) {
             log.error("❌ 피드백 처리 실패: {}", e.getMessage(), e);
@@ -79,28 +81,33 @@ public class CommandFeedbackConsumer {
     private void updatePlanFromFeedback(ActionPlan plan, String status, String error, String commandId) {
         switch (status) {
             case "DELIVERED":
-                // 명령이 MQTT로 전달됨 — 디바이스 실행 대기
-                plan.setExecutionResult("DELIVERED_TO_DEVICE");
-                log.info("   📡 명령 전달 확인: {} → MQTT", plan.getPlanId());
+                // MQTT publish success proves delivery to the broker, not device execution.
+                plan.setStatus(ActionPlan.PlanStatus.DELIVERED);
+                plan.setExecutionResult("MQTT_PUBLISH_CONFIRMED:" + commandId);
+                plan.setExecutionError(null);
+                log.info("   📡 MQTT 전달 확인: plan={} cmd={}", plan.getPlanId(), commandId);
                 break;
 
             case "EXECUTED":
-                // 디바이스가 실행 완료
+                // This feedback must originate from an actual device-confirmed completion path.
                 plan.setStatus(ActionPlan.PlanStatus.EXECUTED);
                 plan.setExecutedAt(Instant.now());
-                plan.setExecutionResult("DEVICE_CONFIRMED");
-                log.info("   ✅ 디바이스 실행 확인: {}", plan.getPlanId());
+                plan.setExecutionResult("DEVICE_CONFIRMED:" + commandId);
+                plan.setExecutionError(null);
+                log.info("   ✅ 디바이스 실행 확인: plan={} cmd={}", plan.getPlanId(), commandId);
                 break;
 
             case "FAILED":
-                // 명령 전달 또는 디바이스 실행 실패
-                plan.setStatus(ActionPlan.PlanStatus.FAILED);
+                // The current terra-sense bridge emits FAILED only when MQTT publication fails.
+                plan.setStatus(ActionPlan.PlanStatus.DELIVERY_FAILED);
+                plan.setExecutionResult("MQTT_DELIVERY_FAILED:" + commandId);
                 plan.setExecutionError(error);
-                log.warn("   ❌ 명령 실행 실패: {} — {}", plan.getPlanId(), error);
+                log.warn("   ❌ 명령 전달 실패: plan={} cmd={} error={}",
+                        plan.getPlanId(), commandId, error);
                 break;
 
             default:
-                plan.setExecutionResult("FEEDBACK:" + status);
+                plan.setExecutionResult("FEEDBACK:" + status + ":" + commandId);
                 log.info("   ℹ️ 피드백: {} → {}", plan.getPlanId(), status);
         }
 
