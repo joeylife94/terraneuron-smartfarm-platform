@@ -91,7 +91,12 @@ public class MqttGatewayService implements MqttCallback {
 
         } catch (MqttException | JsonProcessingException e) {
             errorCount.incrementAndGet();
-            log.error("❌ MQTT 명령 발행 실패: asset={}, err={}", cmd.getTargetAssetId(), e.getMessage());
+            String assetId = cmd != null ? cmd.getTargetAssetId() : "unknown";
+            log.error("❌ MQTT 명령 발행 실패: asset={}, err={}", assetId, e.getMessage(), e);
+            throw new MqttPublishException(
+                    "Failed to publish MQTT command for asset " + assetId,
+                    e
+            );
         }
     }
 
