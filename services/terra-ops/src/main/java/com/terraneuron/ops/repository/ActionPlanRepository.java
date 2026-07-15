@@ -22,11 +22,15 @@ public interface ActionPlanRepository extends JpaRepository<ActionPlan, Long> {
 
     Optional<ActionPlan> findByTraceId(String traceId);
 
+    Optional<ActionPlan> findByCommandId(String commandId);
+
     List<ActionPlan> findByFarmIdOrderByCreatedAtDesc(String farmId);
 
     List<ActionPlan> findByStatusOrderByPriorityDescCreatedAtDesc(ActionPlan.PlanStatus status);
 
     Page<ActionPlan> findByStatus(ActionPlan.PlanStatus status, Pageable pageable);
+
+    List<ActionPlan> findByStatusAndAckDeadlineAtBefore(ActionPlan.PlanStatus status, Instant deadline);
 
     @Query("SELECT p FROM ActionPlan p WHERE p.status = :status AND p.farmId = :farmId ORDER BY p.priority DESC, p.createdAt DESC")
     List<ActionPlan> findByStatusAndFarmId(@Param("status") ActionPlan.PlanStatus status, @Param("farmId") String farmId);
