@@ -9,14 +9,19 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.support.SendResult;
 
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class DeviceCommandConsumerTest {
@@ -25,6 +30,8 @@ class DeviceCommandConsumerTest {
     private MqttGatewayService mqttGateway;
     @Mock
     private KafkaTemplate<String, Object> kafkaTemplate;
+    @Mock
+    private CommandRegistry commandRegistry;
 
     private DeviceCommandConsumer consumer;
 
@@ -35,11 +42,14 @@ class DeviceCommandConsumerTest {
                 mqttGateway,
                 objectMapper,
                 kafkaTemplate,
-                new ContractSchemaValidator(objectMapper));
+                new ContractSchemaValidator(objectMapper),
+                commandRegistry,
+                10);
     }
 
     @Test
     void consumesObjectParametersAndPublishesContractFeedback() {
+        stubNewCommandAndFeedback();
         Map<String, Object> commandEvent = commandEvent(Map.of(
                 "duration_minutes", 30,
                 "speed_level", "high"));
@@ -73,12 +83,40 @@ class DeviceCommandConsumerTest {
 
     @Test
     void continuesToAcceptLegacyJsonStringParameters() {
+        stubNewCommandAndFeedback();
+
         consumer.onCommand(commandEvent("{\"duration_minutes\":15}"));
 
         ArgumentCaptor<DeviceCommand> commandCaptor = ArgumentCaptor.forClass(DeviceCommand.class);
         verify(mqttGateway).publishCommand(commandCaptor.capture());
         assertThat(commandCaptor.getValue().getParameters())
                 .containsEntry("duration_minutes", 15);
+    }
+
+    @Test
+    void pendingDuplicateReplaysFeedbackWithoutRepublishingMqttCommand() {
+        when(commandRegistry.register(any(DeviceCommand.class)))
+                .thenReturn(new CommandRegistry.Registration(
+                        CommandRegistry.RegistrationState.PENDING));
+        stubFeedbackSuccess();
+
+        consumer.onCommand(commandEvent(Map.of("duration_minutes", 30)));
+
+        verify(mqttGateway, never()).publishCommand(any(DeviceCommand.class));
+        verify(kafkaTemplate).send(
+                eq("terra.control.feedback"), eq("farm-001"), any());
+    }
+
+    @Test
+    void completedDuplicateIsFullySuppressed() {
+        when(commandRegistry.register(any(DeviceCommand.class)))
+                .thenReturn(new CommandRegistry.Registration(
+                        CommandRegistry.RegistrationState.COMPLETED));
+
+        consumer.onCommand(commandEvent(Map.of("duration_minutes", 30)));
+
+        verify(mqttGateway, never()).publishCommand(any(DeviceCommand.class));
+        verifyNoInteractions(kafkaTemplate);
     }
 
     @Test
@@ -91,7 +129,21 @@ class DeviceCommandConsumerTest {
         assertThatThrownBy(() -> consumer.onCommand(invalidEvent))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("command.schema.json");
-        verifyNoInteractions(mqttGateway, kafkaTemplate);
+        verifyNoInteractions(mqttGateway, kafkaTemplate, commandRegistry);
+    }
+
+    private void stubNewCommandAndFeedback() {
+        when(commandRegistry.register(any(DeviceCommand.class)))
+                .thenReturn(new CommandRegistry.Registration(
+                        CommandRegistry.RegistrationState.NEW));
+        stubFeedbackSuccess();
+    }
+
+    private void stubFeedbackSuccess() {
+        CompletableFuture<SendResult<String, Object>> future =
+                CompletableFuture.completedFuture(null);
+        when(kafkaTemplate.send(eq("terra.control.feedback"), eq("farm-001"), any()))
+                .thenReturn(future);
     }
 
     private Map<String, Object> commandEvent(Object parameters) {
