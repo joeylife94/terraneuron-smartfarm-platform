@@ -27,6 +27,8 @@ class RedisCommandRegistryTest {
 
     private static final String COMMAND_ID = "cmd-1a2b3c4d";
     private static final String PENDING_KEY = RedisCommandRegistry.PENDING_PREFIX + COMMAND_ID;
+    private static final String PUBLISHING_KEY = RedisCommandRegistry.PUBLISHING_PREFIX + COMMAND_ID;
+    private static final String PUBLISHED_KEY = RedisCommandRegistry.PUBLISHED_PREFIX + COMMAND_ID;
     private static final String COMPLETED_KEY = RedisCommandRegistry.COMPLETED_PREFIX + COMMAND_ID;
 
     @Mock
@@ -44,32 +46,55 @@ class RedisCommandRegistryTest {
         objectMapper = new ObjectMapper().findAndRegisterModules();
         when(redisTemplate.opsForValue()).thenReturn(values);
         when(redisTemplate.opsForSet()).thenReturn(sets);
-        registry = new RedisCommandRegistry(redisTemplate, objectMapper, 3600, 7200);
+        registry = new RedisCommandRegistry(redisTemplate, objectMapper, 3600, 7200, 30);
     }
 
     @Test
-    void firstRegistrationUsesAtomicSetIfAbsent() {
+    void firstRegistrationCreatesPendingRecordAndPublishLease() {
         when(values.get(COMPLETED_KEY)).thenReturn(null);
         when(values.setIfAbsent(eq(PENDING_KEY), anyString(), eq(Duration.ofSeconds(3600))))
+                .thenReturn(true);
+        when(redisTemplate.hasKey(PUBLISHED_KEY)).thenReturn(false);
+        when(values.setIfAbsent(PUBLISHING_KEY, "1", Duration.ofSeconds(30)))
                 .thenReturn(true);
 
         CommandRegistry.Registration registration = registry.register(command("fan-01"));
 
-        assertThat(registration.state()).isEqualTo(CommandRegistry.RegistrationState.NEW);
+        assertThat(registration.state())
+                .isEqualTo(CommandRegistry.RegistrationState.SHOULD_PUBLISH);
         verify(sets).add(RedisCommandRegistry.PENDING_INDEX_KEY, COMMAND_ID);
     }
 
     @Test
-    void samePendingCommandIsRecognizedWithoutNewClaim() throws Exception {
+    void durablyPublishedCommandDoesNotAcquireAnotherPublishLease() throws Exception {
         DeviceCommand command = command("fan-01");
         when(values.get(COMPLETED_KEY)).thenReturn(null);
         when(values.setIfAbsent(eq(PENDING_KEY), anyString(), eq(Duration.ofSeconds(3600))))
                 .thenReturn(false);
         when(values.get(PENDING_KEY)).thenReturn(objectMapper.writeValueAsString(command));
+        when(redisTemplate.hasKey(PUBLISHED_KEY)).thenReturn(true);
 
         CommandRegistry.Registration registration = registry.register(command("fan-01"));
 
-        assertThat(registration.state()).isEqualTo(CommandRegistry.RegistrationState.PENDING);
+        assertThat(registration.state())
+                .isEqualTo(CommandRegistry.RegistrationState.PUBLISHED);
+    }
+
+    @Test
+    void activePublishLeasePreventsFalseDeliveredState() throws Exception {
+        DeviceCommand command = command("fan-01");
+        when(values.get(COMPLETED_KEY)).thenReturn(null);
+        when(values.setIfAbsent(eq(PENDING_KEY), anyString(), eq(Duration.ofSeconds(3600))))
+                .thenReturn(false);
+        when(values.get(PENDING_KEY)).thenReturn(objectMapper.writeValueAsString(command));
+        when(redisTemplate.hasKey(PUBLISHED_KEY)).thenReturn(false);
+        when(values.setIfAbsent(PUBLISHING_KEY, "1", Duration.ofSeconds(30)))
+                .thenReturn(false);
+
+        CommandRegistry.Registration registration = registry.register(command("fan-01"));
+
+        assertThat(registration.state())
+                .isEqualTo(CommandRegistry.RegistrationState.PUBLISH_IN_PROGRESS);
     }
 
     @Test
@@ -99,7 +124,18 @@ class RedisCommandRegistryTest {
     }
 
     @Test
-    void terminalAckIsClaimedOnceAndPendingEntryRemovedAfterKafkaAck() throws Exception {
+    void successfulMqttPublishCreatesDurablePublishedMarker() {
+        when(redisTemplate.hasKey(COMPLETED_KEY)).thenReturn(false);
+        when(redisTemplate.hasKey(PENDING_KEY)).thenReturn(true);
+
+        registry.markPublished(COMMAND_ID);
+
+        verify(values).set(PUBLISHED_KEY, "1", Duration.ofSeconds(3600));
+        verify(redisTemplate).delete(PUBLISHING_KEY);
+    }
+
+    @Test
+    void terminalAckIsClaimedOnceAndPublicationStateRemovedAfterKafkaAck() throws Exception {
         when(values.get(PENDING_KEY))
                 .thenReturn(objectMapper.writeValueAsString(command("fan-01")));
         when(values.setIfAbsent(eq(COMPLETED_KEY), anyString(), eq(Duration.ofSeconds(7200))))
@@ -109,6 +145,8 @@ class RedisCommandRegistryTest {
 
         registry.finishCompletion(COMMAND_ID);
         verify(redisTemplate).delete(PENDING_KEY);
+        verify(redisTemplate).delete(PUBLISHING_KEY);
+        verify(redisTemplate).delete(PUBLISHED_KEY);
         verify(sets).remove(RedisCommandRegistry.PENDING_INDEX_KEY, COMMAND_ID);
     }
 
