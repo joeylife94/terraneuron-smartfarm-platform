@@ -1,0 +1,140 @@
+package com.terraneuron.sense.service;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.terraneuron.sense.model.DeviceCommand;
+import org.eclipse.paho.client.mqttv3.MqttClient;
+import org.eclipse.paho.client.mqttv3.MqttException;
+import org.eclipse.paho.client.mqttv3.MqttMessage;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.kafka.core.KafkaTemplate;
+
+import java.time.Instant;
+import java.util.Map;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
+
+@ExtendWith(MockitoExtension.class)
+class MqttPublishFailureTest {
+
+    @Mock
+    private MqttClient mqttClient;
+
+    @Mock
+    private KafkaProducerService kafkaProducerService;
+
+    @Mock
+    private MqttGatewayService mqttGatewayService;
+
+    @Mock
+    private KafkaTemplate<String, Object> kafkaTemplate;
+
+    @Test
+    void gatewayPropagatesBrokerPublishFailure() throws Exception {
+        doThrow(new MqttException(MqttException.REASON_CODE_BROKER_UNAVAILABLE))
+                .when(mqttClient)
+                .publish(anyString(), any(MqttMessage.class));
+
+        MqttGatewayService gateway = new MqttGatewayService(
+                mqttClient,
+                runtimeObjectMapper(),
+                kafkaProducerService
+        );
+
+        assertThatThrownBy(() -> gateway.publishCommand(deviceCommand()))
+                .isInstanceOf(MqttPublishException.class)
+                .hasMessageContaining("fan-01")
+                .hasCauseInstanceOf(MqttException.class);
+
+        assertThat(gateway.getStats())
+                .containsEntry("commands_sent", 0L)
+                .containsEntry("error_count", 1L);
+    }
+
+    @Test
+    void commandConsumerPublishesFailedFeedbackInsteadOfDelivered() {
+        ObjectMapper objectMapper = runtimeObjectMapper();
+        DeviceCommandConsumer consumer = new DeviceCommandConsumer(
+                mqttGatewayService,
+                objectMapper,
+                kafkaTemplate,
+                new ContractSchemaValidator(objectMapper)
+        );
+
+        doThrow(new MqttPublishException(
+                "Failed to publish MQTT command for asset fan-01",
+                new RuntimeException("broker unavailable")
+        )).when(mqttGatewayService).publishCommand(any(DeviceCommand.class));
+
+        consumer.onCommand(commandEvent());
+
+        ArgumentCaptor<Object> feedbackCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(kafkaTemplate).send(
+                eq("terra.control.feedback"),
+                eq("farm-001"),
+                feedbackCaptor.capture()
+        );
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> feedback = (Map<String, Object>) feedbackCaptor.getValue();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = (Map<String, Object>) feedback.get("data");
+
+        assertThat(data)
+                .containsEntry("command_id", "cmd-1a2b3c4d")
+                .containsEntry("plan_id", "plan-123")
+                .containsEntry("farm_id", "farm-001")
+                .containsEntry("target_asset_id", "fan-01")
+                .containsEntry("status", "FAILED");
+        assertThat(data.get("error").toString())
+                .contains("Failed to publish MQTT command");
+    }
+
+    private ObjectMapper runtimeObjectMapper() {
+        return new ObjectMapper().findAndRegisterModules();
+    }
+
+    private DeviceCommand deviceCommand() {
+        return DeviceCommand.builder()
+                .commandId("cmd-1a2b3c4d")
+                .traceId("trace-123")
+                .planId("plan-123")
+                .farmId("farm-001")
+                .targetAssetId("fan-01")
+                .actionType("turn_on")
+                .parameters(Map.of("duration_minutes", 30))
+                .executedBy("operator-01")
+                .issuedAt(Instant.now())
+                .build();
+    }
+
+    private Map<String, Object> commandEvent() {
+        return Map.of(
+                "specversion", "1.0",
+                "type", "terra.ops.command.execute",
+                "source", "//terraneuron/terra-ops",
+                "id", "d4e5f6a7-b8c9-4d01-8efa-234567890abc",
+                "time", "2025-12-09T10:35:00Z",
+                "datacontenttype", "application/json",
+                "data", Map.of(
+                        "trace_id", "trace-123",
+                        "plan_id", "plan-123",
+                        "command_id", "cmd-1a2b3c4d",
+                        "farm_id", "farm-001",
+                        "target_asset_id", "fan-01",
+                        "action_type", "turn_on",
+                        "parameters", Map.of("duration_minutes", 30),
+                        "executed_by", "operator-01"
+                )
+        );
+    }
+}
