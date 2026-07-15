@@ -34,7 +34,7 @@ class CommandOutboxServiceTest {
 
     @BeforeEach
     void setUp() {
-        objectMapper = new ObjectMapper().findAndRegisterModules();
+        objectMapper = new ObjectMapper();
         service = new CommandOutboxService(
                 actionPlanRepository,
                 commandOutboxRepository,
