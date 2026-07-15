@@ -39,7 +39,7 @@ class MqttPublishFailureTest {
     private KafkaTemplate<String, Object> kafkaTemplate;
 
     @Test
-    void gatewayPropagatesBrokerPublishFailure() throws Exception {
+    void gatewayPropagatesBrokerPublishFailureAndDropsPendingCorrelation() throws Exception {
         doThrow(new MqttException(MqttException.REASON_CODE_BROKER_UNAVAILABLE))
                 .when(mqttClient)
                 .publish(anyString(), any(MqttMessage.class));
@@ -47,7 +47,8 @@ class MqttPublishFailureTest {
         MqttGatewayService gateway = new MqttGatewayService(
                 mqttClient,
                 runtimeObjectMapper(),
-                kafkaProducerService
+                kafkaProducerService,
+                kafkaTemplate
         );
 
         assertThatThrownBy(() -> gateway.publishCommand(deviceCommand()))
@@ -57,6 +58,7 @@ class MqttPublishFailureTest {
 
         assertThat(gateway.getStats())
                 .containsEntry("commands_sent", 0L)
+                .containsEntry("pending_command_acks", 0)
                 .containsEntry("error_count", 1L);
     }
 
