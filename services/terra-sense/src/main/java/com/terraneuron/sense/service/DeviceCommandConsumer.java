@@ -3,8 +3,8 @@ package com.terraneuron.sense.service;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.terraneuron.sense.model.DeviceCommand;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
@@ -12,35 +12,37 @@ import org.springframework.stereotype.Service;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
-/**
- * Kafka → MQTT 제어 명령 브릿지
- *
- * 흐름:
- *   terra-ops (ActionPlanService.executePlan)
- *     → Kafka "terra.control.command"
- *       → 이 Consumer
- *         → MqttGatewayService.publishCommand()
- *           → MQTT "terra/devices/{farmId}/{assetId}/command"
- *             → 실제 IoT 디바이스
- *
- * 명령 실행 후 피드백 결과를 Kafka "terra.control.feedback" 토픽으로 보고
- */
+/** Kafka to MQTT command bridge with durable duplicate suppression. */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class DeviceCommandConsumer {
+
+    private static final String FEEDBACK_TOPIC = "terra.control.feedback";
 
     private final MqttGatewayService mqttGateway;
     private final ObjectMapper objectMapper;
     private final KafkaTemplate<String, Object> kafkaTemplate;
     private final ContractSchemaValidator contractSchemaValidator;
+    private final CommandRegistry commandRegistry;
+    private final long feedbackTimeoutSeconds;
 
-    private static final String FEEDBACK_TOPIC = "terra.control.feedback";
+    public DeviceCommandConsumer(
+            MqttGatewayService mqttGateway,
+            ObjectMapper objectMapper,
+            KafkaTemplate<String, Object> kafkaTemplate,
+            ContractSchemaValidator contractSchemaValidator,
+            CommandRegistry commandRegistry,
+            @Value("${app.command.feedback-timeout-seconds:10}") long feedbackTimeoutSeconds) {
+        this.mqttGateway = mqttGateway;
+        this.objectMapper = objectMapper;
+        this.kafkaTemplate = kafkaTemplate;
+        this.contractSchemaValidator = contractSchemaValidator;
+        this.commandRegistry = commandRegistry;
+        this.feedbackTimeoutSeconds = feedbackTimeoutSeconds;
+    }
 
-    /**
-     * Kafka에서 terra.control.command 메시지를 소비하여 MQTT로 전달
-     */
     @KafkaListener(
             topics = "terra.control.command",
             groupId = "terra-sense-command-group",
@@ -50,71 +52,62 @@ public class DeviceCommandConsumer {
         Map<String, Object> normalizedEvent = normalizeLegacyParameters(commandEvent);
         contractSchemaValidator.validate(ContractSchemaValidator.COMMAND_SCHEMA, normalizedEvent);
 
-        try {
-            log.info("📥 제어 명령 수신 (Kafka → MQTT bridge)");
-
-            // CloudEvents 포맷에서 data 추출
-            @SuppressWarnings("unchecked")
-            Map<String, Object> data = (Map<String, Object>) normalizedEvent.get("data");
-            if (data == null) {
-                log.error("❌ 잘못된 CloudEvent: 'data' 필드 누락");
-                return;
-            }
-
-            String traceId = (String) data.get("trace_id");
-            String commandId = (String) data.get("command_id");
-            String planId = (String) data.get("plan_id");
-            String targetAssetId = (String) data.get("target_asset_id");
-            String actionType = (String) data.get("action_type");
-            String executedBy = (String) data.get("executed_by");
-
-            // parameters 파싱 (JSON 문자열 또는 Map)
-            Map<String, Object> parameters = parseParameters(data.get("parameters"));
-
-            // farmId 추출 — commandEvent 키 또는 data에서 가져오기
-            String farmId = (String) data.getOrDefault("farm_id",
-                    normalizedEvent.getOrDefault("key", "unknown"));
-
-            DeviceCommand cmd = DeviceCommand.builder()
-                    .commandId(commandId)
-                    .traceId(traceId)
-                    .planId(planId)
-                    .targetAssetId(targetAssetId)
-                    .actionType(actionType)
-                    .parameters(parameters)
-                    .executedBy(executedBy)
-                    .farmId(farmId)
-                    .issuedAt(Instant.now())
-                    .build();
-
-            // MQTT로 발행
-            mqttGateway.publishCommand(cmd);
-
-            // 피드백: 명령 전달 완료 보고
-            sendFeedback(traceId, commandId, planId, farmId, targetAssetId, "DELIVERED", null);
-
-            log.info("✅ 제어 명령 전달 완료: {} → {} ({})", commandId, targetAssetId, actionType);
-
-        } catch (Exception e) {
-            log.error("❌ 제어 명령 처리 실패: {}", e.getMessage(), e);
-
-            // 실패 피드백
-            try {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> data = (Map<String, Object>) normalizedEvent.get("data");
-                if (data != null) {
-                    sendFeedback(
-                            (String) data.get("trace_id"),
-                            (String) data.get("command_id"),
-                            (String) data.get("plan_id"),
-                            (String) data.getOrDefault("farm_id", "unknown"),
-                            (String) data.get("target_asset_id"),
-                            "FAILED",
-                            e.getMessage()
-                    );
-                }
-            } catch (Exception ignored) {}
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = (Map<String, Object>) normalizedEvent.get("data");
+        if (data == null) {
+            throw new IllegalArgumentException("Invalid CloudEvent: missing data field");
         }
+
+        DeviceCommand command = toDeviceCommand(data, normalizedEvent);
+        CommandRegistry.Registration registration = commandRegistry.register(command);
+
+        if (registration.isCompletedDuplicate()) {
+            log.info("Ignoring completed duplicate command: {}", command.getCommandId());
+            return;
+        }
+
+        if (registration.isPendingDuplicate()) {
+            // MQTT was already published. Re-emit broker-acknowledged delivery feedback
+            // without physically publishing the command again.
+            sendFeedback(command, "DELIVERED", null);
+            log.info("Replayed delivery feedback for duplicate pending command: {}",
+                    command.getCommandId());
+            return;
+        }
+
+        try {
+            mqttGateway.publishCommand(command);
+        } catch (Exception publishError) {
+            commandRegistry.releasePending(command.getCommandId());
+            sendFeedback(command, "FAILED", rootCauseMessage(publishError));
+            log.error("MQTT command delivery failed: command={} error={}",
+                    command.getCommandId(), publishError.getMessage(), publishError);
+            return;
+        }
+
+        // Await Kafka broker acknowledgement. If this fails, the listener throws and
+        // Kafka redelivery follows the duplicate-pending path without MQTT republish.
+        sendFeedback(command, "DELIVERED", null);
+        log.info("Command delivered once: command={} asset={} action={}",
+                command.getCommandId(), command.getTargetAssetId(), command.getActionType());
+    }
+
+    private DeviceCommand toDeviceCommand(
+            Map<String, Object> data, Map<String, Object> normalizedEvent) {
+        String farmId = (String) data.getOrDefault(
+                "farm_id", normalizedEvent.getOrDefault("key", "unknown"));
+
+        return DeviceCommand.builder()
+                .commandId((String) data.get("command_id"))
+                .traceId((String) data.get("trace_id"))
+                .planId((String) data.get("plan_id"))
+                .targetAssetId((String) data.get("target_asset_id"))
+                .actionType((String) data.get("action_type"))
+                .parameters(parseParameters(data.get("parameters")))
+                .executedBy((String) data.get("executed_by"))
+                .farmId(farmId)
+                .issuedAt(Instant.now())
+                .build();
     }
 
     private Map<String, Object> normalizeLegacyParameters(Map<String, Object> commandEvent) {
@@ -141,36 +134,36 @@ public class DeviceCommandConsumer {
         return normalizedEvent;
     }
 
-    /**
-     * 피드백 메시지를 Kafka로 전송
-     */
-    private void sendFeedback(String traceId, String commandId, String planId,
-                              String farmId, String assetId, String status, String error) {
+    private void sendFeedback(DeviceCommand command, String status, String error) {
+        Map<String, Object> feedback = Map.of(
+                "specversion", "1.0",
+                "type", "terra.sense.command.feedback",
+                "source", "//terraneuron/terra-sense",
+                "id", java.util.UUID.randomUUID().toString(),
+                "time", Instant.now().toString(),
+                "datacontenttype", "application/json",
+                "data", Map.of(
+                        "trace_id", safe(command.getTraceId()),
+                        "command_id", safe(command.getCommandId()),
+                        "plan_id", safe(command.getPlanId()),
+                        "farm_id", safe(command.getFarmId()),
+                        "target_asset_id", safe(command.getTargetAssetId()),
+                        "status", status,
+                        "error", error != null ? error : "",
+                        "timestamp", Instant.now().toString()
+                )
+        );
+
         try {
-            Map<String, Object> feedback = Map.of(
-                    "specversion", "1.0",
-                    "type", "terra.sense.command.feedback",
-                    "source", "//terraneuron/terra-sense",
-                    "id", java.util.UUID.randomUUID().toString(),
-                    "time", Instant.now().toString(),
-                    "datacontenttype", "application/json",
-                    "data", Map.of(
-                            "trace_id", traceId != null ? traceId : "",
-                            "command_id", commandId != null ? commandId : "",
-                            "plan_id", planId != null ? planId : "",
-                            "farm_id", farmId,
-                            "target_asset_id", assetId != null ? assetId : "",
-                            "status", status,
-                            "error", error != null ? error : "",
-                            "timestamp", Instant.now().toString()
-                    )
-            );
-
-            kafkaTemplate.send(FEEDBACK_TOPIC, farmId, feedback);
-            log.info("📤 피드백 전송: {} → {} ({})", commandId, assetId, status);
-
+            kafkaTemplate.send(FEEDBACK_TOPIC, command.getFarmId(), feedback)
+                    .get(feedbackTimeoutSeconds, TimeUnit.SECONDS);
+            log.info("Feedback broker acknowledged: command={} status={}",
+                    command.getCommandId(), status);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while publishing command feedback", e);
         } catch (Exception e) {
-            log.error("❌ 피드백 전송 실패: {}", e.getMessage());
+            throw new IllegalStateException("Failed to publish command feedback", e);
         }
     }
 
@@ -183,11 +176,23 @@ public class DeviceCommandConsumer {
                 return objectMapper.readValue((String) params,
                         new TypeReference<Map<String, Object>>() {});
             } catch (Exception e) {
-                log.warn("⚠️ Failed to parse legacy string parameters as JSON; preserving raw value: {}",
+                log.warn("Failed to parse legacy string parameters; preserving raw value: {}",
                         e.getMessage());
                 return Map.of("raw", params);
             }
         }
         return Map.of();
+    }
+
+    private String safe(String value) {
+        return value != null ? value : "";
+    }
+
+    private String rootCauseMessage(Exception exception) {
+        Throwable cause = exception;
+        while (cause.getCause() != null) {
+            cause = cause.getCause();
+        }
+        return cause.getMessage() != null ? cause.getMessage() : cause.getClass().getSimpleName();
     }
 }
