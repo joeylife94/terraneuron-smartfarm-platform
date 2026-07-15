@@ -4,7 +4,7 @@ on:
   push:
     branches: [ main, develop ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, 'integration/**' ]
 
 permissions:
   contents: read
@@ -171,6 +171,7 @@ jobs:
           wait_for_service terra-sense http://localhost:8081/actuator/health
           wait_for_service terra-cortex http://localhost:8082/health
           wait_for_service terra-ops http://localhost:8080/actuator/health
+          wait_for_service terra-gateway http://localhost:8000/actuator/health
 
       - name: 🐍 Setup Python for E2E Tests
         uses: actions/setup-python@v5
