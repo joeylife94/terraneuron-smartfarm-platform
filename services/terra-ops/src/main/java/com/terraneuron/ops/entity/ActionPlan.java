@@ -145,20 +145,27 @@ public class ActionPlan {
     }
 
     /**
-     * Check if the plan can be executed
+     * Check if an approved plan can be dispatched to the command transport.
+     * Dispatch is not equivalent to device execution.
      */
-    public boolean canBeExecuted() {
+    public boolean canBeDispatched() {
         return status == PlanStatus.APPROVED && !isExpired();
     }
 
     public enum PlanStatus {
-        PENDING,      // Awaiting human approval
-        APPROVED,     // Approved, ready for execution
-        REJECTED,     // Rejected by human
-        EXECUTED,     // Successfully executed
-        FAILED,       // Execution failed
-        EXPIRED,      // Plan expired before action
-        CANCELLED     // Cancelled by user
+        PENDING,          // Awaiting human approval
+        APPROVED,         // Approved, ready for dispatch
+        DISPATCHING,      // Command is being published to Kafka
+        DISPATCHED,       // Kafka acknowledged the command publication
+        DELIVERED,        // Terra-Sense published the command to MQTT
+        EXECUTED,         // Device-confirmed execution completion
+        REJECTED,         // Rejected by human or safety policy
+        DISPATCH_FAILED,  // Kafka command publication failed
+        DELIVERY_FAILED,  // Kafka-to-MQTT delivery failed
+        EXECUTION_FAILED, // Device reported execution failure
+        FAILED,           // Legacy failure state retained for stored records
+        EXPIRED,          // Plan expired before action
+        CANCELLED         // Cancelled by user
     }
 
     public enum ActionPriority {
