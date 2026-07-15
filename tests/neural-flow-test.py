@@ -112,13 +112,22 @@ def auth_headers(access_token: str) -> Dict[str, str]:
 
 
 def send_sensor_data(data: Dict) -> None:
-    """Send one sensor reading and fail immediately on rejection."""
+    """Send one sensor reading and validate its acknowledgement identity."""
     response = requests.post(
         TERRA_SENSE_URL,
         json=data,
         timeout=REQUEST_TIMEOUT_SECONDS,
     )
-    response_json(response, f"sensor ingestion for {data['sensorId']}")
+    payload = response_json(response, f"sensor ingestion for {data['sensorId']}")
+    if payload.get("status") != "accepted":
+        raise E2ETestFailure(
+            f"sensor ingestion acknowledgement was not accepted: {payload}"
+        )
+    if payload.get("sensorId") != data["sensorId"]:
+        raise E2ETestFailure(
+            "sensor ingestion acknowledgement identity mismatch: "
+            f"expected {data['sensorId']}, got {payload.get('sensorId')}"
+        )
     print(
         f"  PASS {data['sensorId']}: "
         f"{data['sensorType']}={data['value']}{data['unit']}"
