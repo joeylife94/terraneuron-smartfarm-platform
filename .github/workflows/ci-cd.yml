@@ -4,7 +4,7 @@ on:
   push:
     branches: [ main, develop ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, 'integration/**' ]
 
 permissions:
   contents: read
@@ -82,9 +82,32 @@ jobs:
           flake8 src --count --select=E9,F63,F7,F82 --show-source --statistics
           
       - name: 🧪 Run Tests
+        shell: bash
         run: |
           cd services/terra-cortex
-          pytest --cov=src --cov-report=xml || echo "No tests found"
+          set +e
+          set -o pipefail
+          pytest --cov=src --cov-report=xml --junitxml=pytest-results.xml 2>&1 | tee pytest-output.log
+          test_status=${PIPESTATUS[0]}
+          set -e
+
+          if [ "${test_status}" -eq 5 ]; then
+            echo "::warning::No terra-cortex tests were collected"
+            exit 0
+          fi
+
+          exit "${test_status}"
+
+      - name: 📊 Upload Python Test Diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-terra-cortex
+          if-no-files-found: error
+          path: |
+            services/terra-cortex/pytest-output.log
+            services/terra-cortex/pytest-results.xml
+            services/terra-cortex/coverage.xml
 
   # ========== Docker 이미지 빌드 & 푸시 ==========
   build-and-push-images:
@@ -95,7 +118,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [terra-sense, terra-cortex, terra-ops]
+        include:
+          - service: terra-sense
+            context: .
+            dockerfile: ./services/terra-sense/Dockerfile
+          - service: terra-cortex
+            context: ./services/terra-cortex
+            dockerfile: ./services/terra-cortex/Dockerfile
+          - service: terra-ops
+            context: .
+            dockerfile: ./services/terra-ops/Dockerfile
     
     steps:
       - name: 📥 Checkout Repository
@@ -111,8 +143,8 @@ jobs:
       - name: 🏗️ Build and Push Docker Image
         uses: docker/build-push-action@v5
         with:
-          context: ./services/${{ matrix.service }}
-          file: ./services/${{ matrix.service }}/Dockerfile
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
           push: true
           tags: |
             ${{ env.DOCKER_REGISTRY }}/${{ github.repository_owner }}/terraneuron-${{ matrix.service }}:latest
@@ -123,15 +155,24 @@ jobs:
     name: E2E Integration Test
     needs: [build-java-services, build-python-service]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       JWT_SECRET: DEMO_ONLY_E2E_CI_JWT_SECRET_32_CHARS_MIN
+      E2E_POLL_TIMEOUT_SECONDS: '90'
+      E2E_POLL_INTERVAL_SECONDS: '2'
     
     steps:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
 
-      - name: 🐳 Start Docker Compose Stack
-        run: docker compose up -d
+      - name: 🔎 Validate Docker Compose Configuration
+        run: docker compose config --quiet
+
+      - name: 🐳 Start Required Docker Compose Services
+        run: |
+          docker compose up -d \
+            redis zookeeper kafka mysql influxdb mosquitto \
+            terra-sense terra-cortex terra-ops terra-gateway
 
       - name: ⏳ Wait for Services
         shell: bash
@@ -157,6 +198,7 @@ jobs:
           wait_for_service terra-sense http://localhost:8081/actuator/health
           wait_for_service terra-cortex http://localhost:8082/health
           wait_for_service terra-ops http://localhost:8080/actuator/health
+          wait_for_service terra-gateway http://localhost:8000/actuator/health
 
       - name: 🐍 Setup Python for E2E Tests
         uses: actions/setup-python@v5
@@ -166,12 +208,34 @@ jobs:
       - name: 📦 Install Test Dependencies
         run: pip install requests
 
+      - name: 🔎 Validate E2E Test Syntax
+        run: python -m py_compile tests/neural-flow-test.py
+
       - name: 🧪 Run E2E Tests
-        run: python tests/neural-flow-test.py
+        shell: bash
+        run: |
+          set -o pipefail
+          python tests/neural-flow-test.py 2>&1 | tee e2e-test-output.log
+
+      - name: 🧾 Capture E2E Diagnostics
+        if: always()
+        shell: bash
+        run: |
+          docker compose ps --all > e2e-compose-ps.txt 2>&1 || true
+          docker compose logs --no-color > e2e-compose.log 2>&1 || true
+
+      - name: 📦 Upload E2E Diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-diagnostics
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            e2e-test-output.log
+            e2e-compose-ps.txt
+            e2e-compose.log
 
       - name: 🛑 Stop Docker Compose
         if: always()
-        run: |
-          docker compose ps
-          docker compose logs --tail=200
-          docker compose down -v
+        run: docker compose down -v

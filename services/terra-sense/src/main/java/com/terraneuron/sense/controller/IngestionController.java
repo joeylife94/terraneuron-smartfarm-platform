@@ -1,8 +1,9 @@
 package com.terraneuron.sense.controller;
 
 import com.terraneuron.sense.model.SensorData;
-import com.terraneuron.sense.service.KafkaProducerService;
 import com.terraneuron.sense.service.InfluxDbWriterService;
+import com.terraneuron.sense.service.KafkaProducerService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -26,19 +27,19 @@ public class IngestionController {
     private final InfluxDbWriterService influxDbWriterService;
 
     @PostMapping("/sensor-data")
-    public ResponseEntity<?> ingestSensorData(@RequestBody SensorData sensorData) {
+    public ResponseEntity<?> ingestSensorData(@Valid @RequestBody SensorData sensorData) {
         log.info("📥 HTTP 센서 데이터 수신: {}", sensorData);
-        
+
         if (sensorData.getTimestamp() == null) {
             sensorData.setTimestamp(Instant.now());
         }
-        
+
         // 1) InfluxDB 시계열 저장 (실패해도 Kafka 전송에 영향 없음)
         influxDbWriterService.writeSensorData(sensorData);
-        
+
         // 2) Kafka 실시간 스트리밍 → terra-cortex AI 분석
         kafkaProducerService.sendSensorData(sensorData);
-        
+
         return ResponseEntity.ok(Map.of(
                 "status", "accepted",
                 "sensorId", sensorData.getSensorId(),

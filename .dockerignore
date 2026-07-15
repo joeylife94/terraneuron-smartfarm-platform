@@ -1,0 +1,15 @@
+**
+!.dockerignore
+!services/
+!services/terra-sense/
+!services/terra-sense/**
+!services/terra-ops/
+!services/terra-ops/**
+!docs/
+!docs/contracts/
+!docs/contracts/**
+
+**/.gradle
+**/build
+**/*.log
+.env
