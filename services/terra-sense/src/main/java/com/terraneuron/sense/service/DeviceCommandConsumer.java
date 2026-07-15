@@ -66,13 +66,24 @@ public class DeviceCommandConsumer {
             return;
         }
 
-        if (registration.isPendingDuplicate()) {
-            // MQTT was already published. Re-emit broker-acknowledged delivery feedback
-            // without physically publishing the command again.
+        if (registration.isPublishedDuplicate()) {
+            // MQTT publication was durably recorded. Re-emit only delivery feedback.
             sendFeedback(command, "DELIVERED", null);
-            log.info("Replayed delivery feedback for duplicate pending command: {}",
+            log.info("Replayed delivery feedback for published command: {}",
                     command.getCommandId());
             return;
+        }
+
+        if (registration.isPublishInProgress()) {
+            // Another listener or the previous process still owns the short publish lease.
+            // Throwing allows Kafka retry after the lease expires without false DELIVERED feedback.
+            throw new IllegalStateException(
+                    "MQTT publish lease is already held for command " + command.getCommandId());
+        }
+
+        if (!registration.shouldPublish()) {
+            throw new IllegalStateException(
+                    "Unsupported command registration state: " + registration.state());
         }
 
         try {
@@ -85,8 +96,12 @@ public class DeviceCommandConsumer {
             return;
         }
 
+        // Persist PUBLISHED before delivery feedback. Kafka redelivery can then replay
+        // feedback without repeating the physical MQTT command.
+        commandRegistry.markPublished(command.getCommandId());
+
         // Await Kafka broker acknowledgement. If this fails, the listener throws and
-        // Kafka redelivery follows the duplicate-pending path without MQTT republish.
+        // Kafka redelivery follows the PUBLISHED path without MQTT republish.
         sendFeedback(command, "DELIVERED", null);
         log.info("Command delivered once: command={} asset={} action={}",
                 command.getCommandId(), command.getTargetAssetId(), command.getActionType());
