@@ -11,15 +11,19 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.support.SendResult;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class MqttDeviceAckCorrelationTest {
@@ -30,6 +34,8 @@ class MqttDeviceAckCorrelationTest {
     private KafkaProducerService kafkaProducerService;
     @Mock
     private KafkaTemplate<String, Object> kafkaTemplate;
+    @Mock
+    private CommandRegistry commandRegistry;
 
     private MqttGatewayService gateway;
 
@@ -39,12 +45,14 @@ class MqttDeviceAckCorrelationTest {
                 mqttClient,
                 new ObjectMapper().findAndRegisterModules(),
                 kafkaProducerService,
-                kafkaTemplate);
+                kafkaTemplate,
+                commandRegistry,
+                10);
     }
 
     @Test
     void explicitDeviceExecutionAckIsForwardedWithOriginalPlanContext() throws Exception {
-        gateway.publishCommand(command());
+        stubPendingCommandAndFeedback();
 
         gateway.messageArrived(
                 "terra/devices/farm-001/fan-01/status",
@@ -67,12 +75,30 @@ class MqttDeviceAckCorrelationTest {
                 .containsEntry("target_asset_id", "fan-01")
                 .containsEntry("status", "EXECUTED")
                 .containsEntry("error", "");
-        assertThat(gateway.getStats()).containsEntry("pending_command_acks", 0);
+        verify(commandRegistry).finishCompletion("cmd-1a2b3c4d");
+    }
+
+    @Test
+    void duplicateTerminalAckIsSuppressed() throws Exception {
+        when(commandRegistry.findPending("cmd-1a2b3c4d"))
+                .thenReturn(Optional.of(command()));
+        when(commandRegistry.claimCompletion("cmd-1a2b3c4d", "EXECUTED", ""))
+                .thenReturn(false);
+
+        gateway.messageArrived(
+                "terra/devices/farm-001/fan-01/status",
+                mqttMessage(statusJson("farm-001", "fan-01", "EXECUTED", null)));
+
+        verify(kafkaTemplate, never()).send(
+                eq("terra.control.feedback"), eq("farm-001"), org.mockito.ArgumentMatchers.any());
+        verify(commandRegistry, never()).finishCompletion("cmd-1a2b3c4d");
     }
 
     @Test
     void mismatchedDeviceIdentityCannotAcknowledgeAnotherAssetCommand() throws Exception {
-        gateway.publishCommand(command());
+        when(commandRegistry.findPending("cmd-1a2b3c4d"))
+                .thenReturn(Optional.of(command()));
+        when(commandRegistry.pendingCount()).thenReturn(1L);
 
         gateway.messageArrived(
                 "terra/devices/farm-001/heater-01/status",
@@ -80,14 +106,16 @@ class MqttDeviceAckCorrelationTest {
 
         verify(kafkaTemplate, never()).send(
                 eq("terra.control.feedback"), eq("farm-001"), org.mockito.ArgumentMatchers.any());
+        verify(commandRegistry, never()).claimCompletion(
+                "cmd-1a2b3c4d", "EXECUTED", "");
         assertThat(gateway.getStats())
-                .containsEntry("pending_command_acks", 1)
+                .containsEntry("pending_command_acks", 1L)
                 .containsEntry("error_count", 1L);
     }
 
     @Test
     void genericRunningStatusIsNotTreatedAsExecutionAck() throws Exception {
-        gateway.publishCommand(command());
+        when(commandRegistry.pendingCount()).thenReturn(1L);
         String payload = """
                 {
                   "farmId":"farm-001",
@@ -104,7 +132,20 @@ class MqttDeviceAckCorrelationTest {
 
         verify(kafkaTemplate, never()).send(
                 eq("terra.control.feedback"), eq("farm-001"), org.mockito.ArgumentMatchers.any());
-        assertThat(gateway.getStats()).containsEntry("pending_command_acks", 1);
+        verify(commandRegistry, never()).findPending("cmd-1a2b3c4d");
+        assertThat(gateway.getStats()).containsEntry("pending_command_acks", 1L);
+    }
+
+    private void stubPendingCommandAndFeedback() {
+        when(commandRegistry.findPending("cmd-1a2b3c4d"))
+                .thenReturn(Optional.of(command()));
+        when(commandRegistry.claimCompletion("cmd-1a2b3c4d", "EXECUTED", ""))
+                .thenReturn(true);
+        CompletableFuture<SendResult<String, Object>> future =
+                CompletableFuture.completedFuture(null);
+        when(kafkaTemplate.send(
+                eq("terra.control.feedback"), eq("farm-001"), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(future);
     }
 
     private DeviceCommand command() {
