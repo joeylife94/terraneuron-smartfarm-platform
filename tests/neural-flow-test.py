@@ -128,6 +128,10 @@ def send_sensor_data(data: Dict) -> None:
             "sensor ingestion acknowledgement identity mismatch: "
             f"expected {data['sensorId']}, got {payload.get('sensorId')}"
         )
+    if not payload.get("timestamp"):
+        raise E2ETestFailure(
+            f"sensor ingestion acknowledgement omitted timestamp: {payload}"
+        )
     print(
         f"  PASS {data['sensorId']}: "
         f"{data['sensorType']}={data['value']}{data['unit']}"
