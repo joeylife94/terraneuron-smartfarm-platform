@@ -14,6 +14,8 @@ services:
   kafka:
     environment:
       KAFKA_NUM_PARTITIONS: 3
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
 
   mysql:
     volumes:
@@ -33,6 +35,13 @@ services:
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
       SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:-local-dev}
+
+  terra-cortex:
+    environment:
+      KAFKA_TRANSACTIONAL_ID: terra-cortex-local
+      KAFKA_DLT_TOPIC: raw-sensor-data.DLT
+      KAFKA_PROCESSING_MAX_ATTEMPTS: 3
+      KAFKA_MAX_POLL_INTERVAL_MS: 900000
 
   terra-ops:
     build:
