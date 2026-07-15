@@ -10,8 +10,11 @@ import java.time.Instant;
 import java.util.Map;
 
 /**
- * 디바이스 상태 모델
- * MQTT를 통해 디바이스에서 보고된 현재 상태
+ * Device status reported over MQTT.
+ *
+ * A device confirms a command by sending lastCommandId together with
+ * lastCommandStatus=EXECUTED or FAILED. Generic online/running/idle state is
+ * never interpreted as command execution acknowledgement.
  */
 @Data
 @Builder
@@ -19,29 +22,41 @@ import java.util.Map;
 @AllArgsConstructor
 public class DeviceStatus {
 
-    /** 디바이스/자산 ID */
+    /** Device/asset ID */
     private String assetId;
 
-    /** 농장 ID */
+    /** Farm ID */
     private String farmId;
 
-    /** 디바이스 유형 (fan, heater, humidifier, dehumidifier, vent, led) */
+    /** Device type (fan, heater, humidifier, dehumidifier, vent, led) */
     private String deviceType;
 
-    /** 현재 상태 (online, offline, running, idle, error) */
+    /** Current device state (online, offline, running, idle, error) */
     private String state;
 
-    /** 마지막 명령 ID (실행 중인 경우) */
+    /** Last command ID handled by the physical device */
     private String lastCommandId;
 
-    /** 확장 속성 (speed_level, power_percentage 등) */
+    /** Explicit command outcome: EXECUTED or FAILED */
+    private String lastCommandStatus;
+
+    /** Device-reported command failure detail */
+    private String lastCommandError;
+
+    /** Extended properties (speed_level, power_percentage, etc.) */
     private Map<String, Object> attributes;
 
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", timezone = "UTC")
     private Instant reportedAt;
 
-    /** 디바이스 온라인 여부 */
     public boolean isOnline() {
         return "online".equals(state) || "running".equals(state) || "idle".equals(state);
+    }
+
+    public boolean hasTerminalCommandAcknowledgement() {
+        return lastCommandId != null
+                && !lastCommandId.isBlank()
+                && ("EXECUTED".equalsIgnoreCase(lastCommandStatus)
+                    || "FAILED".equalsIgnoreCase(lastCommandStatus));
     }
 }

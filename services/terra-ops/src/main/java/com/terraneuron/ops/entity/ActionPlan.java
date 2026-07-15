@@ -19,7 +19,9 @@ import java.time.Instant;
     @Index(name = "idx_plan_status", columnList = "status"),
     @Index(name = "idx_plan_trace_id", columnList = "trace_id"),
     @Index(name = "idx_plan_priority", columnList = "priority"),
-    @Index(name = "idx_plan_expires_at", columnList = "expires_at")
+    @Index(name = "idx_plan_expires_at", columnList = "expires_at"),
+    @Index(name = "idx_plan_command_id", columnList = "command_id"),
+    @Index(name = "idx_plan_ack_deadline", columnList = "ack_deadline_at")
 })
 @Data
 @Builder
@@ -93,7 +95,19 @@ public class ActionPlan {
     @Column(name = "rejection_reason", columnDefinition = "TEXT")
     private String rejectionReason;
 
-    // Execution tracking
+    // Command correlation and execution tracking
+    @Column(name = "command_id", length = 50)
+    private String commandId;
+
+    @Column(name = "dispatched_at")
+    private Instant dispatchedAt;
+
+    @Column(name = "delivered_at")
+    private Instant deliveredAt;
+
+    @Column(name = "ack_deadline_at")
+    private Instant ackDeadlineAt;
+
     @Column(name = "executed_at")
     private Instant executedAt;
 
@@ -163,6 +177,7 @@ public class ActionPlan {
         DISPATCH_FAILED,  // Kafka command publication failed
         DELIVERY_FAILED,  // Kafka-to-MQTT delivery failed
         EXECUTION_FAILED, // Device reported execution failure
+        ACK_TIMEOUT,      // Device did not acknowledge before the deadline
         FAILED,           // Legacy failure state retained for stored records
         EXPIRED,          // Plan expired before action
         CANCELLED         // Cancelled by user

@@ -58,7 +58,8 @@ class KafkaListenerFailurePropagationTest {
         CommandFeedbackConsumer consumer = new CommandFeedbackConsumer(
                 mock(ActionPlanRepository.class),
                 mock(AuditService.class),
-                contractSchemaValidator());
+                contractSchemaValidator(),
+                120);
 
         assertThatThrownBy(() -> consumer.onFeedback(Map.of("type", "feedback")))
                 .isInstanceOf(IllegalStateException.class)

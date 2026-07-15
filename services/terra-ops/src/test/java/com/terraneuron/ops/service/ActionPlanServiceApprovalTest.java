@@ -14,6 +14,7 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.SendResult;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -28,9 +29,6 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/**
- * Focused unit tests for {@link ActionPlanService#approvePlan}.
- */
 @ExtendWith(MockitoExtension.class)
 class ActionPlanServiceApprovalTest {
 
@@ -78,7 +76,7 @@ class ActionPlanServiceApprovalTest {
     }
 
     @Test
-    void validPendingPlanIsApprovedAndDispatchedButNotExecuted() {
+    void validPendingPlanIsApprovedAndDispatchedWithPersistedCommandId() {
         ActionPlan plan = pendingPlanBuilder().build();
         when(actionPlanRepository.findByPlanId("plan-1")).thenReturn(Optional.of(plan));
         stubSuccessfulDispatch();
@@ -86,8 +84,10 @@ class ActionPlanServiceApprovalTest {
         ActionPlan result = service.approvePlan("plan-1", "operator", "looks good");
 
         assertThat(result.getStatus()).isEqualTo(ActionPlan.PlanStatus.DISPATCHED);
+        assertThat(result.getCommandId()).startsWith("cmd-");
+        assertThat(result.getDispatchedAt()).isNotNull();
         assertThat(result.getExecutedAt()).isNull();
-        assertThat(result.getExecutionResult()).startsWith("KAFKA_ACKNOWLEDGED:cmd-");
+        assertThat(result.getExecutionResult()).isEqualTo("KAFKA_ACKNOWLEDGED");
         assertThat(result.getApprovedBy()).isEqualTo("operator");
         assertThat(result.getApprovedAt()).isNotNull();
 
@@ -100,6 +100,7 @@ class ActionPlanServiceApprovalTest {
         Map<String, Object> data = (Map<String, Object>) commandEvent.get("data");
         assertThat(commandEvent.get("type")).isEqualTo("terra.ops.command.execute");
         assertThat(data.get("farm_id")).isEqualTo("farm-1");
+        assertThat(data.get("command_id")).isEqualTo(result.getCommandId());
         assertThat(data.get("parameters")).isEqualTo(Map.of(
                 "duration_minutes", 30,
                 "speed_level", "high"));
@@ -116,10 +117,33 @@ class ActionPlanServiceApprovalTest {
         ActionPlan result = service.approvePlan("plan-1", "operator", "looks good");
 
         assertThat(result.getStatus()).isEqualTo(ActionPlan.PlanStatus.DISPATCH_FAILED);
+        assertThat(result.getCommandId()).startsWith("cmd-");
         assertThat(result.getExecutedAt()).isNull();
-        assertThat(result.getExecutionResult()).startsWith("DISPATCH_FAILED:cmd-");
+        assertThat(result.getExecutionResult()).isEqualTo("DISPATCH_FAILED");
         assertThat(result.getExecutionError()).contains("broker unavailable");
         verify(auditService).logCommandExecuted(eq(plan), eq(false), eq(null), anyString());
+    }
+
+    @Test
+    void deliveredCommandWithoutDeviceAckBecomesAckTimeout() {
+        ActionPlan plan = pendingPlanBuilder()
+                .commandId("cmd-1a2b3c4d")
+                .status(ActionPlan.PlanStatus.DELIVERED)
+                .deliveredAt(Instant.now().minusSeconds(180))
+                .ackDeadlineAt(Instant.now().minusSeconds(60))
+                .build();
+        when(actionPlanRepository.findByStatusAndAckDeadlineAtBefore(
+                eq(ActionPlan.PlanStatus.DELIVERED), any(Instant.class)))
+                .thenReturn(List.of(plan));
+
+        service.timeoutMissingDeviceAcknowledgements();
+
+        assertThat(plan.getStatus()).isEqualTo(ActionPlan.PlanStatus.ACK_TIMEOUT);
+        assertThat(plan.getExecutionResult()).isEqualTo("DEVICE_ACK_TIMEOUT");
+        assertThat(plan.getExecutionError()).contains("No device acknowledgement");
+        assertThat(plan.getExecutedAt()).isNull();
+        verify(actionPlanRepository).save(plan);
+        verify(auditService).logCommandTimeout(plan);
     }
 
     @Test

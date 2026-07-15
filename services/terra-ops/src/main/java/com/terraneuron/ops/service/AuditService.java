@@ -28,9 +28,6 @@ public class AuditService {
     private final AuditLogRepository auditLogRepository;
     private final ObjectMapper objectMapper;
 
-    /**
-     * Log a plan creation event
-     */
     @Transactional
     public AuditLog logPlanCreated(ActionPlan plan) {
         Map<String, Object> details = new HashMap<>();
@@ -53,9 +50,6 @@ public class AuditService {
         );
     }
 
-    /**
-     * Log a plan validation event
-     */
     @Transactional
     public AuditLog logPlanValidated(ActionPlan plan, boolean passed, String failedLayer, List<String> errors) {
         Map<String, Object> details = new HashMap<>();
@@ -76,9 +70,6 @@ public class AuditService {
         );
     }
 
-    /**
-     * Log a plan approval event
-     */
     @Transactional
     public AuditLog logPlanApproved(ActionPlan plan, String approvedBy, String notes) {
         Map<String, Object> details = new HashMap<>();
@@ -99,9 +90,6 @@ public class AuditService {
         );
     }
 
-    /**
-     * Log a plan rejection event
-     */
     @Transactional
     public AuditLog logPlanRejected(ActionPlan plan, String rejectedBy, String reason) {
         Map<String, Object> details = new HashMap<>();
@@ -122,12 +110,10 @@ public class AuditService {
         );
     }
 
-    /**
-     * Log a command execution event
-     */
     @Transactional
     public AuditLog logCommandExecuted(ActionPlan plan, boolean success, String result, String error) {
         Map<String, Object> details = new HashMap<>();
+        details.put("command_id", plan.getCommandId());
         details.put("target_asset", plan.getTargetAssetId());
         details.put("action_type", plan.getActionType());
         details.put("execution_result", result);
@@ -137,7 +123,7 @@ public class AuditService {
                 plan.getTraceId(),
                 success ? AuditLog.EventType.COMMAND_EXECUTED : AuditLog.EventType.COMMAND_FAILED,
                 "command",
-                plan.getPlanId(),
+                plan.getCommandId() != null ? plan.getCommandId() : plan.getPlanId(),
                 "system",
                 success ? "Command executed successfully" : "Command execution failed",
                 details,
@@ -146,9 +132,28 @@ public class AuditService {
         );
     }
 
-    /**
-     * Log an alert triggered event
-     */
+    @Transactional
+    public AuditLog logCommandTimeout(ActionPlan plan) {
+        Map<String, Object> details = new HashMap<>();
+        details.put("command_id", plan.getCommandId());
+        details.put("plan_id", plan.getPlanId());
+        details.put("farm_id", plan.getFarmId());
+        details.put("target_asset", plan.getTargetAssetId());
+        details.put("ack_deadline_at", plan.getAckDeadlineAt());
+
+        return createLog(
+                plan.getTraceId(),
+                AuditLog.EventType.COMMAND_TIMEOUT,
+                "command",
+                plan.getCommandId() != null ? plan.getCommandId() : plan.getPlanId(),
+                "system",
+                "Device acknowledgement timeout for asset " + plan.getTargetAssetId(),
+                details,
+                false,
+                plan.getExecutionError()
+        );
+    }
+
     @Transactional
     public AuditLog logAlertTriggered(String traceId, String alertId, String farmId, String severity, String message) {
         Map<String, Object> details = new HashMap<>();
@@ -169,9 +174,6 @@ public class AuditService {
         );
     }
 
-    /**
-     * Log an insight detected event
-     */
     @Transactional
     public AuditLog logInsightDetected(String traceId, String insightId, String farmId, String status, String message) {
         Map<String, Object> details = new HashMap<>();
@@ -192,36 +194,18 @@ public class AuditService {
         );
     }
 
-    /**
-     * Get complete audit trail for a trace_id
-     */
     public List<AuditLog> getAuditTrail(String traceId) {
         return auditLogRepository.findByTraceIdOrderByTimestampAsc(traceId);
     }
 
-    /**
-     * Get audit history for a specific entity
-     */
     public List<AuditLog> getEntityHistory(String entityType, String entityId) {
         return auditLogRepository.findByEntityTypeAndEntityIdOrderByTimestampAsc(entityType, entityId);
     }
 
-    /**
-     * Get plan lifecycle history
-     */
     public List<AuditLog> getPlanHistory(String planId) {
         return auditLogRepository.findPlanHistory(planId);
     }
 
-    // ========== Private Helper Methods ==========
-
-    /**
-     * Safely extract a prefix of traceId for log output.
-     * Handles null, blank, and short strings without throwing exceptions.
-     *
-     * @param traceId the trace ID to truncate
-     * @return a safe prefix for logging, or "no-trace" if traceId is null/blank
-     */
     private String tracePrefix(String traceId) {
         if (traceId == null || traceId.isBlank()) {
             return "no-trace";
@@ -262,16 +246,15 @@ public class AuditService {
 
         AuditLog saved = auditLogRepository.save(auditLog);
         log.info("📝 Audit: [{}] {} - {} - {}", tracePrefix(traceId), eventType, entityType, action);
-
         return saved;
     }
 
     /**
-     * Log command feedback from device (피드백 루프)
+     * Log terminal command feedback from the device path.
      */
     @Transactional
     public AuditLog logCommandFeedback(String traceId, String commandId, String planId,
-                                        String farmId, String assetId, String status, String error) {
+                                       String farmId, String assetId, String status, String error) {
         Map<String, Object> details = new HashMap<>();
         details.put("command_id", commandId);
         details.put("plan_id", planId);
@@ -282,16 +265,17 @@ public class AuditService {
             details.put("error", error);
         }
 
+        boolean success = "EXECUTED".equals(status);
         return createLog(
                 traceId != null && !traceId.isEmpty() ? traceId : "feedback-" + commandId,
-                AuditLog.EventType.COMMAND_EXECUTED,
+                success ? AuditLog.EventType.COMMAND_EXECUTED : AuditLog.EventType.COMMAND_FAILED,
                 "command",
                 commandId != null ? commandId : planId,
                 "terra-sense",
                 "Device feedback: " + status + " for asset " + assetId,
                 details,
-                !"FAILED".equals(status),
-                "FAILED".equals(status) ? error : null
+                success,
+                success ? null : error
         );
     }
 }
