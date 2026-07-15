@@ -6,7 +6,6 @@ import com.terraneuron.ops.repository.ActionPlanRepository;
 import com.terraneuron.ops.repository.InsightRepository;
 import com.terraneuron.ops.service.safety.SafetyValidator;
 import org.junit.jupiter.api.Test;
-import org.springframework.kafka.core.KafkaTemplate;
 
 import java.time.Instant;
 import java.util.Map;
@@ -44,9 +43,9 @@ class KafkaListenerFailurePropagationTest {
                 mock(SafetyValidator.class),
                 mock(AuditService.class),
                 mock(ObjectMapper.class),
-                mockKafkaTemplate(),
                 validator,
-                contractSchemaValidator());
+                contractSchemaValidator(),
+                mock(CommandOutboxService.class));
 
         assertThatThrownBy(() -> service.consumeActionPlan(invalidEvent))
                 .isInstanceOf(IllegalStateException.class)
@@ -127,11 +126,6 @@ class KafkaListenerFailurePropagationTest {
 
         verify(auditService).logInsightDetected(
                 "insight-detected-id-42", "42", "farm-1", "NORMAL", "Legacy insight");
-    }
-
-    @SuppressWarnings("unchecked")
-    private KafkaTemplate<String, Object> mockKafkaTemplate() {
-        return mock(KafkaTemplate.class);
     }
 
     private ContractSchemaValidator contractSchemaValidator() {
