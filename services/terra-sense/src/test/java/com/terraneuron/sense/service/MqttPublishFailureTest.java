@@ -11,9 +11,11 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.support.SendResult;
 
 import java.time.Instant;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -22,34 +24,36 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class MqttPublishFailureTest {
 
     @Mock
     private MqttClient mqttClient;
-
     @Mock
     private KafkaProducerService kafkaProducerService;
-
     @Mock
     private MqttGatewayService mqttGatewayService;
-
     @Mock
     private KafkaTemplate<String, Object> kafkaTemplate;
+    @Mock
+    private CommandRegistry commandRegistry;
 
     @Test
-    void gatewayPropagatesBrokerPublishFailureAndDropsPendingCorrelation() throws Exception {
+    void gatewayPropagatesBrokerPublishFailure() throws Exception {
         doThrow(new MqttException(MqttException.REASON_CODE_BROKER_UNAVAILABLE))
                 .when(mqttClient)
                 .publish(anyString(), any(MqttMessage.class));
+        when(commandRegistry.pendingCount()).thenReturn(0L);
 
         MqttGatewayService gateway = new MqttGatewayService(
                 mqttClient,
                 runtimeObjectMapper(),
                 kafkaProducerService,
-                kafkaTemplate
-        );
+                kafkaTemplate,
+                commandRegistry,
+                10);
 
         assertThatThrownBy(() -> gateway.publishCommand(deviceCommand()))
                 .isInstanceOf(MqttPublishException.class)
@@ -58,33 +62,41 @@ class MqttPublishFailureTest {
 
         assertThat(gateway.getStats())
                 .containsEntry("commands_sent", 0L)
-                .containsEntry("pending_command_acks", 0)
+                .containsEntry("pending_command_acks", 0L)
                 .containsEntry("error_count", 1L);
     }
 
     @Test
-    void commandConsumerPublishesFailedFeedbackInsteadOfDelivered() {
+    void commandConsumerReleasesClaimAndPublishesFailedFeedback() {
         ObjectMapper objectMapper = runtimeObjectMapper();
         DeviceCommandConsumer consumer = new DeviceCommandConsumer(
                 mqttGatewayService,
                 objectMapper,
                 kafkaTemplate,
-                new ContractSchemaValidator(objectMapper)
-        );
+                new ContractSchemaValidator(objectMapper),
+                commandRegistry,
+                10);
 
+        when(commandRegistry.register(any(DeviceCommand.class)))
+                .thenReturn(new CommandRegistry.Registration(
+                        CommandRegistry.RegistrationState.NEW));
         doThrow(new MqttPublishException(
                 "Failed to publish MQTT command for asset fan-01",
                 new RuntimeException("broker unavailable")
         )).when(mqttGatewayService).publishCommand(any(DeviceCommand.class));
+        CompletableFuture<SendResult<String, Object>> future =
+                CompletableFuture.completedFuture(null);
+        when(kafkaTemplate.send(eq("terra.control.feedback"), eq("farm-001"), any()))
+                .thenReturn(future);
 
         consumer.onCommand(commandEvent());
 
+        verify(commandRegistry).releasePending("cmd-1a2b3c4d");
         ArgumentCaptor<Object> feedbackCaptor = ArgumentCaptor.forClass(Object.class);
         verify(kafkaTemplate).send(
                 eq("terra.control.feedback"),
                 eq("farm-001"),
-                feedbackCaptor.capture()
-        );
+                feedbackCaptor.capture());
 
         @SuppressWarnings("unchecked")
         Map<String, Object> feedback = (Map<String, Object>) feedbackCaptor.getValue();
@@ -98,7 +110,7 @@ class MqttPublishFailureTest {
                 .containsEntry("target_asset_id", "fan-01")
                 .containsEntry("status", "FAILED");
         assertThat(data.get("error").toString())
-                .contains("Failed to publish MQTT command");
+                .contains("broker unavailable");
     }
 
     private ObjectMapper runtimeObjectMapper() {
@@ -135,8 +147,6 @@ class MqttPublishFailureTest {
                         "target_asset_id", "fan-01",
                         "action_type", "turn_on",
                         "parameters", Map.of("duration_minutes", 30),
-                        "executed_by", "operator-01"
-                )
-        );
+                        "executed_by", "operator-01"));
     }
 }
