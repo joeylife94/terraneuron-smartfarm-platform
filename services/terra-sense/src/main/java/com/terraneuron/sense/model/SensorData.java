@@ -54,8 +54,14 @@ public class SensorData {
     @AssertTrue(message = "value is outside the physical range for sensorType")
     @JsonIgnore
     public boolean isValueWithinPhysicalRange() {
-        if (value == null || sensorType == null || !Double.isFinite(value)) {
-            return value == null || Double.isFinite(value == null ? 0.0 : value);
+        if (value == null) {
+            return true; // @NotNull reports the missing value.
+        }
+        if (!Double.isFinite(value)) {
+            return false;
+        }
+        if (sensorType == null) {
+            return true; // @NotBlank reports the missing type.
         }
 
         return switch (sensorType) {
