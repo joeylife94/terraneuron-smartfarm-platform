@@ -7,25 +7,20 @@ import com.terraneuron.ops.service.safety.SafetyValidator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.kafka.core.KafkaTemplate;
-import org.springframework.kafka.support.SendResult;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -37,25 +32,24 @@ class ActionPlanServiceApprovalTest {
     @Mock
     private AuditService auditService;
     @Mock
-    private KafkaTemplate<String, Object> kafkaTemplate;
-    @Mock
     private ActionPlanEventValidator eventValidator;
+    @Mock
+    private CommandOutboxService commandOutboxService;
 
     private ActionPlanService service;
-    private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() {
-        objectMapper = new ObjectMapper();
+        ObjectMapper objectMapper = new ObjectMapper();
         SafetyValidator safetyValidator = new SafetyValidator();
         service = new ActionPlanService(
                 actionPlanRepository,
                 safetyValidator,
                 auditService,
                 objectMapper,
-                kafkaTemplate,
                 eventValidator,
-                new ContractSchemaValidator(objectMapper));
+                new ContractSchemaValidator(objectMapper),
+                commandOutboxService);
     }
 
     private ActionPlan.ActionPlanBuilder pendingPlanBuilder() {
@@ -76,52 +70,24 @@ class ActionPlanServiceApprovalTest {
     }
 
     @Test
-    void validPendingPlanIsApprovedAndDispatchedWithPersistedCommandId() {
+    void validPendingPlanIsApprovedAndAtomicallyQueuedForDispatch() {
         ActionPlan plan = pendingPlanBuilder().build();
         when(actionPlanRepository.findByPlanId("plan-1")).thenReturn(Optional.of(plan));
-        stubSuccessfulDispatch();
+        stubOutboxEnqueue();
 
         ActionPlan result = service.approvePlan("plan-1", "operator", "looks good");
 
-        assertThat(result.getStatus()).isEqualTo(ActionPlan.PlanStatus.DISPATCHED);
-        assertThat(result.getCommandId()).startsWith("cmd-");
-        assertThat(result.getDispatchedAt()).isNotNull();
+        assertThat(result.getStatus()).isEqualTo(ActionPlan.PlanStatus.DISPATCHING);
+        assertThat(result.getCommandId()).isEqualTo("cmd-outbox-1");
+        assertThat(result.getDispatchedAt()).isNull();
         assertThat(result.getExecutedAt()).isNull();
-        assertThat(result.getExecutionResult()).isEqualTo("KAFKA_ACKNOWLEDGED");
+        assertThat(result.getExecutionResult()).isEqualTo("COMMAND_OUTBOX_PENDING");
         assertThat(result.getApprovedBy()).isEqualTo("operator");
         assertThat(result.getApprovedAt()).isNotNull();
 
-        ArgumentCaptor<Object> eventCaptor = ArgumentCaptor.forClass(Object.class);
-        verify(kafkaTemplate, times(1)).send(
-                eq("terra.control.command"), eq("farm-1"), eventCaptor.capture());
-        @SuppressWarnings("unchecked")
-        Map<String, Object> commandEvent = (Map<String, Object>) eventCaptor.getValue();
-        @SuppressWarnings("unchecked")
-        Map<String, Object> data = (Map<String, Object>) commandEvent.get("data");
-        assertThat(commandEvent.get("type")).isEqualTo("terra.ops.command.execute");
-        assertThat(data.get("farm_id")).isEqualTo("farm-1");
-        assertThat(data.get("command_id")).isEqualTo(result.getCommandId());
-        assertThat(data.get("parameters")).isEqualTo(Map.of(
-                "duration_minutes", 30,
-                "speed_level", "high"));
+        verify(commandOutboxService).enqueue(plan);
         verify(auditService).logPlanApproved(eq(plan), eq("operator"), eq("looks good"));
         verify(auditService, never()).logCommandExecuted(eq(plan), eq(true), any(), any());
-    }
-
-    @Test
-    void kafkaPublishFailureEndsInDispatchFailedNotExecuted() {
-        ActionPlan plan = pendingPlanBuilder().build();
-        when(actionPlanRepository.findByPlanId("plan-1")).thenReturn(Optional.of(plan));
-        stubFailedDispatch("broker unavailable");
-
-        ActionPlan result = service.approvePlan("plan-1", "operator", "looks good");
-
-        assertThat(result.getStatus()).isEqualTo(ActionPlan.PlanStatus.DISPATCH_FAILED);
-        assertThat(result.getCommandId()).startsWith("cmd-");
-        assertThat(result.getExecutedAt()).isNull();
-        assertThat(result.getExecutionResult()).isEqualTo("DISPATCH_FAILED");
-        assertThat(result.getExecutionError()).contains("broker unavailable");
-        verify(auditService).logCommandExecuted(eq(plan), eq(false), eq(null), anyString());
     }
 
     @Test
@@ -147,7 +113,7 @@ class ActionPlanServiceApprovalTest {
     }
 
     @Test
-    void invalidPlanIsRejectedAndNoCommandPublished() {
+    void invalidPlanIsRejectedAndNoCommandQueued() {
         ActionPlan plan = pendingPlanBuilder()
                 .actionType(null)
                 .build();
@@ -158,7 +124,7 @@ class ActionPlanServiceApprovalTest {
         assertThat(result.getStatus()).isEqualTo(ActionPlan.PlanStatus.REJECTED);
         assertThat(result.getRejectionReason()).contains("LOGICAL");
 
-        verify(kafkaTemplate, never()).send(anyString(), anyString(), any());
+        verify(commandOutboxService, never()).enqueue(any());
         verify(auditService).logPlanRejected(eq(plan), eq("system"), anyString());
         verify(auditService, never()).logPlanApproved(any(), anyString(), any());
     }
@@ -167,24 +133,20 @@ class ActionPlanServiceApprovalTest {
     void validationOutcomeIsAlwaysAudited() {
         ActionPlan plan = pendingPlanBuilder().build();
         when(actionPlanRepository.findByPlanId("plan-1")).thenReturn(Optional.of(plan));
-        stubSuccessfulDispatch();
+        stubOutboxEnqueue();
 
         service.approvePlan("plan-1", "operator", "ok");
 
         verify(auditService).logPlanValidated(eq(plan), anyBoolean(), any(), any());
     }
 
-    private void stubSuccessfulDispatch() {
-        CompletableFuture<SendResult<String, Object>> result =
-                CompletableFuture.completedFuture(null);
-        when(kafkaTemplate.send(eq("terra.control.command"), eq("farm-1"), any()))
-                .thenReturn(result);
-    }
-
-    private void stubFailedDispatch(String message) {
-        CompletableFuture<SendResult<String, Object>> result = new CompletableFuture<>();
-        result.completeExceptionally(new RuntimeException(message));
-        when(kafkaTemplate.send(eq("terra.control.command"), eq("farm-1"), any()))
-                .thenReturn(result);
+    private void stubOutboxEnqueue() {
+        doAnswer(invocation -> {
+            ActionPlan plan = invocation.getArgument(0);
+            plan.setCommandId("cmd-outbox-1");
+            plan.setStatus(ActionPlan.PlanStatus.DISPATCHING);
+            plan.setExecutionResult("COMMAND_OUTBOX_PENDING");
+            return null;
+        }).when(commandOutboxService).enqueue(any(ActionPlan.class));
     }
 }
