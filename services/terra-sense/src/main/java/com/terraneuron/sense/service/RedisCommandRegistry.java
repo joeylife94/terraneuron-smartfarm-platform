@@ -17,16 +17,19 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * Redis-backed implementation of command correlation and duplicate suppression.
+ * Redis-backed command correlation and duplicate suppression.
  *
- * Individual command keys use TTLs while a Redis set provides a low-cost pending
- * count for operational metrics. Redis SET NX is the atomic idempotency gate.
+ * Pending command data, a short publish lease, a published marker, and a terminal
+ * completion marker are separate keys. This prevents a crash before MQTT publish
+ * from being misreported as a successful delivery.
  */
 @Slf4j
 @Service
 public class RedisCommandRegistry implements CommandRegistry {
 
     static final String PENDING_PREFIX = "terra:sense:command:pending:";
+    static final String PUBLISHING_PREFIX = "terra:sense:command:publishing:";
+    static final String PUBLISHED_PREFIX = "terra:sense:command:published:";
     static final String COMPLETED_PREFIX = "terra:sense:command:completed:";
     static final String PENDING_INDEX_KEY = "terra:sense:command:pending-index";
 
@@ -34,19 +37,22 @@ public class RedisCommandRegistry implements CommandRegistry {
     private final ObjectMapper objectMapper;
     private final Duration pendingTtl;
     private final Duration completedTtl;
+    private final Duration publishLeaseTtl;
 
     public RedisCommandRegistry(
             StringRedisTemplate redisTemplate,
             ObjectMapper objectMapper,
             @Value("${app.command.registry.pending-ttl-seconds:86400}") long pendingTtlSeconds,
-            @Value("${app.command.registry.completed-ttl-seconds:604800}") long completedTtlSeconds) {
-        if (pendingTtlSeconds <= 0 || completedTtlSeconds <= 0) {
+            @Value("${app.command.registry.completed-ttl-seconds:604800}") long completedTtlSeconds,
+            @Value("${app.command.registry.publish-lease-seconds:30}") long publishLeaseSeconds) {
+        if (pendingTtlSeconds <= 0 || completedTtlSeconds <= 0 || publishLeaseSeconds <= 0) {
             throw new IllegalArgumentException("Command registry TTLs must be positive");
         }
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
         this.pendingTtl = Duration.ofSeconds(pendingTtlSeconds);
         this.completedTtl = Duration.ofSeconds(completedTtlSeconds);
+        this.publishLeaseTtl = Duration.ofSeconds(publishLeaseSeconds);
     }
 
     @Override
@@ -58,8 +64,7 @@ public class RedisCommandRegistry implements CommandRegistry {
 
             String completedPayload = values.get(completedKey(commandId));
             if (completedPayload != null) {
-                CommandCompletion completion = deserializeCompletion(completedPayload);
-                assertSameCommand(command, completion.command());
+                assertSameCommand(command, deserializeCompletion(completedPayload).command());
                 return new Registration(RegistrationState.COMPLETED);
             }
 
@@ -68,29 +73,57 @@ public class RedisCommandRegistry implements CommandRegistry {
             if (Boolean.TRUE.equals(created)) {
                 redisTemplate.opsForSet().add(PENDING_INDEX_KEY, commandId);
                 log.info("Registered durable pending command: {}", commandId);
-                return new Registration(RegistrationState.NEW);
+            } else {
+                String existingPayload = values.get(pendingKey(commandId));
+                if (existingPayload != null) {
+                    assertSameCommand(command, deserializeCommand(existingPayload));
+                } else {
+                    completedPayload = values.get(completedKey(commandId));
+                    if (completedPayload != null) {
+                        assertSameCommand(command, deserializeCompletion(completedPayload).command());
+                        return new Registration(RegistrationState.COMPLETED);
+                    }
+                    throw new IllegalStateException(
+                            "Command registry state changed unexpectedly for " + commandId);
+                }
             }
 
-            String existingPayload = values.get(pendingKey(commandId));
-            if (existingPayload != null) {
-                DeviceCommand existing = deserializeCommand(existingPayload);
-                assertSameCommand(command, existing);
-                return new Registration(RegistrationState.PENDING);
+            if (Boolean.TRUE.equals(redisTemplate.hasKey(publishedKey(commandId)))) {
+                return new Registration(RegistrationState.PUBLISHED);
             }
 
-            // The pending key may have completed between SET NX and GET.
-            completedPayload = values.get(completedKey(commandId));
-            if (completedPayload != null) {
-                CommandCompletion completion = deserializeCompletion(completedPayload);
-                assertSameCommand(command, completion.command());
-                return new Registration(RegistrationState.COMPLETED);
-            }
-
-            throw new IllegalStateException("Command registry state changed unexpectedly for " + commandId);
+            Boolean publishLease = values.setIfAbsent(
+                    publishingKey(commandId), "1", publishLeaseTtl);
+            return new Registration(Boolean.TRUE.equals(publishLease)
+                    ? RegistrationState.SHOULD_PUBLISH
+                    : RegistrationState.PUBLISH_IN_PROGRESS);
         } catch (RuntimeException e) {
             throw e;
         } catch (Exception e) {
             throw new IllegalStateException("Failed to register command in Redis", e);
+        }
+    }
+
+    @Override
+    public void markPublished(String commandId) {
+        if (commandId == null || commandId.isBlank()) {
+            throw new IllegalArgumentException("commandId is required");
+        }
+        try {
+            // A very fast device ACK may complete while MQTT publish is returning.
+            if (Boolean.TRUE.equals(redisTemplate.hasKey(completedKey(commandId)))) {
+                redisTemplate.delete(publishingKey(commandId));
+                return;
+            }
+            if (!Boolean.TRUE.equals(redisTemplate.hasKey(pendingKey(commandId)))) {
+                throw new IllegalStateException("Cannot mark unknown command as published: " + commandId);
+            }
+            redisTemplate.opsForValue().set(publishedKey(commandId), "1", pendingTtl);
+            redisTemplate.delete(publishingKey(commandId));
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to mark command as published", e);
         }
     }
 
@@ -134,7 +167,7 @@ public class RedisCommandRegistry implements CommandRegistry {
 
     @Override
     public void finishCompletion(String commandId) {
-        deletePending(commandId);
+        deletePublicationState(commandId);
     }
 
     @Override
@@ -147,7 +180,7 @@ public class RedisCommandRegistry implements CommandRegistry {
 
     @Override
     public void releasePending(String commandId) {
-        deletePending(commandId);
+        deletePublicationState(commandId);
     }
 
     @Override
@@ -161,8 +194,7 @@ public class RedisCommandRegistry implements CommandRegistry {
 
             long active = 0L;
             for (String commandId : commandIds) {
-                Boolean exists = redisTemplate.hasKey(pendingKey(commandId));
-                if (Boolean.TRUE.equals(exists)) {
+                if (Boolean.TRUE.equals(redisTemplate.hasKey(pendingKey(commandId)))) {
                     active++;
                 } else {
                     sets.remove(PENDING_INDEX_KEY, commandId);
@@ -175,11 +207,13 @@ public class RedisCommandRegistry implements CommandRegistry {
         }
     }
 
-    private void deletePending(String commandId) {
+    private void deletePublicationState(String commandId) {
         if (commandId == null || commandId.isBlank()) {
             return;
         }
         redisTemplate.delete(pendingKey(commandId));
+        redisTemplate.delete(publishingKey(commandId));
+        redisTemplate.delete(publishedKey(commandId));
         redisTemplate.opsForSet().remove(PENDING_INDEX_KEY, commandId);
     }
 
@@ -219,6 +253,14 @@ public class RedisCommandRegistry implements CommandRegistry {
 
     private String pendingKey(String commandId) {
         return PENDING_PREFIX + commandId;
+    }
+
+    private String publishingKey(String commandId) {
+        return PUBLISHING_PREFIX + commandId;
+    }
+
+    private String publishedKey(String commandId) {
+        return PUBLISHED_PREFIX + commandId;
     }
 
     private String completedKey(String commandId) {
