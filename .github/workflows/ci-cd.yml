@@ -184,11 +184,30 @@ jobs:
         run: python -m py_compile tests/neural-flow-test.py
 
       - name: 🧪 Run E2E Tests
-        run: python tests/neural-flow-test.py
+        shell: bash
+        run: |
+          set -o pipefail
+          python tests/neural-flow-test.py 2>&1 | tee e2e-test-output.log
+
+      - name: 🧾 Capture E2E Diagnostics
+        if: always()
+        shell: bash
+        run: |
+          docker compose ps --all > e2e-compose-ps.txt 2>&1 || true
+          docker compose logs --no-color > e2e-compose.log 2>&1 || true
+
+      - name: 📦 Upload E2E Diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-diagnostics
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            e2e-test-output.log
+            e2e-compose-ps.txt
+            e2e-compose.log
 
       - name: 🛑 Stop Docker Compose
         if: always()
-        run: |
-          docker compose ps
-          docker compose logs --tail=200
-          docker compose down -v
+        run: docker compose down -v
