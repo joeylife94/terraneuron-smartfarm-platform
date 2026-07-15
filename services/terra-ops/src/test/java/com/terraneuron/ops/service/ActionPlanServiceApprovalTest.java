@@ -11,10 +11,12 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.support.SendResult;
 
 import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -28,11 +30,6 @@ import static org.mockito.Mockito.when;
 
 /**
  * Focused unit tests for {@link ActionPlanService#approvePlan}.
- *
- * <p>Uses the <em>real</em> {@link SafetyValidator} (it has no collaborators) with mocked
- * infrastructure, so the test exercises the actual approval/safety lifecycle. This is the
- * regression guard for the bug where a normal PENDING plan requiring approval was validated
- * before its approval metadata was set and therefore auto-rejected by the permission layer.
  */
 @ExtendWith(MockitoExtension.class)
 class ActionPlanServiceApprovalTest {
@@ -81,20 +78,19 @@ class ActionPlanServiceApprovalTest {
     }
 
     @Test
-    void validPendingPlanRequiringApprovalIsApprovedAndExecuted() {
+    void validPendingPlanIsApprovedAndDispatchedButNotExecuted() {
         ActionPlan plan = pendingPlanBuilder().build();
         when(actionPlanRepository.findByPlanId("plan-1")).thenReturn(Optional.of(plan));
+        stubSuccessfulDispatch();
 
         ActionPlan result = service.approvePlan("plan-1", "operator", "looks good");
 
-        // The plan must NOT be auto-rejected by the permission layer.
-        assertThat(result.getStatus()).isNotEqualTo(ActionPlan.PlanStatus.REJECTED);
-        // Happy path runs through execution, ending in EXECUTED.
-        assertThat(result.getStatus()).isEqualTo(ActionPlan.PlanStatus.EXECUTED);
+        assertThat(result.getStatus()).isEqualTo(ActionPlan.PlanStatus.DISPATCHED);
+        assertThat(result.getExecutedAt()).isNull();
+        assertThat(result.getExecutionResult()).startsWith("KAFKA_ACKNOWLEDGED:cmd-");
         assertThat(result.getApprovedBy()).isEqualTo("operator");
         assertThat(result.getApprovedAt()).isNotNull();
 
-        // Command was published to the control topic.
         ArgumentCaptor<Object> eventCaptor = ArgumentCaptor.forClass(Object.class);
         verify(kafkaTemplate, times(1)).send(
                 eq("terra.control.command"), eq("farm-1"), eventCaptor.capture());
@@ -108,11 +104,26 @@ class ActionPlanServiceApprovalTest {
                 "duration_minutes", 30,
                 "speed_level", "high"));
         verify(auditService).logPlanApproved(eq(plan), eq("operator"), eq("looks good"));
+        verify(auditService, never()).logCommandExecuted(eq(plan), eq(true), any(), any());
+    }
+
+    @Test
+    void kafkaPublishFailureEndsInDispatchFailedNotExecuted() {
+        ActionPlan plan = pendingPlanBuilder().build();
+        when(actionPlanRepository.findByPlanId("plan-1")).thenReturn(Optional.of(plan));
+        stubFailedDispatch("broker unavailable");
+
+        ActionPlan result = service.approvePlan("plan-1", "operator", "looks good");
+
+        assertThat(result.getStatus()).isEqualTo(ActionPlan.PlanStatus.DISPATCH_FAILED);
+        assertThat(result.getExecutedAt()).isNull();
+        assertThat(result.getExecutionResult()).startsWith("DISPATCH_FAILED:cmd-");
+        assertThat(result.getExecutionError()).contains("broker unavailable");
+        verify(auditService).logCommandExecuted(eq(plan), eq(false), eq(null), anyString());
     }
 
     @Test
     void invalidPlanIsRejectedAndNoCommandPublished() {
-        // Missing required action_type -> fails the logical safety layer.
         ActionPlan plan = pendingPlanBuilder()
                 .actionType(null)
                 .build();
@@ -132,9 +143,24 @@ class ActionPlanServiceApprovalTest {
     void validationOutcomeIsAlwaysAudited() {
         ActionPlan plan = pendingPlanBuilder().build();
         when(actionPlanRepository.findByPlanId("plan-1")).thenReturn(Optional.of(plan));
+        stubSuccessfulDispatch();
 
         service.approvePlan("plan-1", "operator", "ok");
 
         verify(auditService).logPlanValidated(eq(plan), anyBoolean(), any(), any());
+    }
+
+    private void stubSuccessfulDispatch() {
+        CompletableFuture<SendResult<String, Object>> result =
+                CompletableFuture.completedFuture(null);
+        when(kafkaTemplate.send(eq("terra.control.command"), eq("farm-1"), any()))
+                .thenReturn(result);
+    }
+
+    private void stubFailedDispatch(String message) {
+        CompletableFuture<SendResult<String, Object>> result = new CompletableFuture<>();
+        result.completeExceptionally(new RuntimeException(message));
+        when(kafkaTemplate.send(eq("terra.control.command"), eq("farm-1"), any()))
+                .thenReturn(result);
     }
 }
