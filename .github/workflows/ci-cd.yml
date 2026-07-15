@@ -144,6 +144,9 @@ jobs:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
 
+      - name: 🔎 Validate Docker Compose Configuration
+        run: docker compose config --quiet
+
       - name: 🐳 Start Docker Compose Stack
         run: docker compose up -d
 
