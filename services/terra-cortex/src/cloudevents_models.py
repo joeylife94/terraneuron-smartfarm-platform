@@ -133,6 +133,17 @@ class ActionPlanGeneratedEvent(CloudEventBase):
     source: str = "//terraneuron/terra-cortex"
     data: ActionPlanData
 
+    def model_dump(self, *args, **kwargs) -> Dict[str, Any]:
+        """Serialize a schema-valid event by omitting unset optional values.
+
+        The action-plan JSON Schema treats optional parameter fields as
+        omittable, but does not accept JSON null for those fields. Keeping the
+        policy at the event boundary ensures every Kafka producer call emits
+        the same contract-safe payload.
+        """
+        kwargs.setdefault("exclude_none", True)
+        return super().model_dump(*args, **kwargs)
+
 
 # ============ Plan Approval/Rejection Events ============
 
@@ -286,10 +297,10 @@ def create_action_plan_event(
     """Factory function to create ActionPlanGeneratedEvent"""
     now = datetime.now(timezone.utc)
     expires_at = datetime.fromtimestamp(
-        now.timestamp() + expires_minutes * 60, 
+        now.timestamp() + expires_minutes * 60,
         tz=timezone.utc
     ).isoformat()
-    
+
     return ActionPlanGeneratedEvent(
         data=ActionPlanData(
             trace_id=trace_id,
