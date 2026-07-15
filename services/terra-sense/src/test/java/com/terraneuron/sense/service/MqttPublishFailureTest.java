@@ -23,6 +23,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -79,7 +80,7 @@ class MqttPublishFailureTest {
 
         when(commandRegistry.register(any(DeviceCommand.class)))
                 .thenReturn(new CommandRegistry.Registration(
-                        CommandRegistry.RegistrationState.NEW));
+                        CommandRegistry.RegistrationState.SHOULD_PUBLISH));
         doThrow(new MqttPublishException(
                 "Failed to publish MQTT command for asset fan-01",
                 new RuntimeException("broker unavailable")
@@ -92,6 +93,7 @@ class MqttPublishFailureTest {
         consumer.onCommand(commandEvent());
 
         verify(commandRegistry).releasePending("cmd-1a2b3c4d");
+        verify(commandRegistry, never()).markPublished("cmd-1a2b3c4d");
         ArgumentCaptor<Object> feedbackCaptor = ArgumentCaptor.forClass(Object.class);
         verify(kafkaTemplate).send(
                 eq("terra.control.feedback"),
