@@ -8,7 +8,6 @@ import com.terraneuron.ops.repository.CommandOutboxRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -40,12 +39,12 @@ class CommandOutboxServiceTest {
                 actionPlanRepository,
                 commandOutboxRepository,
                 objectMapper);
-        when(commandOutboxRepository.save(any(CommandOutboxEvent.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
     }
 
     @Test
     void approvedPlanAndCommandPayloadAreQueuedTogether() throws Exception {
+        when(commandOutboxRepository.save(any(CommandOutboxEvent.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
         ActionPlan plan = approvedPlan("{\"duration_minutes\":30,\"speed_level\":\"high\"}");
 
         CommandOutboxEvent event = service.enqueue(plan);
