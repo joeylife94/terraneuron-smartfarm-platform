@@ -21,7 +21,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
@@ -47,7 +46,7 @@ class MqttPublishFailureTest {
 
         MqttGatewayService gateway = new MqttGatewayService(
                 mqttClient,
-                new ObjectMapper(),
+                runtimeObjectMapper(),
                 kafkaProducerService
         );
 
@@ -63,7 +62,7 @@ class MqttPublishFailureTest {
 
     @Test
     void commandConsumerPublishesFailedFeedbackInsteadOfDelivered() {
-        ObjectMapper objectMapper = new ObjectMapper();
+        ObjectMapper objectMapper = runtimeObjectMapper();
         DeviceCommandConsumer consumer = new DeviceCommandConsumer(
                 mqttGatewayService,
                 objectMapper,
@@ -98,6 +97,10 @@ class MqttPublishFailureTest {
                 .containsEntry("status", "FAILED");
         assertThat(data.get("error").toString())
                 .contains("Failed to publish MQTT command");
+    }
+
+    private ObjectMapper runtimeObjectMapper() {
+        return new ObjectMapper().findAndRegisterModules();
     }
 
     private DeviceCommand deviceCommand() {
