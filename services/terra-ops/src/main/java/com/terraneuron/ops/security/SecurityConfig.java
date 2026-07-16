@@ -75,7 +75,10 @@ public class SecurityConfig {
                 // Unknown routes are authenticated, but not assigned an invented role rule.
                 .anyRequest().authenticated()
             )
-            .addFilterBefore(serviceJwtAuthenticationFilter, JwtAuthenticationFilter.class)
+            // Custom filters cannot be used as relative order anchors in Spring Security. Both are
+            // placed before the framework authentication filter; either order is safe because the user
+            // filter never clears an authentication established by the scoped service filter.
+            .addFilterBefore(serviceJwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
