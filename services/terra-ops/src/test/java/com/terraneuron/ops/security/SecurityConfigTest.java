@@ -33,9 +33,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(controllers = {AuthController.class, ActionController.class})
-@Import({SecurityConfig.class, JwtAuthenticationFilter.class, JwtTokenProvider.class})
+@Import({
+        SecurityConfig.class,
+        JwtAuthenticationFilter.class,
+        JwtTokenProvider.class,
+        ServiceJwtAuthenticationFilter.class
+})
 @TestPropertySource(properties = {
         "jwt.secret=TEST_ONLY_CHANGE_ME_LOCAL_JWT_SECRET_32_CHARS",
+        "service-auth.jwt.secret=TEST_ONLY_CHANGE_ME_SERVICE_JWT_SECRET_32_CHARS",
         "app.cors.allowed-origins=http://localhost:3000"
 })
 class SecurityConfigTest {

@@ -32,6 +32,7 @@ import java.util.List;
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final ServiceJwtAuthenticationFilter serviceJwtAuthenticationFilter;
 
     @Value("${app.cors.allowed-origins:http://localhost:3000,http://localhost:3001}")
     private String allowedOrigins;
@@ -60,16 +61,24 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/api/farms/*/crops").hasAnyRole("ADMIN", "OPERATOR")
                 .requestMatchers(HttpMethod.PUT, "/api/farms/*/crops/*/advance-stage").hasAnyRole("ADMIN", "OPERATOR")
 
+                // Terra-Cortex receives one narrowly scoped read permission. The service filter only
+                // authenticates this exact route, so its token cannot satisfy other authenticated routes.
+                .requestMatchers(HttpMethod.GET, "/api/farms/*/optimal-conditions")
+                    .hasAnyAuthority("ROLE_ADMIN", "ROLE_OPERATOR", "ROLE_VIEWER", "SCOPE_crop:read")
+
                 // Read-only application APIs
                 .requestMatchers(HttpMethod.GET, "/api/actions/**").hasAnyRole("ADMIN", "OPERATOR", "VIEWER")
                 .requestMatchers(HttpMethod.GET, "/api/crops/**").hasAnyRole("ADMIN", "OPERATOR", "VIEWER")
                 .requestMatchers(HttpMethod.GET, "/api/farms/*/crops").hasAnyRole("ADMIN", "OPERATOR", "VIEWER")
-                .requestMatchers(HttpMethod.GET, "/api/farms/*/optimal-conditions").hasAnyRole("ADMIN", "OPERATOR", "VIEWER")
                 .requestMatchers(HttpMethod.GET, "/api/v1/**").hasAnyRole("ADMIN", "OPERATOR", "VIEWER")
 
                 // Unknown routes are authenticated, but not assigned an invented role rule.
                 .anyRequest().authenticated()
             )
+            // Custom filters cannot be used as relative order anchors in Spring Security. Both are
+            // placed before the framework authentication filter; either order is safe because the user
+            // filter never clears an authentication established by the scoped service filter.
+            .addFilterBefore(serviceJwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
