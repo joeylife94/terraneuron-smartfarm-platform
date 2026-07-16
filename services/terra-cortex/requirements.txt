@@ -10,6 +10,7 @@ uvicorn[standard]==0.27.0        # ASGI server; runs FastAPI app with websockets
 aiokafka==0.10.0                 # Async Kafka consumer/producer for streaming sensor events
 pydantic==2.5.3                  # Data validation & model definitions
 pydantic-settings==2.1.0         # Structured environment variable management
+PyJWT==2.9.0                     # Short-lived scoped service JWTs for Terra-Ops calls
 
 # ============================
 # 🤖 Cloud LLM Integration
