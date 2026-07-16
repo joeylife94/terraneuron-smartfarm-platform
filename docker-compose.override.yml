@@ -42,7 +42,7 @@ services:
       KAFKA_DLT_TOPIC: raw-sensor-data.DLT
       KAFKA_PROCESSING_MAX_ATTEMPTS: 3
       KAFKA_MAX_POLL_INTERVAL_MS: 900000
-      SERVICE_AUTH_JWT_SECRET: ${SERVICE_AUTH_JWT_SECRET:?SERVICE_AUTH_JWT_SECRET is required}
+      SERVICE_AUTH_JWT_SECRET: ${SERVICE_AUTH_JWT_SECRET:-local-service-auth-key-change-me-32-bytes}
       SERVICE_AUTH_JWT_ISSUER: terraneuron-internal
       SERVICE_AUTH_JWT_AUDIENCE: terra-ops
       SERVICE_AUTH_SUBJECT: terra-cortex
@@ -54,7 +54,7 @@ services:
       context: .
       dockerfile: services/terra-ops/Dockerfile
     environment:
-      SERVICE_AUTH_JWT_SECRET: ${SERVICE_AUTH_JWT_SECRET:?SERVICE_AUTH_JWT_SECRET is required}
+      SERVICE_AUTH_JWT_SECRET: ${SERVICE_AUTH_JWT_SECRET:-local-service-auth-key-change-me-32-bytes}
       SERVICE_AUTH_JWT_ISSUER: terraneuron-internal
       SERVICE_AUTH_JWT_AUDIENCE: terra-ops
       SERVICE_AUTH_ALLOWED_SUBJECT: terra-cortex
