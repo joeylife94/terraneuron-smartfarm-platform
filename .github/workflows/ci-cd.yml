@@ -9,12 +9,18 @@ on:
 permissions:
   contents: read
   packages: write
+  security-events: write
 
 env:
   DOCKER_REGISTRY: ghcr.io
   DOCKER_USERNAME: ${{ github.repository_owner }}
 
 jobs:
+  # ========== Dependency security scan ==========
+  dependency-security-scan:
+    name: Dependency Security Scan
+    uses: ./.github/workflows/security-scan.yml
+
   # ========== Java 서비스 빌드 & 테스트 ==========
   build-java-services:
     name: Build Java Services (terra-sense, terra-ops)
