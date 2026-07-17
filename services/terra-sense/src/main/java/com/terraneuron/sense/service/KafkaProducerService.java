@@ -5,7 +5,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.stereotype.Service;
+
+import java.time.Instant;
 
 /**
  * Kafka Producer 서비스
@@ -23,15 +26,29 @@ public class KafkaProducerService {
 
     public void sendSensorData(SensorData sensorData) {
         try {
-            kafkaTemplate.send(rawSensorDataTopic, sensorData.getSensorId(), sensorData)
+            if (sensorData.getTimestamp() == null) {
+                sensorData.setTimestamp(Instant.now());
+            }
+            String eventId = sensorData.ensureEventId();
+
+            kafkaTemplate.send(
+                            MessageBuilder.withPayload(sensorData)
+                                    .setHeader("kafka_topic", rawSensorDataTopic)
+                                    .setHeader("kafka_messageKey", eventId)
+                                    .setHeader("event_id", eventId.getBytes(java.nio.charset.StandardCharsets.UTF_8))
+                                    .build()
+                    )
                     .whenComplete((result, ex) -> {
                         if (ex == null) {
-                            log.info("✅ Kafka 전송 성공: sensorId={}, type={}, value={}", 
-                                    sensorData.getSensorId(), 
-                                    sensorData.getSensorType(), 
-                                    sensorData.getValue());
+                            log.info(
+                                    "✅ Kafka 전송 성공: eventId={}, sensorId={}, type={}, value={}",
+                                    eventId,
+                                    sensorData.getSensorId(),
+                                    sensorData.getSensorType(),
+                                    sensorData.getValue()
+                            );
                         } else {
-                            log.error("❌ Kafka 전송 실패: {}", ex.getMessage());
+                            log.error("❌ Kafka 전송 실패: eventId={}, error={}", eventId, ex.getMessage());
                         }
                     });
         } catch (Exception e) {
