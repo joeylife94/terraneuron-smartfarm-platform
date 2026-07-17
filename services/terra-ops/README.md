@@ -323,11 +323,17 @@ curl http://localhost:8083/api/v1/insights/farm/sensor_temp_001
 - `operator` / `operator123` (ROLE_OPERATOR)
 - `viewer` / `viewer123` (ROLE_VIEWER)
 
+These local Compose/E2E users are loaded from MySQL and verified against BCrypt
+hashes; they are not hardcoded in the authentication controller. Production must
+provision different accounts. Access and refresh JWTs are explicitly typed and
+cannot be substituted for one another.
+
 🔒 **Production Recommendations**:
 - Configure SSL/TLS (HTTPS)
 - Use strong JWT secret key (externalize to secrets manager)
 - Enable CORS properly for frontend domains
 - Secure database credentials with secrets management
+- Persist and rotate refresh tokens when individual revocation is required
 
 ## Contributing
 

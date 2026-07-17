@@ -84,17 +84,74 @@ def response_json(response: requests.Response, operation: str):
         ) from exc
 
 
-def login() -> str:
+def login() -> Dict:
     response = requests.post(
         f"{TERRA_OPS_BASE_URL}/api/auth/login",
         json={"username": E2E_USERNAME, "password": E2E_PASSWORD},
         timeout=REQUEST_TIMEOUT_SECONDS,
     )
     payload = response_json(response, "terra-ops login")
-    token = payload.get("access_token")
-    if not token:
-        raise E2ETestFailure("terra-ops login response did not contain access_token")
-    return token
+    if not payload.get("access_token") or not payload.get("refresh_token"):
+        raise E2ETestFailure("terra-ops login response did not contain both JWT tokens")
+    return payload
+
+
+def check_authentication_contract(login_payload: Dict) -> str:
+    access_token = login_payload["access_token"]
+    refresh_token = login_payload["refresh_token"]
+
+    invalid_login = requests.post(
+        f"{TERRA_OPS_BASE_URL}/api/auth/login",
+        json={"username": E2E_USERNAME, "password": f"{E2E_PASSWORD}-invalid"},
+        timeout=REQUEST_TIMEOUT_SECONDS,
+    )
+    if invalid_login.status_code != 401:
+        raise E2ETestFailure(
+            "terra-ops accepted invalid database credentials: "
+            f"HTTP {invalid_login.status_code}"
+        )
+    invalid_payload = invalid_login.json()
+    if invalid_payload.get("access_token") or invalid_payload.get("refresh_token"):
+        raise E2ETestFailure("failed login response disclosed JWT tokens")
+
+    access_as_refresh = requests.post(
+        f"{TERRA_OPS_BASE_URL}/api/auth/refresh",
+        json={"refreshToken": access_token},
+        timeout=REQUEST_TIMEOUT_SECONDS,
+    )
+    if access_as_refresh.status_code != 401:
+        raise E2ETestFailure("terra-ops accepted an access token as a refresh token")
+
+    refresh_as_access = requests.get(
+        f"{TERRA_OPS_API_URL}/dashboard/summary",
+        headers=auth_headers(refresh_token),
+        timeout=REQUEST_TIMEOUT_SECONDS,
+    )
+    if refresh_as_access.status_code not in {401, 403}:
+        raise E2ETestFailure("terra-ops accepted a refresh token on a protected API")
+
+    refreshed_response = requests.post(
+        f"{TERRA_OPS_BASE_URL}/api/auth/refresh",
+        json={"refreshToken": refresh_token},
+        timeout=REQUEST_TIMEOUT_SECONDS,
+    )
+    refreshed = response_json(refreshed_response, "terra-ops token refresh")
+    refreshed_access_token = refreshed.get("access_token")
+    if not refreshed_access_token:
+        raise E2ETestFailure("terra-ops refresh response did not contain access_token")
+
+    validate_response = requests.get(
+        f"{TERRA_OPS_BASE_URL}/api/auth/validate",
+        headers=auth_headers(refreshed_access_token),
+        timeout=REQUEST_TIMEOUT_SECONDS,
+    )
+    validated = response_json(validate_response, "terra-ops token validation")
+    if validated.get("valid") is not True:
+        raise E2ETestFailure("terra-ops did not validate the refreshed access token")
+    if validated.get("user", {}).get("username") != E2E_USERNAME:
+        raise E2ETestFailure("terra-ops refreshed token resolved to another account")
+
+    return refreshed_access_token
 
 
 def auth_headers(access_token: str) -> Dict[str, str]:
@@ -354,8 +411,11 @@ def run_test() -> None:
     print("=" * 72)
 
     print("\n[1/7] Authenticating against terra-ops")
-    access_token = login()
-    print(f"  PASS authenticated as {E2E_USERNAME}")
+    login_payload = login()
+    access_token = check_authentication_contract(login_payload)
+    print(
+        f"  PASS database authentication and typed JWT contract as {E2E_USERNAME}"
+    )
 
     print("\n[2/7] Sending sensor data and one exact duplicate")
     first_event_id = None

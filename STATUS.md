@@ -1,9 +1,9 @@
 # TerraNeuron — Implementation Status
 
-> **Last updated:** 2026-06-23
+> **Last updated:** 2026-07-17
 > **Scope of this document:** the single source of truth for what is actually implemented
-> in the current codebase. It supersedes the historical `AUDIT_REPORT.md` and
-> `docs/IMPLEMENTATION_GAPS.md`, which described an earlier repository state and contradicted
+> in the current codebase. It supersedes the historical `docs/PROJECT_STATUS.md`,
+> `AUDIT_REPORT.md`, and `docs/IMPLEMENTATION_GAPS.md`, which described an earlier repository state and contradicted
 > the current code.
 
 This is an architecture prototype that demonstrates production-grade patterns (microservices,
@@ -21,6 +21,10 @@ notes below are deliberately factual and verified against the current `main`-der
 - **JWT authentication** is wired (`JwtTokenProvider`, `JwtAuthenticationFilter`). The signing
   key is sourced from `JWT_SECRET` with **no insecure in-repo fallback**
   (`jwt.secret=${JWT_SECRET}`).
+- **Interactive users are authenticated from MySQL.** `AuthController` delegates to
+  `UserAuthenticationService`, which verifies BCrypt hashes, rejects disabled/misconfigured
+  accounts, records successful login time, and reloads enabled state and roles on refresh.
+  Access and refresh JWTs have enforced, non-interchangeable type claims.
 - **Human-in-the-loop approval flow** is implemented and now correct: a PENDING plan that
   requires approval can be approved and proceeds to execution. See
   [`ActionPlanService.approvePlan`](services/terra-ops/src/main/java/com/terraneuron/ops/service/ActionPlanService.java).
@@ -59,8 +63,6 @@ notes below are deliberately factual and verified against the current `main`-der
   `requiresApproval` flag, and approver metadata. Real RBAC/ownership/device-access checks are
   marked `TODO` and are not yet implemented inside the validator (HTTP-layer RBAC is enforced
   separately by `SecurityConfig`).
-- **Authentication uses hardcoded demo users.** `AuthController` compares plaintext passwords
-  against an in-memory map; the `users` table and `BCryptPasswordEncoder` are not yet wired.
 - **Action `parameters` are stored as a JSON string** on the `ActionPlan` entity rather than a
   typed/queryable column.
 
@@ -68,7 +70,11 @@ notes below are deliberately factual and verified against the current `main`-der
 
 - **Docker Compose startup is covered by the repository E2E smoke test**, but production-like
   resilience and external-service behavior are not exhaustively verified.
-- **DB-backed auth and secrets management** beyond `JWT_SECRET` are not implemented.
+- **Refresh tokens remain stateless:** they are not persisted, rotated, or individually
+  revocable. Disabling an account blocks login/refresh/validate immediately, while an already
+  issued access token remains valid on protected APIs until expiry.
+- **Account administration and production secrets management** beyond externally supplied
+  `JWT_SECRET` are not implemented. The seeded users are local Compose/E2E fixtures only.
 
 ## Recently fixed (core TerraNeuron audit findings)
 
@@ -124,7 +130,16 @@ notes below are deliberately factual and verified against the current `main`-der
 
 ## Recommended next PRs
 
-1. DB-backed authentication (replace hardcoded users, hash with BCrypt) and broader secrets
-   management.
-2. Promote SafetyValidator layers 2/4 from advisory warnings to enforced checks where the
+1. Promote SafetyValidator layers 2/4 from advisory warnings to enforced checks where the
    domain requires hard gating.
+2. Add refresh-token persistence/rotation and an account administration or external identity
+   provider boundary.
+
+## Recently fixed (PR #37: database-backed authentication)
+
+- Removed the hardcoded plaintext user map from `AuthController`; login now verifies the
+  MySQL `users.password_hash` value with BCrypt and records `last_login`.
+- Added fail-closed account and role validation plus dummy BCrypt work for unknown usernames.
+- Added explicit access/refresh token type claims and rejected cross-use at the refresh endpoint
+  and protected API filter.
+- Added JPA, service, seed-hash contract, MVC security, and Docker E2E coverage.

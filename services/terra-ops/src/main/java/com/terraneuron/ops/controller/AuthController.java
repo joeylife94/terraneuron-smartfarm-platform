@@ -1,8 +1,13 @@
 package com.terraneuron.ops.controller;
 
 import com.terraneuron.ops.security.JwtTokenProvider;
+import com.terraneuron.ops.service.UserAuthenticationService;
+import com.terraneuron.ops.service.UserAuthenticationService.AuthenticatedUser;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -10,6 +15,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Authentication Controller
@@ -23,44 +29,41 @@ import java.util.Map;
 public class AuthController {
 
     private final JwtTokenProvider tokenProvider;
-
-    // DEMO_ONLY: hardcoded branch-local users for JWT/RBAC smoke testing.
-    // Replace with database-backed authentication in a future branch before production use.
-    private static final Map<String, UserInfo> USERS = Map.of(
-            "admin", new UserInfo("admin", "admin123", "ROLE_ADMIN,ROLE_OPERATOR"),
-            "operator", new UserInfo("operator", "operator123", "ROLE_OPERATOR"),
-            "viewer", new UserInfo("viewer", "viewer123", "ROLE_VIEWER")
-    );
+    private final UserAuthenticationService authenticationService;
 
     @PostMapping("/login")
     @Operation(summary = "Login and get JWT tokens", 
                description = "Returns access and refresh tokens for valid credentials")
-    public ResponseEntity<?> login(@RequestBody LoginRequest request) {
-        log.info("🔐 Login attempt for user: {}", request.getUsername());
+    public ResponseEntity<?> login(@Valid @RequestBody LoginRequest request) {
+        log.info("🔐 Login attempt");
 
-        UserInfo user = USERS.get(request.getUsername());
-        if (user == null || !user.password.equals(request.getPassword())) {
-            log.warn("❌ Login failed for user: {}", request.getUsername());
+        Optional<AuthenticatedUser> authenticated = authenticationService.authenticate(
+                request.getUsername(),
+                request.getPassword()
+        );
+        if (authenticated.isEmpty()) {
+            log.warn("❌ Login failed");
             return ResponseEntity.status(401).body(Map.of(
                     "status", "error",
                     "message", "Invalid username or password"
             ));
         }
 
-        String accessToken = tokenProvider.generateToken(user.username, user.roles);
-        String refreshToken = tokenProvider.generateRefreshToken(user.username);
+        AuthenticatedUser user = authenticated.get();
+        String accessToken = tokenProvider.generateToken(user.username(), user.rolesClaim());
+        String refreshToken = tokenProvider.generateRefreshToken(user.username());
 
-        log.info("✅ Login successful for user: {}", request.getUsername());
+        log.info("✅ Login successful for user: {}", user.username());
 
         return ResponseEntity.ok(Map.of(
                 "status", "success",
                 "access_token", accessToken,
                 "refresh_token", refreshToken,
                 "token_type", "Bearer",
-                "expires_in", 86400,
+                "expires_in", tokenProvider.getAccessTokenExpirationSeconds(),
                 "user", Map.of(
-                        "username", user.username,
-                        "roles", user.roles.split(",")
+                        "username", user.username(),
+                        "roles", user.roles()
                 )
         ));
     }
@@ -68,10 +71,10 @@ public class AuthController {
     @PostMapping("/refresh")
     @Operation(summary = "Refresh access token", 
                description = "Returns a new access token using a valid refresh token")
-    public ResponseEntity<?> refresh(@RequestBody RefreshRequest request) {
+    public ResponseEntity<?> refresh(@Valid @RequestBody RefreshRequest request) {
         String refreshToken = request.getRefreshToken();
 
-        if (!tokenProvider.validateToken(refreshToken)) {
+        if (!tokenProvider.validateRefreshToken(refreshToken)) {
             return ResponseEntity.status(401).body(Map.of(
                     "status", "error",
                     "message", "Invalid or expired refresh token"
@@ -79,22 +82,23 @@ public class AuthController {
         }
 
         String username = tokenProvider.getUsernameFromToken(refreshToken);
-        UserInfo user = USERS.get(username);
+        Optional<AuthenticatedUser> account = authenticationService.findEnabledByUsername(username);
 
-        if (user == null) {
+        if (account.isEmpty()) {
             return ResponseEntity.status(401).body(Map.of(
                     "status", "error",
-                    "message", "User not found"
+                    "message", "Invalid or expired refresh token"
             ));
         }
 
-        String newAccessToken = tokenProvider.generateToken(user.username, user.roles);
+        AuthenticatedUser user = account.get();
+        String newAccessToken = tokenProvider.generateToken(user.username(), user.rolesClaim());
 
         return ResponseEntity.ok(Map.of(
                 "status", "success",
                 "access_token", newAccessToken,
                 "token_type", "Bearer",
-                "expires_in", 86400
+                "expires_in", tokenProvider.getAccessTokenExpirationSeconds()
         ));
     }
 
@@ -111,7 +115,7 @@ public class AuthController {
 
         String token = authHeader.substring(7);
 
-        if (!tokenProvider.validateToken(token)) {
+        if (!tokenProvider.validateAccessToken(token)) {
             return ResponseEntity.status(401).body(Map.of(
                     "status", "error",
                     "message", "Invalid or expired token"
@@ -119,14 +123,20 @@ public class AuthController {
         }
 
         String username = tokenProvider.getUsernameFromToken(token);
-        String roles = tokenProvider.getRolesFromToken(token);
+        Optional<AuthenticatedUser> account = authenticationService.findEnabledByUsername(username);
+        if (account.isEmpty()) {
+            return ResponseEntity.status(401).body(Map.of(
+                    "status", "error",
+                    "message", "Invalid or expired token"
+            ));
+        }
 
         return ResponseEntity.ok(Map.of(
                 "status", "success",
                 "valid", true,
                 "user", Map.of(
-                        "username", username,
-                        "roles", roles.split(",")
+                        "username", account.get().username(),
+                        "roles", account.get().roles()
                 )
         ));
     }
@@ -135,24 +145,18 @@ public class AuthController {
 
     @Data
     public static class LoginRequest {
+        @NotBlank
+        @Size(max = 50)
         private String username;
+
+        @NotBlank
+        @Size(max = 200)
         private String password;
     }
 
     @Data
     public static class RefreshRequest {
+        @NotBlank
         private String refreshToken;
-    }
-
-    private static class UserInfo {
-        String username;
-        String password;
-        String roles;
-
-        UserInfo(String username, String password, String roles) {
-            this.username = username;
-            this.password = password;
-            this.roles = roles;
-        }
     }
 }

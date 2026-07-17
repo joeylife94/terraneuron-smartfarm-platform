@@ -463,11 +463,14 @@ docker exec -it terra-cortex python src/ingest_knowledge.py
 **원인:** `SecurityConfig.java`에서 `anyRequest().permitAll()` 설정
 **임시 대응:** 개발 환경에서는 문제 없으나, 프로덕션에서는 반드시 RBAC 활성화 필요
 
-### 2. AuthController가 DB를 사용하지 않음
+### 2. 로컬 DB 계정으로 로그인이 실패함
 
-**현상:** `admin/admin123`으로만 로그인 가능 (인메모리 하드코딩)
-**원인:** `AuthController.java`가 `users` 테이블을 조회하지 않고 Map으로 직접 비교
-**해결 방향:** UserRepository + BCryptPasswordEncoder 연동
+**현상:** 문서화된 로컬 계정이 `401 Invalid username or password`를 반환
+**원인:** 기존 MySQL volume에는 새 BCrypt seed가 적용되지 않았거나 계정이 비활성화됨
+**확인:** `users.enabled`, `users.roles`, `users.password_hash`를 점검. 운영 DB의 해시는
+로그에 출력하지 않음
+**해결 방향:** 기존 환경은 명시적인 계정 마이그레이션을 적용. 폐기 가능한 로컬 환경만
+`docker compose down -v` 후 재생성
 
 ### 3. init.sql과 JPA 엔티티 스키마 불일치
 
