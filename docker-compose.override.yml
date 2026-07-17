@@ -42,6 +42,8 @@ services:
       KAFKA_DLT_TOPIC: raw-sensor-data.DLT
       KAFKA_PROCESSING_MAX_ATTEMPTS: 3
       KAFKA_MAX_POLL_INTERVAL_MS: 900000
+      KAFKA_EVENT_DEDUPE_TOPIC: cortex-processed-event-ids
+      KAFKA_EVENT_DEDUPE_PARTITIONS: 3
       SERVICE_AUTH_JWT_SECRET: ${SERVICE_AUTH_JWT_SECRET:-local-service-auth-key-change-me-32-bytes}
       SERVICE_AUTH_JWT_ISSUER: terraneuron-internal
       SERVICE_AUTH_JWT_AUDIENCE: terra-ops
