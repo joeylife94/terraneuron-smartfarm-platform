@@ -33,7 +33,10 @@ The reliability dashboard shows:
 
 Both Grafana dashboards are file-provisioned from
 `infra/grafana/dashboards`. UI edits are disabled so repository state remains the
-source of truth.
+source of truth. The Compose profile enables SQLite write-ahead logging and a
+container restart policy so a transient first-start migration lock is retried.
+SQLite remains appropriate only for this single-instance development profile;
+production Grafana should use an external MySQL or PostgreSQL database.
 
 ## Validation
 
