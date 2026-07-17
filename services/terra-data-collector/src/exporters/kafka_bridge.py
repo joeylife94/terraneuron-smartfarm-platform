@@ -49,10 +49,12 @@ class KafkaBridgeExporter(BaseExporter):
         for record in records:
             try:
                 payload = record.to_kafka_payload()
+                event_id = record.eventId
                 await producer.send_and_wait(
                     topic,
                     value=payload,
-                    key=record.farmId.encode("utf-8"),
+                    key=event_id.encode("utf-8"),
+                    headers=[("event_id", event_id.encode("utf-8"))],
                 )
                 success_count += 1
             except Exception as e:
