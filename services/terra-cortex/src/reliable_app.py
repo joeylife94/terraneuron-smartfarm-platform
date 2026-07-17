@@ -41,6 +41,7 @@ INSTANCE_ID = os.getenv("KAFKA_INSTANCE_ID", socket.gethostname())
 TRANSACTIONAL_ID = os.getenv(
     "KAFKA_TRANSACTIONAL_ID", f"terra-cortex-{INSTANCE_ID}"
 )
+CONSUMER_REBALANCE_LISTENER: Optional[Any] = None
 
 _delivery_stats: Dict[str, int] = {
     "processed": 0,
@@ -398,7 +399,6 @@ async def reliable_start_kafka() -> None:
         producer: Optional[AIOKafkaProducer] = None
         try:
             consumer = AIOKafkaConsumer(
-                legacy.INPUT_TOPIC,
                 bootstrap_servers=legacy.KAFKA_BOOTSTRAP_SERVERS,
                 group_id=legacy.CONSUMER_GROUP,
                 value_deserializer=lambda data: __import__("json").loads(
@@ -408,6 +408,10 @@ async def reliable_start_kafka() -> None:
                 enable_auto_commit=False,
                 isolation_level="read_committed",
                 max_poll_interval_ms=MAX_POLL_INTERVAL_MS,
+            )
+            consumer.subscribe(
+                [legacy.INPUT_TOPIC],
+                listener=CONSUMER_REBALANCE_LISTENER,
             )
             producer = AIOKafkaProducer(
                 bootstrap_servers=legacy.KAFKA_BOOTSTRAP_SERVERS,
