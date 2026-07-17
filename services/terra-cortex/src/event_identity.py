@@ -32,12 +32,8 @@ def _normalized_number(value: Any) -> str:
     return format(Decimal(str(value)).normalize(), "f")
 
 
-def derive_event_id(payload: Mapping[str, Any]) -> str:
-    supplied = str(payload.get("eventId") or "").strip()
-    if supplied:
-        return supplied
-
-    canonical = "\n".join(
+def canonical_measurement(payload: Mapping[str, Any]) -> str:
+    return "\n".join(
         [
             EVENT_ID_VERSION,
             str(payload.get("farmId") or "").strip(),
@@ -48,8 +44,17 @@ def derive_event_id(payload: Mapping[str, Any]) -> str:
             str(payload.get("unit") or "").strip(),
         ]
     )
-    digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-    return f"evt-{digest}"
+
+
+def measurement_fingerprint(payload: Mapping[str, Any]) -> str:
+    return hashlib.sha256(canonical_measurement(payload).encode("utf-8")).hexdigest()
+
+
+def derive_event_id(payload: Mapping[str, Any]) -> str:
+    supplied = str(payload.get("eventId") or "").strip()
+    if supplied:
+        return supplied
+    return f"evt-{measurement_fingerprint(payload)}"
 
 
 def ensure_event_id(payload: MutableMapping[str, Any]) -> str:
