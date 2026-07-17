@@ -1,0 +1,172 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {"options": {"0": {"color": "red", "text": "DOWN"}, "1": {"color": "green", "text": "UP"}}, "type": "value"}
+          ],
+          "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 5, "w": 4, "x": 0, "y": 0},
+      "id": 1,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "value_and_name"},
+      "targets": [{"expr": "up{job=\"terra-cortex\"}", "legendFormat": "Target", "refId": "A"}],
+      "title": "Scrape target",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {"options": {"0": {"color": "red", "text": "NOT READY"}, "1": {"color": "green", "text": "READY"}}, "type": "value"}
+          ],
+          "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 5, "w": 4, "x": 4, "y": 0},
+      "id": 2,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "value_and_name"},
+      "targets": [{"expr": "terra_cortex_ready{job=\"terra-cortex\"}", "legendFormat": "Runtime", "refId": "A"}],
+      "title": "Runtime readiness",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {"options": {"0": {"color": "green", "text": "HEALTHY"}, "1": {"color": "red", "text": "FATAL"}}, "type": "value"}
+          ],
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 5, "w": 4, "x": 8, "y": 0},
+      "id": 3,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "value_and_name"},
+      "targets": [{"expr": "terra_cortex_runtime_fatal{job=\"terra-cortex\"}", "legendFormat": "Supervisor", "refId": "A"}],
+      "title": "Fatal runtime state",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 5, "w": 4, "x": 12, "y": 0},
+      "id": 4,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "value_and_name"},
+      "targets": [{"expr": "sum(ALERTS{service=\"terra-cortex\", alertstate=\"firing\"}) or vector(0)", "legendFormat": "Firing", "refId": "A"}],
+      "title": "Firing alerts",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 4, "x": 16, "y": 0},
+      "id": 5,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "value_and_name"},
+      "targets": [{"expr": "changes(terra_cortex_process_start_time_seconds{job=\"terra-cortex\"}[15m])", "legendFormat": "Restarts", "refId": "A"}],
+      "title": "Process changes / 15m",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 4, "x": 20, "y": 0},
+      "id": 6,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "center", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "value_and_name"},
+      "targets": [{"expr": "terra_cortex_dedupe_active_markers{job=\"terra-cortex\"}", "legendFormat": "Markers", "refId": "A"}],
+      "title": "Active dedupe markers",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"min": 0, "max": 1}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 5},
+      "id": 7,
+      "options": {"alignValue": "left", "legend": {"displayMode": "list", "placement": "bottom", "showLegend": true}, "mergeValues": true, "rowHeight": 0.9, "showValue": "auto", "tooltip": {"mode": "single", "sort": "none"}},
+      "targets": [
+        {"expr": "terra_cortex_kafka_consumer_up{job=\"terra-cortex\"}", "legendFormat": "consumer", "refId": "A"},
+        {"expr": "terra_cortex_kafka_producer_up{job=\"terra-cortex\"}", "legendFormat": "producer", "refId": "B"},
+        {"expr": "terra_cortex_kafka_consumer_task_up{job=\"terra-cortex\"}", "legendFormat": "consumer task", "refId": "C"},
+        {"expr": "terra_cortex_dedupe_restore_up{job=\"terra-cortex\"}", "legendFormat": "restore", "refId": "D"},
+        {"expr": "terra_cortex_dedupe_marker_follower_up{job=\"terra-cortex\"}", "legendFormat": "marker follower", "refId": "E"},
+        {"expr": "terra_cortex_dedupe_expiry_sweep_up{job=\"terra-cortex\"}", "legendFormat": "expiry sweep", "refId": "F"}
+      ],
+      "title": "Required component state",
+      "type": "state-timeline"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 5},
+      "id": 8,
+      "options": {"legend": {"calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [
+        {"expr": "rate(terra_cortex_events_processed_total{job=\"terra-cortex\"}[$__rate_interval])", "legendFormat": "processed", "refId": "A"},
+        {"expr": "rate(terra_cortex_duplicates_suppressed_total{job=\"terra-cortex\"}[$__rate_interval])", "legendFormat": "duplicates", "refId": "B"},
+        {"expr": "rate(terra_cortex_events_dead_lettered_total{job=\"terra-cortex\"}[$__rate_interval])", "legendFormat": "DLT", "refId": "C"},
+        {"expr": "rate(terra_cortex_event_id_conflicts_total{job=\"terra-cortex\"}[$__rate_interval])", "legendFormat": "ID conflicts", "refId": "D"}
+      ],
+      "title": "Event outcomes per second",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 13},
+      "id": 9,
+      "options": {"legend": {"calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [
+        {"expr": "increase(terra_cortex_kafka_transaction_failures_total{job=\"terra-cortex\"}[$__rate_interval])", "legendFormat": "transaction failures", "refId": "A"},
+        {"expr": "increase(terra_cortex_event_retries_total{job=\"terra-cortex\"}[$__rate_interval])", "legendFormat": "retries", "refId": "B"},
+        {"expr": "increase(terra_cortex_critical_task_failures_total{job=\"terra-cortex\"}[$__rate_interval])", "legendFormat": "critical task failures", "refId": "C"}
+      ],
+      "title": "Reliability failures and retries",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 13},
+      "id": 10,
+      "options": {"legend": {"calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [
+        {"expr": "terra_cortex_dedupe_active_markers{job=\"terra-cortex\"}", "legendFormat": "active markers", "refId": "A"},
+        {"expr": "terra_cortex_dedupe_restore_records_scanned{job=\"terra-cortex\"}", "legendFormat": "restore scanned", "refId": "B"},
+        {"expr": "terra_cortex_dedupe_restore_duration_seconds{job=\"terra-cortex\"}", "legendFormat": "restore seconds", "refId": "C"}
+      ],
+      "title": "Dedupe ledger size and restore",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "15s",
+  "schemaVersion": 38,
+  "tags": ["terraneuron", "terra-cortex", "reliability"],
+  "templating": {"list": []},
+  "time": {"from": "now-1h", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Terra-Cortex Reliability",
+  "uid": "terra-cortex-reliability",
+  "version": 1,
+  "weekStart": ""
+}
