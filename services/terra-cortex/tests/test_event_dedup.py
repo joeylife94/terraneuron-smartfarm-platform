@@ -281,6 +281,7 @@ def test_restore_skips_expired_markers_and_reports_statistics(monkeypatch):
     assert ledger.expired_markers_skipped == 1
     assert ledger.active_event_ids_loaded == 1
     assert ledger.last_restore_duration_ms >= 0
+    assert ledger.restore_completed is True
     assert ledger.classify("active", "fp-active") == dedup.EventClassification.DUPLICATE
     assert ledger.classify("expired", "fp-expired") == dedup.EventClassification.NEW
     assert fake_consumer.stopped is True

@@ -117,6 +117,7 @@ class KafkaEventLedger:
         self.marker_records_followed = 0
         self.last_sweep_time: Optional[datetime] = None
         self.next_scheduled_sweep: Optional[datetime] = None
+        self.restore_completed = False
 
         self._consumer: Optional[AIOKafkaConsumer] = None
         self._consumer_lock = asyncio.Lock()
@@ -374,6 +375,7 @@ class KafkaEventLedger:
 
     async def _restore_consumer(self, consumer: AIOKafkaConsumer) -> None:
         started = time.monotonic()
+        self.restore_completed = False
         self.restore_records_scanned = 0
         self.expired_markers_skipped = 0
         topic_partitions = await self._assign_all_partitions(consumer)
@@ -388,6 +390,7 @@ class KafkaEventLedger:
         self.active_event_ids_loaded = self.size
         self.restored_markers = self.active_event_ids_loaded
         self.last_restore_duration_ms = int((time.monotonic() - started) * 1000)
+        self.restore_completed = True
 
     async def restore(self, bootstrap_servers: str) -> None:
         consumer = self._new_consumer(bootstrap_servers)
@@ -697,6 +700,7 @@ def _status_payload(
         ),
         "sweep_interval_seconds": ledger.sweep_interval_seconds,
         "restore": {
+            "completed": ledger.restore_completed,
             "expired_markers_skipped": ledger.expired_markers_skipped,
             "active_event_ids_loaded": ledger.active_event_ids_loaded,
             "restore_duration_ms": ledger.last_restore_duration_ms,
@@ -708,6 +712,9 @@ def _status_payload(
             "marker_follower_running": (
                 ledger._follower_task is not None
                 and not ledger._follower_task.done()
+            ),
+            "expiry_sweep_running": (
+                ledger._sweep_task is not None and not ledger._sweep_task.done()
             ),
         },
         "expired_event_policy": "process_as_new",

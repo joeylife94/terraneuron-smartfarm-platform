@@ -127,6 +127,12 @@ GET /api/v1/ingest/health
 GET /health
 ```
 
+`/health`는 기존 호환성을 위한 상태 API입니다. 배포 및 트래픽 준비 여부는
+`GET /health/ready`, 프로세스 생존 여부는 `GET /health/live`를 사용합니다.
+Kafka consumer/transactional producer, consumer task, dedupe restore, marker
+follower, expiry sweep 중 하나라도 준비되지 않으면 `/health/ready`는 안전한
+reason code와 함께 `503 Service Unavailable`을 반환합니다.
+
 **Response (200 OK):**
 ```json
 {
@@ -175,11 +181,10 @@ RAG 지식베이스에 질의합니다.
 GET /metrics
 ```
 
-커스텀 메트릭:
-- `terra_cortex_events_processed_total` — 처리된 이벤트 수
-- `terra_cortex_anomalies_detected_total` — 탐지된 이상 수
-- `terra_cortex_llm_calls_total` — LLM 호출 수
-- `terra_cortex_inference_duration_seconds` — 추론 소요 시간
+커스텀 메트릭에는 처리·중복 억제·ID conflict·DLT·transaction failure
+카운터와 Kafka consumer/producer, dedupe restore/follower/sweep 상태, 활성·만료
+marker 수 및 restore 시간/스캔 수가 포함됩니다. 상세 계약은
+[`CORTEX_RUNTIME_OBSERVABILITY.md`](CORTEX_RUNTIME_OBSERVABILITY.md)를 참고합니다.
 
 > **참고:** terra-cortex는 주로 Kafka 소비자로 동작합니다. `raw-sensor-data` 토픽을 소비하여 `processed-insights`와 `action-plans` 토픽으로 생산합니다.
 

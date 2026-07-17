@@ -31,7 +31,7 @@ EXPOSE 8082
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8082/health')" || exit 1
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8082/health/ready')" || exit 1
 
 # Run the reliable Kafka lifecycle with authenticated Terra-Ops service integration.
 CMD ["uvicorn", "src.authenticated_app:app", "--host", "0.0.0.0", "--port", "8082"]
