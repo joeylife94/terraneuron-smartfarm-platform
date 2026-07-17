@@ -12,7 +12,12 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
+import java.util.HexFormat;
 
 /**
  * 센서 데이터 모델
@@ -25,6 +30,14 @@ import java.time.Instant;
 public class SensorData {
 
     private static final long MAX_FUTURE_SKEW_SECONDS = 300;
+    private static final String EVENT_ID_VERSION = "v1";
+
+    @Size(max = 128, message = "eventId must be at most 128 characters")
+    @Pattern(
+            regexp = "[A-Za-z0-9._:-]+",
+            message = "eventId may contain only letters, numbers, '.', '_', ':', and '-'"
+    )
+    private String eventId;
 
     @NotBlank(message = "sensorId is required")
     @Size(max = 100, message = "sensorId must be at most 100 characters")
@@ -50,6 +63,50 @@ public class SensorData {
 
     @JsonFormat(shape = JsonFormat.Shape.STRING)
     private Instant timestamp;
+
+    /**
+     * Preserve an upstream event ID when one exists; otherwise derive the same ID for the same
+     * physical measurement. The canonical representation is intentionally language-neutral so
+     * non-Java collectors can implement the same contract.
+     */
+    public String ensureEventId() {
+        if (eventId == null || eventId.isBlank()) {
+            eventId = "evt-" + sha256Hex(canonicalIdentity());
+        }
+        return eventId;
+    }
+
+    private String canonicalIdentity() {
+        return String.join("\n",
+                EVENT_ID_VERSION,
+                normalize(farmId),
+                normalize(sensorId),
+                normalize(sensorType),
+                timestamp == null ? "" : Long.toString(timestamp.toEpochMilli()),
+                normalizeValue(value),
+                normalize(unit)
+        );
+    }
+
+    private static String normalize(String value) {
+        return value == null ? "" : value.trim();
+    }
+
+    private static String normalizeValue(Double value) {
+        if (value == null) {
+            return "";
+        }
+        return BigDecimal.valueOf(value).stripTrailingZeros().toPlainString();
+    }
+
+    private static String sha256Hex(String value) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(digest.digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 must be available", exception);
+        }
+    }
 
     @AssertTrue(message = "value is outside the physical range for sensorType")
     @JsonIgnore
@@ -80,7 +137,7 @@ public class SensorData {
     }
 
     public static SensorData createSample(String sensorId, String type, Double value) {
-        return SensorData.builder()
+        SensorData sample = SensorData.builder()
                 .sensorId(sensorId)
                 .sensorType(type)
                 .value(value)
@@ -88,6 +145,8 @@ public class SensorData {
                 .farmId("farm-A")
                 .timestamp(Instant.now())
                 .build();
+        sample.ensureEventId();
+        return sample;
     }
 
     private static String getUnitForType(String type) {
