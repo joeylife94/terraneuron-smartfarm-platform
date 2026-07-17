@@ -13,10 +13,15 @@ permissions:
   contents: read
   security-events: write
 
+concurrency:
+  group: security-scan-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   dependency-scan:
     name: Dependency Security Scan
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     
     steps:
       - name: 📥 Checkout Repository
