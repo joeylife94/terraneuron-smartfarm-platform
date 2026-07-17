@@ -7,7 +7,7 @@ dedupe ledger maintenance loop is unavailable.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, Mapping
+from typing import Any, Dict, Iterable, Mapping, Optional
 
 from fastapi import Response
 from fastapi.responses import JSONResponse
@@ -70,6 +70,18 @@ def readiness_payload(legacy: Any, ledger: Any) -> tuple[Dict[str, Any], int]:
     return payload, 200 if not reasons else 503
 
 
+def liveness_payload(supervisor: Optional[Any]) -> tuple[Dict[str, str], int]:
+    payload = {"status": "alive", "service": "terra-cortex"}
+    if supervisor is not None and supervisor.fatal:
+        payload = {
+            "status": "fatal",
+            "service": "terra-cortex",
+            "reason": supervisor.fatal_reason,
+        }
+        return payload, 503
+    return payload, 200
+
+
 def _counter(
     name: str,
     description: str,
@@ -93,10 +105,17 @@ def _gauge(
 class CortexRuntimeCollector:
     """Collect current runtime state without maintaining duplicate counters."""
 
-    def __init__(self, reliable: Any, legacy: Any, ledger: Any):
+    def __init__(
+        self,
+        reliable: Any,
+        legacy: Any,
+        ledger: Any,
+        supervisor: Optional[Any] = None,
+    ):
         self.reliable = reliable
         self.legacy = legacy
         self.ledger = ledger
+        self.supervisor = supervisor
 
     def collect(self) -> Iterable[Any]:
         stats: Mapping[str, int] = self.reliable._delivery_stats
@@ -148,10 +167,33 @@ class CortexRuntimeCollector:
                 int(running),
             )
 
+        fatal = bool(self.supervisor is not None and self.supervisor.fatal)
         yield _gauge(
             "terra_cortex_ready",
             "Whether all required Terra-Cortex runtime components are ready.",
-            int(all(components.values())),
+            int(all(components.values()) and not fatal),
+        )
+        yield _gauge(
+            "terra_cortex_runtime_fatal",
+            "Whether a critical Terra-Cortex background task has terminated.",
+            int(fatal),
+        )
+        yield _counter(
+            "terra_cortex_critical_task_failures",
+            "Unexpected critical background task exits since process start.",
+            (
+                self.supervisor.critical_task_failures
+                if self.supervisor is not None
+                else 0
+            ),
+        )
+        yield _gauge(
+            "terra_cortex_process_termination_scheduled",
+            "Whether graceful termination is pending after a fatal task exit.",
+            int(
+                self.supervisor is not None
+                and self.supervisor.termination_scheduled
+            ),
         )
         yield _gauge(
             "terra_cortex_dedupe_active_markers",
@@ -179,25 +221,41 @@ def create_metrics_registry(
     reliable: Any,
     legacy: Any,
     ledger: Any,
+    supervisor: Optional[Any] = None,
 ) -> CollectorRegistry:
     registry = CollectorRegistry(auto_describe=True)
-    registry.register(CortexRuntimeCollector(reliable, legacy, ledger))
+    registry.register(
+        CortexRuntimeCollector(reliable, legacy, ledger, supervisor)
+    )
     return registry
 
 
-def install(reliable: Any, legacy: Any, ledger: Any) -> CollectorRegistry:
+def install(
+    reliable: Any,
+    legacy: Any,
+    ledger: Any,
+    supervisor: Optional[Any] = None,
+) -> CollectorRegistry:
     """Install health probes and metrics exactly once on the Cortex app."""
 
     existing = getattr(reliable, "_runtime_observability_registry", None)
     if existing is not None:
         return existing
 
-    registry = create_metrics_registry(reliable, legacy, ledger)
+    active_supervisor = supervisor or getattr(
+        reliable, "_critical_task_supervisor", None
+    )
+    registry = create_metrics_registry(
+        reliable, legacy, ledger, active_supervisor
+    )
     reliable._runtime_observability_registry = registry
 
     @reliable.app.get("/health/live")
-    async def liveness() -> Dict[str, str]:
-        return {"status": "alive", "service": "terra-cortex"}
+    async def liveness() -> Any:
+        payload, status_code = liveness_payload(active_supervisor)
+        if status_code == 503:
+            return JSONResponse(status_code=status_code, content=payload)
+        return payload
 
     @reliable.app.get("/health/ready")
     async def readiness() -> Any:

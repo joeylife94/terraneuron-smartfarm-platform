@@ -194,6 +194,7 @@ services:
       context: ./services/terra-cortex
       dockerfile: Dockerfile
     container_name: terra-cortex
+    restart: unless-stopped
     depends_on:
       - kafka
       - terra-ops
@@ -206,6 +207,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       KAFKA_INPUT_TOPIC: raw-sensor-data
       KAFKA_OUTPUT_TOPIC: processed-insights
+      CORTEX_FATAL_TASK_EXIT_DELAY_SECONDS: ${CORTEX_FATAL_TASK_EXIT_DELAY_SECONDS:-5}
       # Hybrid AI Configuration
       OPENAI_API_KEY: ${OPENAI_API_KEY:-ollama}  # For Ollama use "ollama", for OpenAI use real key
       OPENAI_MODEL: ${OPENAI_MODEL:-llama3.1}  # For Ollama: llama3.1, mistral, etc. For OpenAI: gpt-4o-mini

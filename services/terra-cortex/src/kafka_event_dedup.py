@@ -485,6 +485,11 @@ class KafkaEventLedger:
                     await task
                 except asyncio.CancelledError:
                     pass
+                except Exception as exc:
+                    logger.error(
+                        "Dedupe background task had already failed during shutdown: %s",
+                        type(exc).__name__,
+                    )
         self._follower_task = None
         self._sweep_task = None
         if self._consumer is not None:

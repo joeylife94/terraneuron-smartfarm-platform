@@ -9,7 +9,7 @@ Kafka consumer or a dedupe maintenance task has terminated.
 | Endpoint | Success | Contract |
 | --- | --- | --- |
 | `GET /health` | `200` | Backward-compatible legacy status; it is not a readiness gate. |
-| `GET /health/live` | `200` | The FastAPI process can serve requests. No dependency checks. |
+| `GET /health/live` | `200` or `503` | The process is alive and no critical background task has failed. |
 | `GET /health/ready` | `200` or `503` | All required Kafka and dedupe runtime components are up. |
 
 Readiness requires all of the following:
@@ -32,9 +32,24 @@ exception messages. Current reason codes are:
 - `DEDUPE_EXPIRY_SWEEP_STOPPED`
 
 The Cortex Docker image and CI/E2E service wait use `/health/ready`. A dead
-background task therefore removes the replica from service and eventually makes
-the container unhealthy. Liveness remains independent so an orchestrator can
-distinguish a dead process from a live process that must not receive work.
+background task therefore makes the replica unready immediately. Because Cortex
+is primarily a Kafka worker rather than an HTTP request service, losing one of
+the consumer, marker follower, or expiry sweep tasks is fatal: `/health/live`
+returns `503`, and the runtime requests graceful process termination after
+`CORTEX_FATAL_TASK_EXIT_DELAY_SECONDS` (default 5 seconds). Docker Compose uses
+`restart: unless-stopped`, while production orchestrators should restart the
+exited replica with backoff.
+
+On the first fatal signal, the supervisor immediately cancels the other critical
+tasks before waiting for the exit delay. This quiesces raw consumption and aborts
+an in-flight Kafka transaction, preventing the replica from processing against a
+stale dedupe view during the diagnostic grace period.
+
+Normal SIGTERM shutdown sets the supervisor to stopping before cancelling tasks,
+so expected cancellation does not increment failure counters or schedule another
+termination. If a Kafka transaction was in flight when a task failed, the
+existing transactional producer aborts it and the uncommitted input offset is
+eligible for redelivery after restart.
 
 ## Prometheus endpoint
 
@@ -51,6 +66,7 @@ Core counters:
 - `terra_cortex_event_id_conflicts_total`
 - `terra_cortex_legacy_event_ids_generated_total`
 - `terra_cortex_dedupe_expired_markers_total`
+- `terra_cortex_critical_task_failures_total`
 
 Core gauges:
 
@@ -64,6 +80,8 @@ Core gauges:
 - `terra_cortex_dedupe_active_markers`
 - `terra_cortex_dedupe_restore_duration_seconds`
 - `terra_cortex_dedupe_restore_records_scanned`
+- `terra_cortex_runtime_fatal`
+- `terra_cortex_process_termination_scheduled`
 
 Counters reset when a Cortex process restarts; Prometheus `rate()`/`increase()`
 handles counter resets. Gauges and readiness are replica-local. In a multi-replica
@@ -77,3 +95,9 @@ A running client can still become temporarily unable to reach Kafka between
 scrapes. Transaction failures and retry counters provide the complementary
 signal. Readiness turns false when a task terminates; transient transaction
 errors remain handled by the existing retry and DLT policy.
+
+The supervisor does not restart individual tasks in place. A whole-process
+restart rebuilds the read-committed dedupe ledger and Kafka clients from a known
+state, avoiding a partially recovered replica. A permanent configuration or
+broker problem can therefore produce a restart loop; the deployment platform
+must apply restart backoff and alert on repeated restarts.
