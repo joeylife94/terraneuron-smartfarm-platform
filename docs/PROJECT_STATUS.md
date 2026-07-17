@@ -1,5 +1,9 @@
 # 📊 TerraNeuron 프로젝트 현황 (Project Status)
 
+> **Historical snapshot — do not use for current implementation decisions.**
+> This document describes the repository as of 2026-06-18 and intentionally remains as audit
+> history. The verified source of truth is [`../STATUS.md`](../STATUS.md).
+
 > **📅 Last Updated:** 2026-06-18 (Audit Review)  
 > **Version:** v2.1.0  
 > **Status:** ⚠️ Architecture Prototype — Demonstration-Ready  

@@ -7,6 +7,9 @@ import com.terraneuron.ops.controller.AuthController;
 import com.terraneuron.ops.entity.ActionPlan;
 import com.terraneuron.ops.service.ActionPlanService;
 import com.terraneuron.ops.service.AuditService;
+import com.terraneuron.ops.service.UserAuthenticationService;
+import com.terraneuron.ops.service.UserAuthenticationService.AuthenticatedUser;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -18,12 +21,15 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.blankOrNullString;
 import static org.hamcrest.Matchers.not;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -58,6 +64,36 @@ class SecurityConfigTest {
     @MockBean
     private AuditService auditService;
 
+    @MockBean
+    private UserAuthenticationService authenticationService;
+
+    @BeforeEach
+    void configureDatabaseUsers() {
+        when(authenticationService.authenticate(anyString(), anyString())).thenAnswer(invocation -> {
+            String username = invocation.getArgument(0);
+            String password = invocation.getArgument(1);
+            if ("admin".equals(username) && "admin123".equals(password)) {
+                return Optional.of(user("admin", "ROLE_ADMIN", "ROLE_OPERATOR"));
+            }
+            if ("operator".equals(username) && "operator123".equals(password)) {
+                return Optional.of(user("operator", "ROLE_OPERATOR"));
+            }
+            if ("viewer".equals(username) && "viewer123".equals(password)) {
+                return Optional.of(user("viewer", "ROLE_VIEWER"));
+            }
+            return Optional.empty();
+        });
+        when(authenticationService.findEnabledByUsername(anyString())).thenAnswer(invocation -> {
+            String username = invocation.getArgument(0);
+            return switch (username) {
+                case "admin" -> Optional.of(user("admin", "ROLE_ADMIN", "ROLE_OPERATOR"));
+                case "operator" -> Optional.of(user("operator", "ROLE_OPERATOR"));
+                case "viewer" -> Optional.of(user("viewer", "ROLE_VIEWER"));
+                default -> Optional.empty();
+            };
+        });
+    }
+
     @Test
     void unauthenticatedProtectedApiIsRejected() throws Exception {
         int status = mockMvc.perform(get("/api/actions/pending"))
@@ -78,6 +114,56 @@ class SecurityConfigTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.access_token", not(blankOrNullString())))
                 .andExpect(jsonPath("$.token_type").value("Bearer"));
+    }
+
+    @Test
+    void invalidDatabaseCredentialsAreRejectedWithoutToken() throws Exception {
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"username":"viewer","password":"wrong-password"}
+                                """))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("Invalid username or password"))
+                .andExpect(jsonPath("$.access_token").doesNotExist());
+    }
+
+    @Test
+    void accessAndRefreshTokensAreNotInterchangeable() throws Exception {
+        Map<String, Object> login = loginPayload("viewer", "viewer123");
+        String accessToken = (String) login.get("access_token");
+        String refreshToken = (String) login.get("refresh_token");
+
+        mockMvc.perform(post("/api/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("refreshToken", accessToken))))
+                .andExpect(status().isUnauthorized());
+
+        int protectedStatus = mockMvc.perform(get("/api/actions/pending")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(refreshToken)))
+                .andReturn()
+                .getResponse()
+                .getStatus();
+        assertThat(protectedStatus).isIn(401, 403);
+
+        mockMvc.perform(post("/api/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("refreshToken", refreshToken))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.access_token", not(blankOrNullString())));
+    }
+
+    @Test
+    void disabledDatabaseUserCannotRefreshAnExistingToken() throws Exception {
+        Map<String, Object> login = loginPayload("viewer", "viewer123");
+        String refreshToken = (String) login.get("refresh_token");
+        when(authenticationService.findEnabledByUsername("viewer")).thenReturn(Optional.empty());
+
+        mockMvc.perform(post("/api/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("refreshToken", refreshToken))))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("Invalid or expired refresh token"));
     }
 
     @Test
@@ -185,6 +271,10 @@ class SecurityConfigTest {
     }
 
     private String login(String username, String password) throws Exception {
+        return (String) loginPayload(username, password).get("access_token");
+    }
+
+    private Map<String, Object> loginPayload(String username, String password) throws Exception {
         String response = mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -195,8 +285,7 @@ class SecurityConfigTest {
                 .getResponse()
                 .getContentAsString();
 
-        Map<String, Object> body = objectMapper.readValue(response, new TypeReference<>() {});
-        return (String) body.get("access_token");
+        return objectMapper.readValue(response, new TypeReference<>() {});
     }
 
     private static String bearer(String token) {
@@ -215,5 +304,9 @@ class SecurityConfigTest {
                 .priority(ActionPlan.ActionPriority.MEDIUM)
                 .generatedAt(Instant.now())
                 .build();
+    }
+
+    private static AuthenticatedUser user(String username, String... roles) {
+        return new AuthenticatedUser(username, List.of(roles));
     }
 }

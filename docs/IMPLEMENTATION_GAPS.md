@@ -11,6 +11,5 @@ advisory**, and **known gaps** now lives in one place:
 
 ➡️ **[../STATUS.md](../STATUS.md)**
 
-The genuinely outstanding items (Kafka DLQ/retry, Docker Compose / E2E repair, full runtime
-JSON Schema validation, DB-backed auth) are tracked there under *Known gaps* and
-*Recommended next PRs*.
+The genuinely outstanding items are tracked there under *Known gaps* and
+*Recommended next PRs*; this historical list must not be used as a live backlog.

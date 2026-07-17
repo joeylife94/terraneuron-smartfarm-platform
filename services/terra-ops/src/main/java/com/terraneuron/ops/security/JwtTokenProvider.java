@@ -62,6 +62,7 @@ public class JwtTokenProvider {
         return Jwts.builder()
                 .subject(username)
                 .claim("roles", authorities)
+                .claim("type", "access")
                 .issuedAt(now)
                 .expiration(expiryDate)
                 .signWith(getSigningKey())
@@ -78,6 +79,7 @@ public class JwtTokenProvider {
         return Jwts.builder()
                 .subject(username)
                 .claim("roles", roles)
+                .claim("type", "access")
                 .issuedAt(now)
                 .expiration(expiryDate)
                 .signWith(getSigningKey())
@@ -130,22 +132,35 @@ public class JwtTokenProvider {
      * Validate JWT token
      */
     public boolean validateToken(String token) {
+        return validateTokenType(token, null);
+    }
+
+    /** Validates a signed token and requires the access-token type claim. */
+    public boolean validateAccessToken(String token) {
+        return validateTokenType(token, "access");
+    }
+
+    /** Validates a signed token and requires the refresh-token type claim. */
+    public boolean validateRefreshToken(String token) {
+        return validateTokenType(token, "refresh");
+    }
+
+    private boolean validateTokenType(String token, String requiredType) {
         try {
-            Jwts.parser()
+            Claims claims = Jwts.parser()
                     .verifyWith(getSigningKey())
                     .build()
-                    .parseSignedClaims(token);
-            return true;
-        } catch (MalformedJwtException ex) {
-            log.error("Invalid JWT token: {}", ex.getMessage());
-        } catch (ExpiredJwtException ex) {
-            log.error("Expired JWT token: {}", ex.getMessage());
-        } catch (UnsupportedJwtException ex) {
-            log.error("Unsupported JWT token: {}", ex.getMessage());
-        } catch (IllegalArgumentException ex) {
-            log.error("JWT claims string is empty: {}", ex.getMessage());
+                    .parseSignedClaims(token)
+                    .getPayload();
+            return requiredType == null || requiredType.equals(claims.get("type", String.class));
+        } catch (JwtException | IllegalArgumentException ex) {
+            log.debug("JWT validation failed: {}", ex.getMessage());
         }
         return false;
+    }
+
+    public long getAccessTokenExpirationSeconds() {
+        return jwtExpiration / 1000;
     }
 
     /**

@@ -455,14 +455,19 @@ POST /api/auth/login
 **Response (200 OK):**
 ```json
 {
-  "accessToken": "eyJhbGciOiJIUzI1NiJ9...",
-  "refreshToken": "eyJhbGciOiJIUzI1NiJ9...",
-  "tokenType": "Bearer",
-  "expiresIn": 86400
+  "status": "success",
+  "access_token": "eyJhbGciOiJIUzI1NiJ9...",
+  "refresh_token": "eyJhbGciOiJIUzI1NiJ9...",
+  "token_type": "Bearer",
+  "expires_in": 86400,
+  "user": {
+    "username": "admin",
+    "roles": ["ROLE_ADMIN", "ROLE_OPERATOR"]
+  }
 }
 ```
 
-**현재 사용 가능한 계정:**
+**로컬 Compose/E2E 초기 계정:**
 
 | Username | Password | Role |
 |----------|----------|------|
@@ -470,7 +475,8 @@ POST /api/auth/login
 | `operator` | `operator123` | OPERATOR |
 | `viewer` | `viewer123` | VIEWER |
 
-> ⚠️ **주의:** 현재 인메모리 하드코딩 계정입니다. DB `users` 테이블의 BCrypt 해시와 연동되어 있지 않습니다.
+> 계정은 MySQL `users` 테이블에서 조회하고 BCrypt 해시로 검증합니다. 위 자격증명은
+> 로컬/CI 전용이며 운영 환경에서는 별도 계정을 프로비저닝해야 합니다.
 
 #### 토큰 갱신
 
@@ -499,9 +505,12 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiJ9...
 **Response (200 OK):**
 ```json
 {
+  "status": "success",
   "valid": true,
-  "username": "admin",
-  "roles": ["ROLE_ADMIN"]
+  "user": {
+    "username": "admin",
+    "roles": ["ROLE_ADMIN", "ROLE_OPERATOR"]
+  }
 }
 ```
 

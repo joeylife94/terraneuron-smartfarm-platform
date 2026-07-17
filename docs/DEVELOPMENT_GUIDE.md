@@ -488,10 +488,9 @@ docker stats
 
 ### Q: 어떤 서비스부터 수정해야 하나요?
 
-**A:** `docs/PROJECT_STATUS.md`의 **우선순위 백로그**를 참조하세요. 현재 최우선은:
-1. Spring Security RBAC 활성화 (terra-ops)
-2. AuthController DB 연동 (terra-ops)
-3. DB 스키마 통일 (init.sql + JPA)
+**A:** 현재 구현 상태는 루트 [`STATUS.md`](../STATUS.md)를 참조하세요. RBAC와 DB 기반
+인증은 완료됐으며 다음 우선순위는 SafetyValidator의 실제 Context/Device State 연동과
+refresh token persistence/rotation입니다.
 
 ### Q: 단위 테스트는 어떻게 작성하나요?
 

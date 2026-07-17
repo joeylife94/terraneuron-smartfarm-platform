@@ -155,12 +155,12 @@ INSERT INTO sensors (farm_id, sensor_type, sensor_name, location) VALUES
 (2, 'temperature', '온도센서-2', 'B동-구역1'),
 (2, 'humidity', '습도센서-2', 'B동-구역1');
 
--- 초기 사용자 데이터 (비밀번호: BCrypt 해시)
--- admin123, operator123, viewer123
+-- 로컬 Compose/E2E 전용 초기 사용자 데이터 (BCrypt cost 12)
+-- 운영 환경에서는 별도 계정 프로비저닝 절차를 사용하고 이 데모 자격증명을 사용하지 않는다.
 INSERT INTO users (username, password_hash, email, full_name, roles) VALUES
-('admin', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZRGdjGj/n3.rsR5HHqD0VRrrLKHhm', 'admin@terraneuron.io', 'System Admin', 'ROLE_ADMIN,ROLE_OPERATOR'),
-('operator', '$2a$10$EblZqNptyYvcLm/VwDCVAuBjzZOI7khzdyGPBr08PpIi0na624b8.', 'operator@terraneuron.io', 'Farm Operator', 'ROLE_OPERATOR'),
-('viewer', '$2a$10$LCi2jHTF8x/Q6qIH9mKNOOEq7ztEljW0oL1p.HPlVj.xrHHb9RYMW', 'viewer@terraneuron.io', 'Dashboard Viewer', 'ROLE_VIEWER');
+('admin', '$2b$12$VEM9UEYzvq2FvUZeU7o9h.E5HuNxFRnz.arT1lhOtdi6kMFt9ETki', 'admin@terraneuron.io', 'System Admin', 'ROLE_ADMIN,ROLE_OPERATOR'),
+('operator', '$2b$12$c42bVxboWHVuXC2UCwUV/evQNPGkcVyCQHtSfGB.DT9j5YExH0byi', 'operator@terraneuron.io', 'Farm Operator', 'ROLE_OPERATOR'),
+('viewer', '$2b$12$XEAyS9y2PKe2SM/rqK44ouUaaGaDL.nWYn.JDuHAzj.WySDXrPDpG', 'viewer@terraneuron.io', 'Dashboard Viewer', 'ROLE_VIEWER');
 
 -- ============================================================
 -- Phase 4.E: 작물 모델링 (Crop Profile & Growth Stage)
@@ -366,4 +366,3 @@ INSERT INTO farm_crops (farm_id, crop_id, zone, planted_at, current_stage_order,
 ('farm-A', (SELECT id FROM crop_profiles WHERE crop_code='tomato'), 'zone-A', '2026-01-15', 3, '2026-06-15', 'GROWING'),
 ('farm-A', (SELECT id FROM crop_profiles WHERE crop_code='lettuce'), 'zone-B', '2026-02-10', 2, '2026-03-27', 'GROWING'),
 ('farm-B', (SELECT id FROM crop_profiles WHERE crop_code='strawberry'), 'zone-A', '2025-10-01', 4, '2026-03-30', 'GROWING');
-
