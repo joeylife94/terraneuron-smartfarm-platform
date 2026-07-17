@@ -33,6 +33,7 @@ public class IngestionController {
         if (sensorData.getTimestamp() == null) {
             sensorData.setTimestamp(Instant.now());
         }
+        sensorData.ensureEventId();
 
         // 1) InfluxDB 시계열 저장 (실패해도 Kafka 전송에 영향 없음)
         influxDbWriterService.writeSensorData(sensorData);
@@ -42,6 +43,7 @@ public class IngestionController {
 
         return ResponseEntity.ok(Map.of(
                 "status", "accepted",
+                "eventId", sensorData.getEventId(),
                 "sensorId", sensorData.getSensorId(),
                 "timestamp", sensorData.getTimestamp(),
                 "persisted", true
