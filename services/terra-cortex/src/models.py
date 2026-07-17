@@ -16,10 +16,25 @@ class SensorData(BaseModel):
         {"temperature", "humidity", "co2", "soilMoisture", "light"}
     )
 
+    eventId: Optional[str] = None
+    sensorId: Optional[str] = None
     farmId: str
     sensorType: str
     value: float
+    unit: Optional[str] = None
     timestamp: Optional[datetime] = None
+
+    @field_validator("eventId")
+    @classmethod
+    def validate_event_id(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("eventId must not be blank when provided")
+        if len(normalized) > 128:
+            raise ValueError("eventId must be at most 128 characters")
+        return normalized
 
     @field_validator("farmId")
     @classmethod
