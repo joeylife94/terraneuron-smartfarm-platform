@@ -12,6 +12,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -70,7 +71,7 @@ class UserAuthenticationServiceTest {
 
         assertThat(authenticationService.authenticate("missing", "secret")).isEmpty();
 
-        verify(passwordEncoder).matches("secret", startsWith("$2b$12$"));
+        verify(passwordEncoder).matches(eq("secret"), startsWith("$2b$12$"));
     }
 
     @Test
