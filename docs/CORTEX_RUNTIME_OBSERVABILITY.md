@@ -82,6 +82,7 @@ Core gauges:
 - `terra_cortex_dedupe_restore_records_scanned`
 - `terra_cortex_runtime_fatal`
 - `terra_cortex_process_termination_scheduled`
+- `terra_cortex_process_start_time_seconds`
 
 Counters reset when a Cortex process restarts; Prometheus `rate()`/`increase()`
 handles counter resets. Gauges and readiness are replica-local. In a multi-replica
@@ -101,3 +102,7 @@ restart rebuilds the read-committed dedupe ledger and Kafka clients from a known
 state, avoiding a partially recovered replica. A permanent configuration or
 broker problem can therefore produce a restart loop; the deployment platform
 must apply restart backoff and alert on repeated restarts.
+
+Prometheus alert thresholds, the Grafana reliability dashboard, and notification
+routing boundaries are documented in
+[`CORTEX_RELIABILITY_ALERTS.md`](CORTEX_RELIABILITY_ALERTS.md).

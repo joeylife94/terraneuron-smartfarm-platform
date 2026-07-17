@@ -7,12 +7,15 @@ dedupe ledger maintenance loop is unavailable.
 
 from __future__ import annotations
 
+import time
 from typing import Any, Dict, Iterable, Mapping, Optional
 
 from fastapi import Response
 from fastapi.responses import JSONResponse
 from prometheus_client import CollectorRegistry, CONTENT_TYPE_LATEST, generate_latest
 from prometheus_client.core import CounterMetricFamily, GaugeMetricFamily
+
+PROCESS_START_TIME_SECONDS = time.time()
 
 
 def _task_running(task: Any) -> bool:
@@ -194,6 +197,11 @@ class CortexRuntimeCollector:
                 self.supervisor is not None
                 and self.supervisor.termination_scheduled
             ),
+        )
+        yield _gauge(
+            "terra_cortex_process_start_time_seconds",
+            "Unix time when the Terra-Cortex process started.",
+            PROCESS_START_TIME_SECONDS,
         )
         yield _gauge(
             "terra_cortex_dedupe_active_markers",

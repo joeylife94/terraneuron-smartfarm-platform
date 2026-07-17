@@ -1,0 +1,89 @@
+groups:
+  - name: terra-cortex-reliability
+    interval: 15s
+    rules:
+      - alert: TerraCortexTargetDown
+        expr: up{job="terra-cortex"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: terra-cortex
+        annotations:
+          summary: Terra-Cortex metrics target is unavailable
+          description: Prometheus has failed to scrape Terra-Cortex for two minutes.
+
+      - alert: TerraCortexRuntimeNotReady
+        expr: terra_cortex_ready{job="terra-cortex"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: terra-cortex
+        annotations:
+          summary: Terra-Cortex runtime is not ready
+          description: At least one required Kafka or dedupe runtime component is down.
+
+      - alert: TerraCortexCriticalTaskFailure
+        expr: increase(terra_cortex_critical_task_failures_total{job="terra-cortex"}[5m]) > 0
+        labels:
+          severity: critical
+          service: terra-cortex
+        annotations:
+          summary: A critical Terra-Cortex task terminated
+          description: Cortex quiesced Kafka processing and scheduled a whole-process restart.
+
+      - alert: TerraCortexRestartLoop
+        expr: changes(terra_cortex_process_start_time_seconds{job="terra-cortex"}[15m]) >= 3
+        labels:
+          severity: critical
+          service: terra-cortex
+        annotations:
+          summary: Terra-Cortex is repeatedly restarting
+          description: Prometheus observed at least three Cortex process changes in 15 minutes.
+
+      - alert: TerraCortexKafkaTransactionFailures
+        expr: increase(terra_cortex_kafka_transaction_failures_total{job="terra-cortex"}[5m]) >= 3
+        for: 1m
+        labels:
+          severity: warning
+          service: terra-cortex
+        annotations:
+          summary: Terra-Cortex Kafka transactions are repeatedly failing
+          description: At least three transaction attempts failed in the last five minutes.
+
+      - alert: TerraCortexDeadLetteredEvents
+        expr: increase(terra_cortex_events_dead_lettered_total{job="terra-cortex"}[15m]) > 0
+        labels:
+          severity: warning
+          service: terra-cortex
+        annotations:
+          summary: Terra-Cortex dead-lettered sensor events
+          description: One or more sensor events entered the Cortex DLT in the last 15 minutes.
+
+      - alert: TerraCortexEventIdConflicts
+        expr: increase(terra_cortex_event_id_conflicts_total{job="terra-cortex"}[15m]) > 0
+        labels:
+          severity: warning
+          service: terra-cortex
+        annotations:
+          summary: Terra-Cortex detected event ID conflicts
+          description: A stable event ID was reused for a different payload within retention.
+
+      - alert: TerraCortexReliabilityMetricsMissing
+        expr: up{job="terra-cortex"} == 1 unless on(job, instance) terra_cortex_ready{job="terra-cortex"}
+        for: 5m
+        labels:
+          severity: warning
+          service: terra-cortex
+        annotations:
+          summary: Terra-Cortex reliability metrics are missing
+          description: The metrics endpoint is scrapeable but the readiness series is absent.
+
+      - alert: TerraCortexDedupeRestoreSlow
+        expr: terra_cortex_dedupe_restore_duration_seconds{job="terra-cortex"} > 60
+        for: 5m
+        labels:
+          severity: warning
+          service: terra-cortex
+        annotations:
+          summary: Terra-Cortex dedupe restore is slow
+          description: The latest dedupe ledger restore took longer than 60 seconds.

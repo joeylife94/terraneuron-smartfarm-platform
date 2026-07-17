@@ -188,6 +188,7 @@ def test_prometheus_metrics_reflect_current_counters_and_runtime_state():
     assert "terra_cortex_dedupe_marker_follower_up 1.0" in output
     assert "terra_cortex_dedupe_expiry_sweep_up 1.0" in output
     assert "terra_cortex_ready 1.0" in output
+    assert "terra_cortex_process_start_time_seconds " in output
     assert "eventId" not in output
     assert "fingerprint" not in output
 
@@ -214,5 +215,6 @@ def test_prometheus_metrics_report_fatal_supervision_state():
     assert "terra_cortex_runtime_fatal 1.0" in output
     assert "terra_cortex_critical_task_failures_total 2.0" in output
     assert "terra_cortex_process_termination_scheduled 1.0" in output
+    assert "terra_cortex_process_start_time_seconds " in output
     assert "terra_cortex_ready 0.0" in output
     assert supervisor.fatal_reason not in output

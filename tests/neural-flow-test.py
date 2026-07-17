@@ -17,6 +17,10 @@ TERRA_SENSE_URL = os.getenv(
 TERRA_CORTEX_BASE_URL = os.getenv("TERRA_CORTEX_BASE_URL", "http://localhost:8082")
 TERRA_OPS_BASE_URL = os.getenv("TERRA_OPS_BASE_URL", "http://localhost:8080")
 TERRA_OPS_API_URL = f"{TERRA_OPS_BASE_URL}/api/v1"
+PROMETHEUS_BASE_URL = os.getenv("PROMETHEUS_BASE_URL", "http://localhost:9090")
+GRAFANA_BASE_URL = os.getenv("GRAFANA_BASE_URL", "http://localhost:3000")
+GRAFANA_USERNAME = os.getenv("GRAFANA_USERNAME", "admin")
+GRAFANA_PASSWORD = os.getenv("GRAFANA_PASSWORD", "terra2025")
 
 E2E_USERNAME = os.getenv("E2E_USERNAME", "admin")
 E2E_PASSWORD = os.getenv("E2E_PASSWORD", "admin123")
@@ -228,6 +232,7 @@ def check_cortex_observability(forbidden_values: List[str]) -> None:
         "terra_cortex_runtime_fatal",
         "terra_cortex_critical_task_failures_total",
         "terra_cortex_process_termination_scheduled",
+        "terra_cortex_process_start_time_seconds",
     }
     missing = [name for name in required_metrics if name not in metrics_response.text]
     if missing:
@@ -235,6 +240,90 @@ def check_cortex_observability(forbidden_values: List[str]) -> None:
     leaked = [value for value in forbidden_values if value in metrics_response.text]
     if leaked:
         raise E2ETestFailure("Cortex metrics exposed sensor or event identifiers")
+
+
+def check_monitoring_provisioning() -> None:
+    rules_response = requests.get(
+        f"{PROMETHEUS_BASE_URL}/api/v1/rules",
+        params={"type": "alert"},
+        timeout=REQUEST_TIMEOUT_SECONDS,
+    )
+    rules = response_json(rules_response, "Prometheus alert rules query")
+    groups = rules.get("data", {}).get("groups", [])
+    cortex_group = next(
+        (group for group in groups if group.get("name") == "terra-cortex-reliability"),
+        None,
+    )
+    if cortex_group is None:
+        raise E2ETestFailure("Prometheus did not load terra-cortex-reliability rules")
+    loaded_alerts = {
+        rule.get("name") for rule in cortex_group.get("rules", [])
+    }
+    expected_alerts = {
+        "TerraCortexTargetDown",
+        "TerraCortexRuntimeNotReady",
+        "TerraCortexCriticalTaskFailure",
+        "TerraCortexRestartLoop",
+        "TerraCortexKafkaTransactionFailures",
+        "TerraCortexDeadLetteredEvents",
+        "TerraCortexEventIdConflicts",
+        "TerraCortexReliabilityMetricsMissing",
+        "TerraCortexDedupeRestoreSlow",
+    }
+    missing_alerts = expected_alerts - loaded_alerts
+    if missing_alerts:
+        raise E2ETestFailure(
+            f"Prometheus rules were missing: {sorted(missing_alerts)}"
+        )
+
+    deadline = time.monotonic() + POLL_TIMEOUT_SECONDS
+    latest_result = []
+    while time.monotonic() < deadline:
+        query_response = requests.get(
+            f"{PROMETHEUS_BASE_URL}/api/v1/query",
+            params={"query": 'terra_cortex_ready{job="terra-cortex"}'},
+            timeout=REQUEST_TIMEOUT_SECONDS,
+        )
+        query = response_json(query_response, "Prometheus Cortex readiness query")
+        latest_result = query.get("data", {}).get("result", [])
+        if latest_result and latest_result[0].get("value", [None, None])[1] == "1":
+            break
+        time.sleep(POLL_INTERVAL_SECONDS)
+    else:
+        raise E2ETestFailure(
+            f"Prometheus did not scrape a ready Cortex target: {latest_result}"
+        )
+
+    dashboard = {}
+    dashboard_response = None
+    deadline = time.monotonic() + POLL_TIMEOUT_SECONDS
+    while time.monotonic() < deadline:
+        dashboard_response = requests.get(
+            f"{GRAFANA_BASE_URL}/api/dashboards/uid/terra-cortex-reliability",
+            auth=(GRAFANA_USERNAME, GRAFANA_PASSWORD),
+            timeout=REQUEST_TIMEOUT_SECONDS,
+        )
+        if dashboard_response.ok:
+            dashboard = dashboard_response.json().get("dashboard", {})
+            if dashboard.get("title") == "Terra-Cortex Reliability":
+                break
+        time.sleep(POLL_INTERVAL_SECONDS)
+    else:
+        status = (
+            dashboard_response.status_code
+            if dashboard_response is not None
+            else None
+        )
+        raise E2ETestFailure(
+            f"Grafana did not provision the Cortex dashboard: HTTP {status}"
+        )
+
+    if dashboard.get("title") != "Terra-Cortex Reliability":
+        raise E2ETestFailure(
+            f"Grafana provisioned an unexpected dashboard: {dashboard.get('title')}"
+        )
+    if len(dashboard.get("panels", [])) < 10:
+        raise E2ETestFailure("Grafana Cortex reliability dashboard was incomplete")
 
 
 def check_dashboard_summary(access_token: str, expected_minimum: int) -> Dict:
@@ -264,11 +353,11 @@ def run_test() -> None:
     print(f"runId={run_id} farmId={farm_id}")
     print("=" * 72)
 
-    print("\n[1/6] Authenticating against terra-ops")
+    print("\n[1/7] Authenticating against terra-ops")
     access_token = login()
     print(f"  PASS authenticated as {E2E_USERNAME}")
 
-    print("\n[2/6] Sending sensor data and one exact duplicate")
+    print("\n[2/7] Sending sensor data and one exact duplicate")
     first_event_id = None
     for data in sensor_data:
         event_id = send_sensor_data(data)
@@ -282,7 +371,7 @@ def run_test() -> None:
         )
     print(f"  PASS duplicate reused eventId={duplicate_event_id}")
 
-    print("\n[3/6] Waiting for unique processed insights")
+    print("\n[3/7] Waiting for unique processed insights")
     insights = wait_for_insights(
         farm_id=farm_id,
         access_token=access_token,
@@ -298,20 +387,24 @@ def run_test() -> None:
         )
     print(f"  PASS persisted exactly {len(final_insights)} unique insights")
 
-    print("\n[4/6] Checking Cortex deduplication state")
+    print("\n[4/7] Checking Cortex deduplication state")
     dedupe = check_deduplication()
     print(
         "  PASS duplicate suppression: "
         f"topic={dedupe.get('topic')} stats={dedupe.get('stats')}"
     )
 
-    print("\n[5/6] Checking Cortex runtime observability")
+    print("\n[5/7] Checking Cortex runtime observability")
     check_cortex_observability(
         [farm_id, first_event_id, duplicate_event_id]
     )
     print("  PASS liveness, readiness, and non-sensitive Prometheus metrics")
 
-    print("\n[6/6] Checking dashboard summary")
+    print("\n[6/7] Checking Prometheus rules and Grafana provisioning")
+    check_monitoring_provisioning()
+    print("  PASS alert rules, Cortex scrape, and reliability dashboard")
+
+    print("\n[7/7] Checking dashboard summary")
     summary = check_dashboard_summary(access_token, expected_minimum=len(insights))
     print(
         "  PASS summary: "

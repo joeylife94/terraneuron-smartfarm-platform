@@ -168,11 +168,24 @@ jobs:
       - name: 🔎 Validate Docker Compose Configuration
         run: docker compose config --quiet
 
+      - name: 🔔 Validate Prometheus Rules
+        run: |
+          docker run --rm --entrypoint /bin/promtool \
+            -v "${{ github.workspace }}/infra/prometheus:/etc/prometheus:ro" \
+            prom/prometheus:v2.48.0 \
+            check config /etc/prometheus/prometheus.yml
+          docker run --rm --entrypoint /bin/promtool \
+            -v "${{ github.workspace }}/infra/prometheus:/etc/prometheus:ro" \
+            -w /etc/prometheus/tests \
+            prom/prometheus:v2.48.0 \
+            test rules terra-cortex-alerts.test.yml
+
       - name: 🐳 Start Required Docker Compose Services
         run: |
           docker compose up -d \
             redis zookeeper kafka mysql influxdb mosquitto \
-            terra-sense terra-cortex terra-ops terra-gateway
+            terra-sense terra-cortex terra-ops terra-gateway \
+            prometheus grafana
 
       - name: ⏳ Wait for Services
         shell: bash
@@ -199,6 +212,8 @@ jobs:
           wait_for_service terra-cortex http://localhost:8082/health/ready
           wait_for_service terra-ops http://localhost:8080/actuator/health
           wait_for_service terra-gateway http://localhost:8000/actuator/health
+          wait_for_service prometheus http://localhost:9090/-/ready
+          wait_for_service grafana http://localhost:3000/api/health
 
       - name: 🐍 Setup Python for E2E Tests
         uses: actions/setup-python@v5
