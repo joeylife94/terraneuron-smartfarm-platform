@@ -189,6 +189,51 @@ def check_deduplication(expected_minimum: int = 1) -> Dict:
     return payload
 
 
+def check_cortex_observability(forbidden_values: List[str]) -> None:
+    live_response = requests.get(
+        f"{TERRA_CORTEX_BASE_URL}/health/live",
+        timeout=REQUEST_TIMEOUT_SECONDS,
+    )
+    live = response_json(live_response, "Cortex liveness probe")
+    if live.get("status") != "alive":
+        raise E2ETestFailure(f"Cortex liveness was not alive: {live}")
+
+    ready_response = requests.get(
+        f"{TERRA_CORTEX_BASE_URL}/health/ready",
+        timeout=REQUEST_TIMEOUT_SECONDS,
+    )
+    ready = response_json(ready_response, "Cortex readiness probe")
+    if ready.get("status") != "ready" or set(
+        ready.get("components", {}).values()
+    ) != {"up"}:
+        raise E2ETestFailure(f"Cortex runtime was not fully ready: {ready}")
+
+    metrics_response = requests.get(
+        f"{TERRA_CORTEX_BASE_URL}/metrics",
+        timeout=REQUEST_TIMEOUT_SECONDS,
+    )
+    if not metrics_response.ok:
+        raise E2ETestFailure(
+            "Cortex metrics scrape failed: "
+            f"HTTP {metrics_response.status_code} - {metrics_response.text}"
+        )
+    required_metrics = {
+        "terra_cortex_events_processed_total",
+        "terra_cortex_duplicates_suppressed_total",
+        "terra_cortex_events_dead_lettered_total",
+        "terra_cortex_kafka_transaction_failures_total",
+        "terra_cortex_dedupe_active_markers",
+        "terra_cortex_dedupe_marker_follower_up",
+        "terra_cortex_dedupe_expiry_sweep_up",
+    }
+    missing = [name for name in required_metrics if name not in metrics_response.text]
+    if missing:
+        raise E2ETestFailure(f"Cortex metrics were missing: {sorted(missing)}")
+    leaked = [value for value in forbidden_values if value in metrics_response.text]
+    if leaked:
+        raise E2ETestFailure("Cortex metrics exposed sensor or event identifiers")
+
+
 def check_dashboard_summary(access_token: str, expected_minimum: int) -> Dict:
     response = requests.get(
         f"{TERRA_OPS_API_URL}/dashboard/summary",
@@ -216,11 +261,11 @@ def run_test() -> None:
     print(f"runId={run_id} farmId={farm_id}")
     print("=" * 72)
 
-    print("\n[1/5] Authenticating against terra-ops")
+    print("\n[1/6] Authenticating against terra-ops")
     access_token = login()
     print(f"  PASS authenticated as {E2E_USERNAME}")
 
-    print("\n[2/5] Sending sensor data and one exact duplicate")
+    print("\n[2/6] Sending sensor data and one exact duplicate")
     first_event_id = None
     for data in sensor_data:
         event_id = send_sensor_data(data)
@@ -234,7 +279,7 @@ def run_test() -> None:
         )
     print(f"  PASS duplicate reused eventId={duplicate_event_id}")
 
-    print("\n[3/5] Waiting for unique processed insights")
+    print("\n[3/6] Waiting for unique processed insights")
     insights = wait_for_insights(
         farm_id=farm_id,
         access_token=access_token,
@@ -250,14 +295,20 @@ def run_test() -> None:
         )
     print(f"  PASS persisted exactly {len(final_insights)} unique insights")
 
-    print("\n[4/5] Checking Cortex deduplication state")
+    print("\n[4/6] Checking Cortex deduplication state")
     dedupe = check_deduplication()
     print(
         "  PASS duplicate suppression: "
         f"topic={dedupe.get('topic')} stats={dedupe.get('stats')}"
     )
 
-    print("\n[5/5] Checking dashboard summary")
+    print("\n[5/6] Checking Cortex runtime observability")
+    check_cortex_observability(
+        [farm_id, first_event_id, duplicate_event_id]
+    )
+    print("  PASS liveness, readiness, and non-sensitive Prometheus metrics")
+
+    print("\n[6/6] Checking dashboard summary")
     summary = check_dashboard_summary(access_token, expected_minimum=len(insights))
     print(
         "  PASS summary: "

@@ -14,8 +14,10 @@ legacy.get_crop_profile_provider = get_authenticated_crop_profile_provider
 
 from src import reliable_app as reliable  # noqa: E402
 from src.kafka_event_dedup import install  # noqa: E402
+from src.runtime_observability import install as install_observability  # noqa: E402
 
-install(reliable, legacy)
+ledger = install(reliable, legacy)
+install_observability(reliable, legacy, ledger)
 _dedupe_start_kafka = legacy.start_kafka
 
 
