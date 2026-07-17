@@ -1,16 +1,5 @@
 #!/usr/bin/env python3
-"""
-TerraNeuron E2E integration test.
-
-The test sends uniquely identifiable sensor data and verifies the complete flow:
-1. HTTP -> terra-sense API
-2. terra-sense -> Kafka (raw-sensor-data)
-3. terra-cortex -> analysis -> Kafka (processed-insights)
-4. terra-ops -> MySQL persistence
-5. Authenticated terra-ops API query
-
-Any failed request, missing insight, timeout, or authentication error exits non-zero.
-"""
+"""Authoritative TerraNeuron HTTP -> Kafka -> Cortex -> MySQL E2E test."""
 
 import os
 import sys
@@ -25,6 +14,7 @@ TERRA_SENSE_URL = os.getenv(
     "TERRA_SENSE_URL",
     "http://localhost:8081/api/v1/ingest/sensor-data",
 )
+TERRA_CORTEX_BASE_URL = os.getenv("TERRA_CORTEX_BASE_URL", "http://localhost:8082")
 TERRA_OPS_BASE_URL = os.getenv("TERRA_OPS_BASE_URL", "http://localhost:8080")
 TERRA_OPS_API_URL = f"{TERRA_OPS_BASE_URL}/api/v1"
 
@@ -36,11 +26,10 @@ POLL_INTERVAL_SECONDS = float(os.getenv("E2E_POLL_INTERVAL_SECONDS", "2"))
 
 
 class E2ETestFailure(RuntimeError):
-    """Raised when an E2E assertion fails."""
+    pass
 
 
 def generate_sensor_data(farm_id: str, run_id: str) -> List[Dict]:
-    """Generate sensor readings isolated to this test run."""
     timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     return [
         {
@@ -79,12 +68,10 @@ def generate_sensor_data(farm_id: str, run_id: str) -> List[Dict]:
 
 
 def response_json(response: requests.Response, operation: str):
-    """Require a successful response and return its JSON body."""
     if not response.ok:
         raise E2ETestFailure(
             f"{operation} failed: HTTP {response.status_code} - {response.text}"
         )
-
     try:
         return response.json()
     except ValueError as exc:
@@ -94,7 +81,6 @@ def response_json(response: requests.Response, operation: str):
 
 
 def login() -> str:
-    """Authenticate against terra-ops and return an access token."""
     response = requests.post(
         f"{TERRA_OPS_BASE_URL}/api/auth/login",
         json={"username": E2E_USERNAME, "password": E2E_PASSWORD},
@@ -111,8 +97,7 @@ def auth_headers(access_token: str) -> Dict[str, str]:
     return {"Authorization": f"Bearer {access_token}"}
 
 
-def send_sensor_data(data: Dict) -> None:
-    """Send one sensor reading and validate its acknowledgement identity."""
+def send_sensor_data(data: Dict) -> str:
     response = requests.post(
         TERRA_SENSE_URL,
         json=data,
@@ -132,14 +117,19 @@ def send_sensor_data(data: Dict) -> None:
         raise E2ETestFailure(
             f"sensor ingestion acknowledgement omitted timestamp: {payload}"
         )
+    event_id = payload.get("eventId")
+    if not event_id:
+        raise E2ETestFailure(
+            f"sensor ingestion acknowledgement omitted eventId: {payload}"
+        )
     print(
         f"  PASS {data['sensorId']}: "
-        f"{data['sensorType']}={data['value']}{data['unit']}"
+        f"{data['sensorType']}={data['value']}{data['unit']} eventId={event_id}"
     )
+    return event_id
 
 
 def fetch_farm_insights(farm_id: str, access_token: str) -> List[Dict]:
-    """Fetch insights for the unique farm used by this run."""
     response = requests.get(
         f"{TERRA_OPS_API_URL}/insights/farm/{farm_id}",
         headers=auth_headers(access_token),
@@ -159,10 +149,8 @@ def wait_for_insights(
     expected_count: int,
     expected_sensor_types: set[str],
 ) -> List[Dict]:
-    """Poll until all expected insights are persisted or timeout expires."""
     deadline = time.monotonic() + POLL_TIMEOUT_SECONDS
     latest_insights: List[Dict] = []
-
     while time.monotonic() < deadline:
         latest_insights = fetch_farm_insights(farm_id, access_token)
         observed_types = {
@@ -170,35 +158,38 @@ def wait_for_insights(
             for insight in latest_insights
             if insight.get("sensorType")
         }
-
         if (
             len(latest_insights) >= expected_count
             and expected_sensor_types.issubset(observed_types)
         ):
             return latest_insights
-
         print(
             f"  Waiting: {len(latest_insights)}/{expected_count} insights, "
             f"sensor types={sorted(observed_types)}"
         )
         time.sleep(POLL_INTERVAL_SECONDS)
-
-    observed_types = sorted(
-        {
-            insight.get("sensorType")
-            for insight in latest_insights
-            if insight.get("sensorType")
-        }
-    )
     raise E2ETestFailure(
         "Timed out waiting for persisted insights: "
-        f"received {len(latest_insights)}/{expected_count}, "
-        f"sensor types={observed_types}, farmId={farm_id}"
+        f"received {len(latest_insights)}/{expected_count}, farmId={farm_id}"
     )
+
+
+def check_deduplication(expected_minimum: int = 1) -> Dict:
+    response = requests.get(
+        f"{TERRA_CORTEX_BASE_URL}/api/kafka/deduplication",
+        timeout=REQUEST_TIMEOUT_SECONDS,
+    )
+    payload = response_json(response, "Cortex deduplication status")
+    suppressed = payload.get("stats", {}).get("duplicates_suppressed")
+    if not isinstance(suppressed, int) or suppressed < expected_minimum:
+        raise E2ETestFailure(
+            "Cortex did not report duplicate suppression: "
+            f"expected >= {expected_minimum}, got {suppressed}"
+        )
+    return payload
 
 
 def check_dashboard_summary(access_token: str, expected_minimum: int) -> Dict:
-    """Verify the authenticated dashboard summary is queryable and coherent."""
     response = requests.get(
         f"{TERRA_OPS_API_URL}/dashboard/summary",
         headers=auth_headers(access_token),
@@ -215,7 +206,6 @@ def check_dashboard_summary(access_token: str, expected_minimum: int) -> Dict:
 
 
 def run_test() -> None:
-    """Run authoritative E2E assertions."""
     run_id = uuid.uuid4().hex[:12]
     farm_id = f"e2e-farm-{run_id}"
     sensor_data = generate_sensor_data(farm_id, run_id)
@@ -226,24 +216,48 @@ def run_test() -> None:
     print(f"runId={run_id} farmId={farm_id}")
     print("=" * 72)
 
-    print("\n[1/4] Authenticating against terra-ops")
+    print("\n[1/5] Authenticating against terra-ops")
     access_token = login()
     print(f"  PASS authenticated as {E2E_USERNAME}")
 
-    print("\n[2/4] Sending sensor data")
+    print("\n[2/5] Sending sensor data and one exact duplicate")
+    first_event_id = None
     for data in sensor_data:
-        send_sensor_data(data)
+        event_id = send_sensor_data(data)
+        if first_event_id is None:
+            first_event_id = event_id
+    duplicate_event_id = send_sensor_data(sensor_data[0])
+    if duplicate_event_id != first_event_id:
+        raise E2ETestFailure(
+            "same sensor measurement produced a different eventId: "
+            f"first={first_event_id}, duplicate={duplicate_event_id}"
+        )
+    print(f"  PASS duplicate reused eventId={duplicate_event_id}")
 
-    print("\n[3/4] Waiting for processed insights")
+    print("\n[3/5] Waiting for unique processed insights")
     insights = wait_for_insights(
         farm_id=farm_id,
         access_token=access_token,
         expected_count=len(sensor_data),
         expected_sensor_types=expected_sensor_types,
     )
-    print(f"  PASS persisted {len(insights)} insights for this run")
+    time.sleep(POLL_INTERVAL_SECONDS * 2)
+    final_insights = fetch_farm_insights(farm_id, access_token)
+    if len(final_insights) != len(sensor_data):
+        raise E2ETestFailure(
+            "duplicate sensor event changed persisted insight count: "
+            f"expected {len(sensor_data)}, got {len(final_insights)}"
+        )
+    print(f"  PASS persisted exactly {len(final_insights)} unique insights")
 
-    print("\n[4/4] Checking dashboard summary")
+    print("\n[4/5] Checking Cortex deduplication state")
+    dedupe = check_deduplication()
+    print(
+        "  PASS duplicate suppression: "
+        f"topic={dedupe.get('topic')} stats={dedupe.get('stats')}"
+    )
+
+    print("\n[5/5] Checking dashboard summary")
     summary = check_dashboard_summary(access_token, expected_minimum=len(insights))
     print(
         "  PASS summary: "
@@ -253,7 +267,7 @@ def run_test() -> None:
     )
 
     print("\n" + "=" * 72)
-    print("PASS: complete HTTP -> Kafka -> Cortex -> Kafka -> MySQL -> API flow")
+    print("PASS: complete flow with semantic sensor-event deduplication")
     print("=" * 72)
 
 
