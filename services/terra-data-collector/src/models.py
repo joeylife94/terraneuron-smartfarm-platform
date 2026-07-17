@@ -6,7 +6,9 @@ from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+from src.event_identity import derive_event_id
 
 
 class DataSource(str, Enum):
@@ -46,6 +48,7 @@ class CollectedSensorData(BaseModel):
     terra-sense의 SensorData와 호환되면서 메타데이터 추가
     """
     # terra-sense 호환 필드
+    eventId: Optional[str] = Field(default=None, description="안정적인 원시 측정 이벤트 ID")
     sensorId: str = Field(..., description="센서 ID (provider-type-idx)")
     sensorType: str = Field(..., description="센서 타입")
     value: float = Field(..., description="센서 값")
@@ -63,9 +66,15 @@ class CollectedSensorData(BaseModel):
     location: Optional[Dict[str, float]] = Field(default=None, description="위치 정보")
     raw_variable: Optional[str] = Field(default=None, description="원본 변수명")
 
+    @model_validator(mode="after")
+    def populate_event_id(self) -> "CollectedSensorData":
+        self.eventId = derive_event_id(self.model_dump(mode="python"))
+        return self
+
     def to_terra_sense_payload(self) -> Dict[str, Any]:
         """terra-sense API 호환 페이로드 (메타데이터 제거)"""
         return {
+            "eventId": self.eventId,
             "sensorId": self.sensorId,
             "sensorType": self.sensorType,
             "value": self.value,
