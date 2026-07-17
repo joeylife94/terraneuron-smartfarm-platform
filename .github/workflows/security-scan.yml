@@ -2,9 +2,16 @@ name: Security Scan
 
 on:
   schedule:
-    - cron: '0 0 * * 1'  # 매주 월요일 자정
+    # Changing the cron also reactivates schedules disabled after repository inactivity.
+    # Avoid the top of the hour, when GitHub-hosted schedules can be delayed.
+    - cron: '17 3 * * 1'
   push:
     branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
 
 jobs:
   dependency-scan:
@@ -13,10 +20,10 @@ jobs:
     
     steps:
       - name: 📥 Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: 🔍 Run Trivy Vulnerability Scanner
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: 'fs'
           scan-ref: '.'
@@ -24,6 +31,6 @@ jobs:
           output: 'trivy-results.sarif'
 
       - name: 📊 Upload Trivy Results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v2
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: 'trivy-results.sarif'
