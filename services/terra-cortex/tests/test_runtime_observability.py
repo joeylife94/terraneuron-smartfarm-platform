@@ -147,6 +147,28 @@ def test_health_endpoints_and_unready_http_status_are_installed_once():
     assert b"terra_cortex_ready 0.0" in metrics.body
 
 
+def test_fatal_supervisor_makes_liveness_fail_with_safe_reason():
+    reliable, legacy, ledger = runtime_state()
+    supervisor = SimpleNamespace(
+        fatal=True,
+        fatal_reason="DEDUPE_MARKER_FOLLOWER_STOPPED",
+        critical_task_failures=1,
+        termination_scheduled=True,
+    )
+    observability.install(reliable, legacy, ledger, supervisor)
+
+    response = asyncio.run(reliable.app.routes["/health/live"]())
+    body = json.loads(response.body)
+
+    assert response.status_code == 503
+    assert body == {
+        "status": "fatal",
+        "service": "terra-cortex",
+        "reason": "DEDUPE_MARKER_FOLLOWER_STOPPED",
+    }
+    assert "exception" not in response.body.decode("utf-8")
+
+
 def test_prometheus_metrics_reflect_current_counters_and_runtime_state():
     reliable, legacy, ledger = runtime_state()
     registry = observability.create_metrics_registry(reliable, legacy, ledger)
@@ -173,3 +195,24 @@ def test_prometheus_metrics_reflect_current_counters_and_runtime_state():
     updated = generate_latest(registry).decode("utf-8")
     assert "terra_cortex_kafka_consumer_task_up 0.0" in updated
     assert "terra_cortex_ready 0.0" in updated
+
+
+def test_prometheus_metrics_report_fatal_supervision_state():
+    reliable, legacy, ledger = runtime_state()
+    supervisor = SimpleNamespace(
+        fatal=True,
+        fatal_reason="KAFKA_CONSUMER_TASK_STOPPED",
+        critical_task_failures=2,
+        termination_scheduled=True,
+    )
+    registry = observability.create_metrics_registry(
+        reliable, legacy, ledger, supervisor
+    )
+
+    output = generate_latest(registry).decode("utf-8")
+
+    assert "terra_cortex_runtime_fatal 1.0" in output
+    assert "terra_cortex_critical_task_failures_total 2.0" in output
+    assert "terra_cortex_process_termination_scheduled 1.0" in output
+    assert "terra_cortex_ready 0.0" in output
+    assert supervisor.fatal_reason not in output

@@ -479,6 +479,35 @@ def test_rebalance_listener_catches_up_marker_changelog():
     assert calls == ["caught-up"]
 
 
+def test_ledger_stop_closes_consumer_after_background_task_failure():
+    async def scenario():
+        class FakeConsumer:
+            def __init__(self):
+                self.stopped = False
+
+            async def stop(self):
+                self.stopped = True
+
+        async def fail():
+            raise RuntimeError("follower failed")
+
+        ledger = dedup.KafkaEventLedger("dedupe-topic")
+        consumer = FakeConsumer()
+        ledger._consumer = consumer
+        ledger._follower_task = asyncio.create_task(fail())
+        ledger._sweep_task = asyncio.create_task(asyncio.sleep(60))
+        await asyncio.sleep(0)
+
+        await ledger.stop()
+
+        assert consumer.stopped is True
+        assert ledger._consumer is None
+        assert ledger._follower_task is None
+        assert ledger._sweep_task is None
+
+    asyncio.run(scenario())
+
+
 def test_operations_status_exposes_retention_restore_sweep_and_policy():
     clock = FrozenClock(datetime(2026, 7, 17, tzinfo=timezone.utc))
     ledger = dedup.KafkaEventLedger(

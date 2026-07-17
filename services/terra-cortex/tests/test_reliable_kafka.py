@@ -185,3 +185,34 @@ def test_exhausted_record_is_dead_lettered_with_offset_commit():
 
 def test_trace_id_is_preserved_from_input_headers():
     assert runtime._trace_id_from_headers(message()) == "trace-input-1"
+
+
+def test_shutdown_closes_clients_after_consumer_task_failure(monkeypatch):
+    class FakeClient:
+        def __init__(self):
+            self.stopped = False
+
+        async def stop(self):
+            self.stopped = True
+
+    async def scenario():
+        async def fail():
+            raise RuntimeError("consumer failed")
+
+        consumer = FakeClient()
+        producer = FakeClient()
+        task = asyncio.create_task(fail())
+        await asyncio.sleep(0)
+        monkeypatch.setattr(runtime.legacy, "kafka_task", task)
+        monkeypatch.setattr(runtime.legacy, "consumer", consumer)
+        monkeypatch.setattr(runtime.legacy, "producer", producer)
+
+        await runtime.reliable_stop_kafka()
+
+        assert consumer.stopped is True
+        assert producer.stopped is True
+        assert runtime.legacy.kafka_task is None
+        assert runtime.legacy.consumer is None
+        assert runtime.legacy.producer is None
+
+    asyncio.run(scenario())

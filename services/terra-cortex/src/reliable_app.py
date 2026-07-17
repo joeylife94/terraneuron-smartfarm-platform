@@ -464,6 +464,11 @@ async def reliable_stop_kafka() -> None:
             await task
         except asyncio.CancelledError:
             pass
+        except Exception as exc:
+            logger.error(
+                "Kafka consumer task had already failed during shutdown: %s",
+                type(exc).__name__,
+            )
 
     if legacy.consumer:
         await legacy.consumer.stop()

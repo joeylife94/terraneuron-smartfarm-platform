@@ -128,10 +128,13 @@ GET /health
 ```
 
 `/health`는 기존 호환성을 위한 상태 API입니다. 배포 및 트래픽 준비 여부는
-`GET /health/ready`, 프로세스 생존 여부는 `GET /health/live`를 사용합니다.
+`GET /health/ready`, 프로세스와 critical background task 생존 여부는
+`GET /health/live`를 사용합니다.
 Kafka consumer/transactional producer, consumer task, dedupe restore, marker
 follower, expiry sweep 중 하나라도 준비되지 않으면 `/health/ready`는 안전한
-reason code와 함께 `503 Service Unavailable`을 반환합니다.
+reason code와 함께 `503 Service Unavailable`을 반환합니다. consumer task,
+marker follower 또는 expiry sweep이 비정상 종료되면 `/health/live`도 `503`으로
+전환되고 Cortex는 graceful restart를 위해 프로세스 종료를 요청합니다.
 
 **Response (200 OK):**
 ```json

@@ -225,6 +225,9 @@ def check_cortex_observability(forbidden_values: List[str]) -> None:
         "terra_cortex_dedupe_active_markers",
         "terra_cortex_dedupe_marker_follower_up",
         "terra_cortex_dedupe_expiry_sweep_up",
+        "terra_cortex_runtime_fatal",
+        "terra_cortex_critical_task_failures_total",
+        "terra_cortex_process_termination_scheduled",
     }
     missing = [name for name in required_metrics if name not in metrics_response.text]
     if missing:
