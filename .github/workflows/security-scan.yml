@@ -26,15 +26,37 @@ jobs:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v7
 
-      - name: 🔍 Run Trivy Vulnerability Scanner
+      - name: 🧪 Validate Security Scan Policy
+        run: python tests/test_security_scan_policy.py
+
+      # Keep the complete report non-blocking so every detected severity reaches
+      # GitHub code scanning, including vulnerabilities without an available fix.
+      - name: 🔍 Generate Complete Trivy SARIF Report
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: 'fs'
           scan-ref: '.'
           format: 'sarif'
           output: 'trivy-results.sarif'
+          exit-code: '0'
+          ignore-unfixed: false
+          severity: 'UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL'
 
       - name: 📊 Upload Trivy Results to GitHub Security
+        if: ${{ always() && hashFiles('trivy-results.sarif') != '' }}
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: 'trivy-results.sarif'
+
+      # The reporting scan installs the pinned Trivy binary. Run the enforcement
+      # pass separately so a gate failure cannot prevent the SARIF upload above.
+      - name: 🚫 Enforce Fixable High and Critical Vulnerability Gate
+        if: always()
+        run: >-
+          trivy fs
+          --scanners vuln
+          --ignore-unfixed
+          --severity HIGH,CRITICAL
+          --exit-code 1
+          --format table
+          .
