@@ -34,9 +34,14 @@ public class DefaultDeviceSafetyPolicy implements DeviceSafetyPolicy {
             MeterRegistry meterRegistry,
             Clock clock,
             @Value("${app.device-state.freshness-seconds:120}") long freshnessSeconds,
+            @Value("${app.device-state.registry.ttl-seconds:600}") long registryTtlSeconds,
             @Value("${app.device-state.reported-future-skew-seconds:10}") long reportedFutureSkewSeconds) {
         if (freshnessSeconds <= 0 || reportedFutureSkewSeconds < 0) {
             throw new IllegalArgumentException("Device safety time windows are invalid");
+        }
+        if (registryTtlSeconds <= freshnessSeconds) {
+            throw new IllegalArgumentException(
+                    "Device state registry TTL must be greater than the freshness window");
         }
         this.registry = registry;
         this.capabilityResolvers = List.copyOf(capabilityResolvers);
