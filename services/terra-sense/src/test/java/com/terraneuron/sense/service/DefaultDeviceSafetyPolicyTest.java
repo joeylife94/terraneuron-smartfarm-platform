@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class DefaultDeviceSafetyPolicyTest {
 
@@ -33,13 +34,13 @@ class DefaultDeviceSafetyPolicyTest {
                 new SimpleMeterRegistry(),
                 Clock.fixed(NOW, ZoneOffset.UTC),
                 120,
+                600,
                 10);
     }
 
     @Test
     void freshOnlineCompatibleDeviceIsAllowed() {
         registry.save(state("online", false, "fan", NOW.minusSeconds(30), NOW.minusSeconds(5)));
-
         assertThat(evaluate("ventilation", "turn_on", Map.of()).allowed()).isTrue();
     }
 
@@ -115,6 +116,20 @@ class DefaultDeviceSafetyPolicyTest {
         registry.forced = state;
         assertReason(evaluate("ventilation", "turn_on", Map.of()),
                 DeviceSafetyReason.IDENTITY_MISMATCH);
+    }
+
+    @Test
+    void registryTtlMustRemainGreaterThanFreshness() {
+        assertThatThrownBy(() -> new DefaultDeviceSafetyPolicy(
+                registry,
+                java.util.List.of(new DefaultDeviceCapabilityResolver()),
+                new SimpleMeterRegistry(),
+                Clock.fixed(NOW, ZoneOffset.UTC),
+                120,
+                120,
+                10))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("greater than the freshness");
     }
 
     private DeviceSafetyDecision evaluate(
