@@ -52,7 +52,7 @@ class ActionPlanServiceApprovalTest {
     @Test
     void freshOnlinePlanIsApprovedAndAtomicallyQueued() {
         ActionPlan plan = pendingPlanBuilder().build();
-        when(actionPlanRepository.findByPlanId("plan-1")).thenReturn(Optional.of(plan));
+        when(actionPlanRepository.findByPlanIdForUpdate("plan-1")).thenReturn(Optional.of(plan));
         when(deviceSafetyClient.evaluate(plan)).thenReturn(DeviceSafetyClient.DeviceSafetyResult.allow());
         stubOutboxEnqueue();
 
@@ -69,7 +69,7 @@ class ActionPlanServiceApprovalTest {
     @Test
     void offlineDeviceCreatesRetryableSafetyBlockWithoutOutbox() {
         ActionPlan plan = pendingPlanBuilder().build();
-        when(actionPlanRepository.findByPlanId("plan-1")).thenReturn(Optional.of(plan));
+        when(actionPlanRepository.findByPlanIdForUpdate("plan-1")).thenReturn(Optional.of(plan));
         when(deviceSafetyClient.evaluate(plan))
                 .thenReturn(DeviceSafetyClient.DeviceSafetyResult.blocked("STATE_OFFLINE"));
 
@@ -92,7 +92,7 @@ class ActionPlanServiceApprovalTest {
                 .safetyBlockReasonCode("STATE_STALE")
                 .safetyBlockedAt(Instant.now())
                 .build();
-        when(actionPlanRepository.findByPlanId("plan-1")).thenReturn(Optional.of(plan));
+        when(actionPlanRepository.findByPlanIdForUpdate("plan-1")).thenReturn(Optional.of(plan));
         when(deviceSafetyClient.evaluate(plan)).thenReturn(DeviceSafetyClient.DeviceSafetyResult.allow());
         stubOutboxEnqueue();
 
@@ -111,7 +111,7 @@ class ActionPlanServiceApprovalTest {
     @Test
     void invalidPlanIsRejectedWithoutSafetyCallOrOutbox() {
         ActionPlan plan = pendingPlanBuilder().actionType(null).build();
-        when(actionPlanRepository.findByPlanId("plan-1")).thenReturn(Optional.of(plan));
+        when(actionPlanRepository.findByPlanIdForUpdate("plan-1")).thenReturn(Optional.of(plan));
 
         ActionPlan result = service.approvePlan("plan-1", "operator", "approve attempt");
 
@@ -124,7 +124,7 @@ class ActionPlanServiceApprovalTest {
     @Test
     void validationOutcomeIsAlwaysAudited() {
         ActionPlan plan = pendingPlanBuilder().build();
-        when(actionPlanRepository.findByPlanId("plan-1")).thenReturn(Optional.of(plan));
+        when(actionPlanRepository.findByPlanIdForUpdate("plan-1")).thenReturn(Optional.of(plan));
         when(deviceSafetyClient.evaluate(plan)).thenReturn(DeviceSafetyClient.DeviceSafetyResult.allow());
         stubOutboxEnqueue();
 
