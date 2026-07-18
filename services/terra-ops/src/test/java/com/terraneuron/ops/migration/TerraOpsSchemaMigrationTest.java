@@ -65,6 +65,9 @@ class TerraOpsSchemaMigrationTest {
         assertThat(indexExists("action_plans", "idx_plan_command_id")).isTrue();
         assertThat(indexExists("command_outbox", "uk_outbox_plan_id")).isTrue();
         assertThat(tableExists("command_outbox")).isTrue();
+        assertThat(tableExists("command_outbox_dedup_archive")).isTrue();
+        assertThat(columnExists("command_outbox_dedup_archive", "archived_at")).isTrue();
+        assertThat(columnExists("command_outbox_dedup_archive", "archive_reason")).isTrue();
         assertThat(columnDataType("action_plans", "status")).isEqualTo("varchar");
         assertThat(columnDataType("action_plans", "priority")).isEqualTo("varchar");
         assertThat(columnDataType("audit_logs", "event_type")).isEqualTo("varchar");
@@ -75,8 +78,29 @@ class TerraOpsSchemaMigrationTest {
                 .isEqualTo("HIGH");
         assertThat(scalar("SELECT event_type FROM audit_logs WHERE log_id = 'legacy-log-preserved'"))
                 .isEqualTo("PLAN_CREATED");
-        assertThat(scalar("SELECT status FROM command_outbox WHERE command_id = 'legacy-command-preserved'"))
+
+        // V4 retains the published command so a previously delivered command cannot
+        // be re-issued, and archives the less advanced duplicate rows before deletion.
+        assertThat(scalar("SELECT COUNT(*) FROM command_outbox "
+                + "WHERE plan_id = 'legacy-plan-preserved'"))
+                .isEqualTo("1");
+        assertThat(scalar("SELECT command_id FROM command_outbox "
+                + "WHERE plan_id = 'legacy-plan-preserved'"))
+                .isEqualTo("legacy-command-preserved");
+        assertThat(scalar("SELECT status FROM command_outbox "
+                + "WHERE command_id = 'legacy-command-preserved'"))
                 .isEqualTo("PUBLISHED");
+        assertThat(scalar("SELECT COUNT(*) FROM command_outbox_dedup_archive "
+                + "WHERE plan_id = 'legacy-plan-preserved'"))
+                .isEqualTo("2");
+        assertThat(scalar("SELECT COUNT(*) FROM command_outbox_dedup_archive "
+                + "WHERE plan_id = 'legacy-plan-preserved' "
+                + "AND archive_reason = 'DUPLICATE_PLAN_ID_BEFORE_UNIQUE_CONSTRAINT'"))
+                .isEqualTo("2");
+        assertThat(scalar("SELECT GROUP_CONCAT(status ORDER BY status) "
+                + "FROM command_outbox_dedup_archive "
+                + "WHERE plan_id = 'legacy-plan-preserved'"))
+                .isEqualTo("PENDING,PROCESSING");
         assertThat(legacy.migrate().migrationsExecuted).isZero();
 
         Flyway compose = composeFlyway();
