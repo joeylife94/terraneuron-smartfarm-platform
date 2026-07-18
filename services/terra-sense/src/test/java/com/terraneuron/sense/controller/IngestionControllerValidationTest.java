@@ -1,6 +1,7 @@
 package com.terraneuron.sense.controller;
 
 import com.terraneuron.sense.model.SensorData;
+import com.terraneuron.sense.security.DeviceSafetyServiceJwtFilter;
 import com.terraneuron.sense.service.InfluxDbWriterService;
 import com.terraneuron.sense.service.KafkaProducerService;
 import org.junit.jupiter.api.Test;
@@ -22,14 +23,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @WebMvcTest(IngestionController.class)
 class IngestionControllerValidationTest {
 
-    @Autowired
-    private MockMvc mockMvc;
+    @Autowired private MockMvc mockMvc;
+    @MockBean private KafkaProducerService kafkaProducerService;
+    @MockBean private InfluxDbWriterService influxDbWriterService;
 
-    @MockBean
-    private KafkaProducerService kafkaProducerService;
-
-    @MockBean
-    private InfluxDbWriterService influxDbWriterService;
+    // This slice verifies ingestion validation, not the independent internal service-auth boundary.
+    @MockBean private DeviceSafetyServiceJwtFilter deviceSafetyServiceJwtFilter;
 
     @Test
     void validSensorPayloadIsAccepted() throws Exception {
@@ -47,7 +46,6 @@ class IngestionControllerValidationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("accepted"))
                 .andExpect(jsonPath("$.sensorId").value("sensor-temp-01"));
-
         verify(influxDbWriterService).writeSensorData(any(SensorData.class));
         verify(kafkaProducerService).sendSensorData(any(SensorData.class));
     }
@@ -93,7 +91,6 @@ class IngestionControllerValidationTest {
     @Test
     void excessiveFutureTimestampIsRejectedBeforeSideEffects() throws Exception {
         String futureTimestamp = Instant.now().plusSeconds(600).toString();
-
         assertBadRequest("""
                 {
                   "sensorId": "sensor-temp-01",
@@ -111,7 +108,6 @@ class IngestionControllerValidationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(payload))
                 .andExpect(status().isBadRequest());
-
         verifyNoInteractions(influxDbWriterService, kafkaProducerService);
     }
 }
