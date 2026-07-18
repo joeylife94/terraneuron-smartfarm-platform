@@ -31,7 +31,8 @@ class HttpDeviceSafetyClientTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        response = new AtomicReference<>(new Response(200, "{\"allowed\":true,\"reasonCode\":\"ALLOWED\"}", 0));
+        response = new AtomicReference<>(new Response(
+                200, "{\"allowed\":true,\"reasonCode\":\"ALLOWED\"}", 0));
         server = HttpServer.create(new InetSocketAddress(0), 0);
         server.createContext("/internal/device-safety/evaluate", this::handle);
         server.start();
@@ -84,8 +85,27 @@ class HttpDeviceSafetyClientTest {
     }
 
     @Test
+    void unknownReasonCodeCannotCreateUnboundedMetricsOrAuditValues() {
+        response.set(new Response(
+                200,
+                "{\"allowed\":false,\"reasonCode\":\"asset-fan-01-private-detail\"}",
+                0));
+        assertBlocked("SENSE_MALFORMED_RESPONSE");
+    }
+
+    @Test
+    void allowedFlagAndReasonMustAgree() {
+        response.set(new Response(
+                200,
+                "{\"allowed\":true,\"reasonCode\":\"STATE_OFFLINE\"}",
+                0));
+        assertBlocked("SENSE_MALFORMED_RESPONSE");
+    }
+
+    @Test
     void timeoutFailsClosed() {
-        response.set(new Response(200, "{\"allowed\":true,\"reasonCode\":\"ALLOWED\"}", 250));
+        response.set(new Response(
+                200, "{\"allowed\":true,\"reasonCode\":\"ALLOWED\"}", 250));
         assertBlocked("SENSE_TIMEOUT");
     }
 
