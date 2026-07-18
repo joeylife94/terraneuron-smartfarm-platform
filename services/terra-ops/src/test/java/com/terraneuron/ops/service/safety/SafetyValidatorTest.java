@@ -27,7 +27,8 @@ class SafetyValidatorTest {
 
     @Test
     void pendingPlanRequiringApprovalFailsPermissionLayer() {
-        SafetyValidator validator = new SafetyValidator(plan -> DeviceSafetyClient.DeviceSafetyResult.allowed());
+        SafetyValidator validator = new SafetyValidator(
+                plan -> DeviceSafetyClient.DeviceSafetyResult.allow());
         ActionPlan plan = validPlanBuilder().status(ActionPlan.PlanStatus.PENDING).build();
 
         SafetyValidator.ValidationResult result = validator.validate(plan);
@@ -39,7 +40,8 @@ class SafetyValidatorTest {
 
     @Test
     void approvedPlanWithFreshDevicePassesAllLayers() {
-        SafetyValidator validator = new SafetyValidator(plan -> DeviceSafetyClient.DeviceSafetyResult.allowed());
+        SafetyValidator validator = new SafetyValidator(
+                plan -> DeviceSafetyClient.DeviceSafetyResult.allow());
         ActionPlan plan = approvedPlan();
 
         SafetyValidator.ValidationResult result = validator.validate(plan);
@@ -50,7 +52,8 @@ class SafetyValidatorTest {
 
     @Test
     void approvedPlanWithoutApproverMetadataFailsPermissionLayer() {
-        SafetyValidator validator = new SafetyValidator(plan -> DeviceSafetyClient.DeviceSafetyResult.allowed());
+        SafetyValidator validator = new SafetyValidator(
+                plan -> DeviceSafetyClient.DeviceSafetyResult.allow());
         ActionPlan plan = validPlanBuilder().status(ActionPlan.PlanStatus.APPROVED).build();
 
         SafetyValidator.ValidationResult result = validator.validate(plan);
@@ -62,7 +65,8 @@ class SafetyValidatorTest {
 
     @Test
     void missingRequiredFieldsFailLogicalLayer() {
-        SafetyValidator validator = new SafetyValidator(plan -> DeviceSafetyClient.DeviceSafetyResult.allowed());
+        SafetyValidator validator = new SafetyValidator(
+                plan -> DeviceSafetyClient.DeviceSafetyResult.allow());
         ActionPlan plan = approvedPlan();
         plan.setTargetAssetId(null);
         plan.setActionType(null);
