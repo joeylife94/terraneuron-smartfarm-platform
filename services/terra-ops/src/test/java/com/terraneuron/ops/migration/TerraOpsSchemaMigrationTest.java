@@ -32,10 +32,12 @@ class TerraOpsSchemaMigrationTest {
         Flyway fresh = productionFlyway();
         MigrateResult freshResult = fresh.migrate();
 
-        assertThat(freshResult.migrationsExecuted).isEqualTo(3);
-        assertThat(appliedVersions(fresh)).containsExactly("1", "2", "3");
+        assertThat(freshResult.migrationsExecuted).isEqualTo(4);
+        assertThat(appliedVersions(fresh)).containsExactly("1", "2", "3", "4");
         assertThat(tableExists("command_outbox")).isTrue();
         assertThat(columnExists("action_plans", "ack_deadline_at")).isTrue();
+        assertThat(columnExists("action_plans", "safety_block_reason_code")).isTrue();
+        assertThat(columnExists("action_plans", "safety_blocked_at")).isTrue();
         assertThat(columnDataType("command_outbox", "status")).isEqualTo("varchar");
         assertThat(rowCount("users")).isZero();
 
@@ -43,24 +45,24 @@ class TerraOpsSchemaMigrationTest {
         try (Connection connection = connection()) {
             ScriptUtils.executeSqlScript(
                     connection,
-                    new ClassPathResource("db/legacy/V0__pre_flyway_action_plans.sql")
-            );
+                    new ClassPathResource("db/legacy/V0__pre_flyway_action_plans.sql"));
         }
 
         Flyway legacy = productionFlyway();
         MigrateResult legacyResult = legacy.migrate();
 
-        assertThat(legacyResult.migrationsExecuted).isEqualTo(3);
-        assertThat(appliedVersions(legacy)).containsExactly("0", "1", "2", "3");
+        assertThat(legacyResult.migrationsExecuted).isEqualTo(4);
+        assertThat(appliedVersions(legacy)).containsExactly("0", "1", "2", "3", "4");
         assertThat(scalar("SELECT plan_id FROM action_plans WHERE plan_id = 'legacy-plan-preserved'"))
                 .isEqualTo("legacy-plan-preserved");
         assertThat(columnExists("action_plans", "command_id")).isTrue();
         assertThat(columnExists("action_plans", "dispatched_at")).isTrue();
         assertThat(columnExists("action_plans", "delivered_at")).isTrue();
         assertThat(columnExists("action_plans", "ack_deadline_at")).isTrue();
+        assertThat(columnExists("action_plans", "safety_block_reason_code")).isTrue();
+        assertThat(columnExists("action_plans", "safety_blocked_at")).isTrue();
         assertThat(indexExists("action_plans", "idx_plan_command_id")).isTrue();
         assertThat(tableExists("command_outbox")).isTrue();
-
         assertThat(columnDataType("action_plans", "status")).isEqualTo("varchar");
         assertThat(columnDataType("action_plans", "priority")).isEqualTo("varchar");
         assertThat(columnDataType("audit_logs", "event_type")).isEqualTo("varchar");
@@ -109,34 +111,26 @@ class TerraOpsSchemaMigrationTest {
     }
 
     private static boolean tableExists(String table) throws Exception {
-        return metadataExists(
-                "SELECT 1 FROM information_schema.TABLES "
-                        + "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '" + table + "'"
-        );
+        return metadataExists("SELECT 1 FROM information_schema.TABLES "
+                + "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '" + table + "'");
     }
 
     private static boolean columnExists(String table, String column) throws Exception {
-        return metadataExists(
-                "SELECT 1 FROM information_schema.COLUMNS "
-                        + "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '" + table + "' "
-                        + "AND COLUMN_NAME = '" + column + "'"
-        );
+        return metadataExists("SELECT 1 FROM information_schema.COLUMNS "
+                + "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '" + table + "' "
+                + "AND COLUMN_NAME = '" + column + "'");
     }
 
     private static String columnDataType(String table, String column) throws Exception {
-        return scalar(
-                "SELECT DATA_TYPE FROM information_schema.COLUMNS "
-                        + "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '" + table + "' "
-                        + "AND COLUMN_NAME = '" + column + "'"
-        );
+        return scalar("SELECT DATA_TYPE FROM information_schema.COLUMNS "
+                + "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '" + table + "' "
+                + "AND COLUMN_NAME = '" + column + "'");
     }
 
     private static boolean indexExists(String table, String index) throws Exception {
-        return metadataExists(
-                "SELECT 1 FROM information_schema.STATISTICS "
-                        + "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '" + table + "' "
-                        + "AND INDEX_NAME = '" + index + "'"
-        );
+        return metadataExists("SELECT 1 FROM information_schema.STATISTICS "
+                + "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '" + table + "' "
+                + "AND INDEX_NAME = '" + index + "'");
     }
 
     private static boolean metadataExists(String sql) throws Exception {
