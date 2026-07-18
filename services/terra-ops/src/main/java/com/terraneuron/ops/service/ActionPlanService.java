@@ -107,8 +107,7 @@ public class ActionPlanService {
 
     @Transactional
     public ActionPlan approvePlan(String planId, String approvedBy, String notes) {
-        ActionPlan plan = actionPlanRepository.findByPlanId(planId)
-                .orElseThrow(() -> new IllegalArgumentException("Plan not found: " + planId));
+        ActionPlan plan = lockedPlan(planId);
         if (!plan.canBeApproved()) {
             throw new IllegalStateException(
                     "Plan cannot be approved: status=" + plan.getStatus() + ", expired=" + plan.isExpired());
@@ -133,8 +132,7 @@ public class ActionPlanService {
 
     @Transactional
     public ActionPlan revalidateSafety(String planId) {
-        ActionPlan plan = actionPlanRepository.findByPlanId(planId)
-                .orElseThrow(() -> new IllegalArgumentException("Plan not found: " + planId));
+        ActionPlan plan = lockedPlan(planId);
         if (!plan.canBeSafetyRevalidated()) {
             throw new IllegalStateException(
                     "Plan cannot be safety-revalidated: status=" + plan.getStatus()
@@ -158,6 +156,11 @@ public class ActionPlanService {
         auditService.logPlanSafetyCleared(plan, previousReason);
         log.info("Safety block cleared and command queued: plan={}", planId);
         return plan;
+    }
+
+    private ActionPlan lockedPlan(String planId) {
+        return actionPlanRepository.findByPlanIdForUpdate(planId)
+                .orElseThrow(() -> new IllegalArgumentException("Plan not found: " + planId));
     }
 
     private SafetyValidator.ValidationResult validateAndAudit(ActionPlan plan) {
@@ -200,8 +203,7 @@ public class ActionPlanService {
 
     @Transactional
     public ActionPlan rejectPlan(String planId, String rejectedBy, String reason) {
-        ActionPlan plan = actionPlanRepository.findByPlanId(planId)
-                .orElseThrow(() -> new IllegalArgumentException("Plan not found: " + planId));
+        ActionPlan plan = lockedPlan(planId);
         if (plan.getStatus() != ActionPlan.PlanStatus.PENDING
                 && plan.getStatus() != ActionPlan.PlanStatus.SAFETY_BLOCKED) {
             throw new IllegalStateException("Only PENDING or SAFETY_BLOCKED plans can be rejected");
