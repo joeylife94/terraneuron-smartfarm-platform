@@ -48,9 +48,11 @@ class DeviceSafetyServiceJwtFilterTest {
     void validSubjectAudienceScopeAndExpiryAuthenticateInternalEndpoint() throws Exception {
         MockHttpServletResponse response = invoke(
                 "/internal/device-safety/evaluate",
-                token("terra-ops", "terra-sense", "device:safety:evaluate", NOW.minusSeconds(1), NOW.plusSeconds(29)));
+                token("terra-ops", "terra-sense", "device:safety:evaluate",
+                        NOW.minusSeconds(1), NOW.plusSeconds(29)));
 
         assertThat(response.getStatus()).isEqualTo(200);
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNotNull();
         assertThat(SecurityContextHolder.getContext().getAuthentication().getAuthorities())
                 .extracting(Object::toString)
                 .contains("SERVICE_TERRA_OPS", "SCOPE_device:safety:evaluate");
@@ -68,7 +70,8 @@ class DeviceSafetyServiceJwtFilterTest {
                 token("terra-ops", "terra-sense", "device:read", NOW, NOW.plusSeconds(30)))
                 .getStatus()).isEqualTo(401);
         assertThat(invoke("/internal/device-safety/evaluate",
-                token("terra-ops", "terra-sense", "device:safety:evaluate", NOW.minusSeconds(90), NOW.minusSeconds(30)))
+                token("terra-ops", "terra-sense", "device:safety:evaluate",
+                        NOW.minusSeconds(90), NOW.minusSeconds(30)))
                 .getStatus()).isEqualTo(401);
     }
 
@@ -84,6 +87,7 @@ class DeviceSafetyServiceJwtFilterTest {
     private MockHttpServletResponse invoke(String path, String token) throws Exception {
         SecurityContextHolder.clearContext();
         MockHttpServletRequest request = new MockHttpServletRequest("POST", path);
+        request.setServletPath(path);
         request.addHeader("Authorization", "Bearer " + token);
         MockHttpServletResponse response = new MockHttpServletResponse();
         filter.doFilterInternal(request, response, new MockFilterChain());
