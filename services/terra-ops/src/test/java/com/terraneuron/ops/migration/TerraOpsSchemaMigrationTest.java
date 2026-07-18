@@ -38,6 +38,7 @@ class TerraOpsSchemaMigrationTest {
         assertThat(columnExists("action_plans", "ack_deadline_at")).isTrue();
         assertThat(columnExists("action_plans", "safety_block_reason_code")).isTrue();
         assertThat(columnExists("action_plans", "safety_blocked_at")).isTrue();
+        assertThat(indexExists("command_outbox", "uk_outbox_plan_id")).isTrue();
         assertThat(columnDataType("command_outbox", "status")).isEqualTo("varchar");
         assertThat(rowCount("users")).isZero();
 
@@ -62,6 +63,7 @@ class TerraOpsSchemaMigrationTest {
         assertThat(columnExists("action_plans", "safety_block_reason_code")).isTrue();
         assertThat(columnExists("action_plans", "safety_blocked_at")).isTrue();
         assertThat(indexExists("action_plans", "idx_plan_command_id")).isTrue();
+        assertThat(indexExists("command_outbox", "uk_outbox_plan_id")).isTrue();
         assertThat(tableExists("command_outbox")).isTrue();
         assertThat(columnDataType("action_plans", "status")).isEqualTo("varchar");
         assertThat(columnDataType("action_plans", "priority")).isEqualTo("varchar");
