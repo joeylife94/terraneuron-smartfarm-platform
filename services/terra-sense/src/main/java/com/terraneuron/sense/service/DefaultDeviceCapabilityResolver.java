@@ -28,7 +28,8 @@ public class DefaultDeviceCapabilityResolver implements DeviceCapabilityResolver
             Map.entry("humidifier", capabilities("irrigation", Set.of("target_humidity", "power_percentage"))),
             Map.entry("heater", capabilities("heating", Set.of("target_temperature", "power_percentage"))),
             Map.entry("cooler", capabilities("cooling", Set.of("target_temperature", "power_percentage"))),
-            Map.entry("dehumidifier", capabilities("cooling", Set.of("target_humidity", "power_percentage"))),
+            // Cortex currently emits humidity-high plans in the ventilation category.
+            Map.entry("dehumidifier", capabilities("ventilation", Set.of("target_humidity", "power_percentage"))),
             Map.entry("led", capabilities("lighting", Set.of("brightness_percentage", "duration_minutes"))),
             Map.entry("light", capabilities("lighting", Set.of("brightness_percentage", "duration_minutes")))
     );
