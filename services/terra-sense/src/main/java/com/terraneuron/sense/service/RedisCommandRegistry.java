@@ -110,7 +110,6 @@ public class RedisCommandRegistry implements CommandRegistry {
             throw new IllegalArgumentException("commandId is required");
         }
         try {
-            // A very fast device ACK may complete while MQTT publish is returning.
             if (Boolean.TRUE.equals(redisTemplate.hasKey(completedKey(commandId)))) {
                 redisTemplate.delete(publishingKey(commandId));
                 return;
@@ -229,6 +228,8 @@ public class RedisCommandRegistry implements CommandRegistry {
                 && Objects.equals(incoming.getPlanId(), stored.getPlanId())
                 && Objects.equals(incoming.getFarmId(), stored.getFarmId())
                 && Objects.equals(incoming.getTargetAssetId(), stored.getTargetAssetId())
+                && Objects.equals(incoming.getTargetAssetType(), stored.getTargetAssetType())
+                && Objects.equals(incoming.getActionCategory(), stored.getActionCategory())
                 && Objects.equals(incoming.getActionType(), stored.getActionType())
                 && Objects.equals(incoming.getParameters(), stored.getParameters())
                 && Objects.equals(incoming.getExecutedBy(), stored.getExecutedBy());
