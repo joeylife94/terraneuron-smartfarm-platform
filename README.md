@@ -188,7 +188,8 @@ curl http://localhost:8080/api/v1/dashboard/summary
 ### 🔄 CI/CD
 - **GitHub Actions**: 자동 빌드 & 테스트
 - **Docker 이미지**: 자동 빌드 & 레지스트리 푸시
-- **보안 스캔**: Trivy 취약점 검사
+- **보안 스캔**: Trivy 전체 SARIF 보고 + 수정 가능한 HIGH/CRITICAL 취약점 CI 차단
+  - 운영 정책과 한계: [`docs/SECURITY_SCANNING.md`](docs/SECURITY_SCANNING.md)
 
 ### 🧪 테스트 도구
 - **E2E 테스트**: 전체 파이프라인 검증
