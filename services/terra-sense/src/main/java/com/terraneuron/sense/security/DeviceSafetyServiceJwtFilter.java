@@ -13,10 +13,10 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
-import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 
 import javax.crypto.SecretKey;
 import java.io.IOException;
@@ -126,6 +126,7 @@ public class DeviceSafetyServiceJwtFilter extends OncePerRequestFilter {
     private Claims parse(String token) {
         return Jwts.parser()
                 .verifyWith(signingKey())
+                .clock(() -> Date.from(clock.instant()))
                 .clockSkewSeconds(clockSkewSeconds)
                 .build()
                 .parseSignedClaims(token)
