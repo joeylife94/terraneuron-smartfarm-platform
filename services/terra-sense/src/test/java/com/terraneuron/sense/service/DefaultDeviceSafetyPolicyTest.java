@@ -12,8 +12,10 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -28,20 +30,34 @@ class DefaultDeviceSafetyPolicyTest {
     @BeforeEach
     void setUp() {
         registry = new FakeRegistry();
-        policy = new DefaultDeviceSafetyPolicy(
-                registry,
-                java.util.List.of(new DefaultDeviceCapabilityResolver()),
-                new SimpleMeterRegistry(),
-                Clock.fixed(NOW, ZoneOffset.UTC),
-                120,
-                600,
-                10);
+        policy = policyWith(List.of(new DefaultDeviceCapabilityResolver()));
     }
 
     @Test
     void freshOnlineCompatibleDeviceIsAllowed() {
         registry.save(state("online", false, "fan", NOW.minusSeconds(30), NOW.minusSeconds(5)));
         assertThat(evaluate("ventilation", "turn_on", Map.of()).allowed()).isTrue();
+    }
+
+    @Test
+    void legacyMissingCategoryUsesSingleExplicitDeviceCapability() {
+        registry.save(state("online", false, "fan", NOW.minusSeconds(30), NOW.minusSeconds(5)));
+
+        assertThat(evaluate(null, "turn_on", Map.of()).allowed()).isTrue();
+    }
+
+    @Test
+    void legacyMissingCategoryFailsClosedWhenCapabilityIsAmbiguous() {
+        DeviceCapabilityResolver ambiguousResolver = ignored -> Optional.of(
+                new DeviceCapabilityResolver.DeviceCapabilities(
+                        Set.of("heating", "cooling"),
+                        Set.of("turn_on"),
+                        Set.of("target_value")));
+        policy = policyWith(List.of(ambiguousResolver));
+        registry.save(state("online", false, "hybrid", NOW, NOW));
+
+        assertReason(evaluate(null, "turn_on", Map.of()),
+                DeviceSafetyReason.ACTION_CATEGORY_MISMATCH);
     }
 
     @Test
@@ -87,6 +103,24 @@ class DefaultDeviceSafetyPolicyTest {
     }
 
     @Test
+    void dehumidifierMatchesCurrentCortexVentilationContract() {
+        registry.save(state("online", false, "dehumidifier", NOW, NOW));
+
+        assertThat(evaluate("ventilation", "turn_on", Map.of()).allowed()).isTrue();
+    }
+
+    @Test
+    void contractedGenericAdjustParametersAreAccepted() {
+        registry.save(state("running", false, "heater", NOW, NOW));
+        assertThat(evaluate("heating", "adjust", Map.of("target_value", 22.5)).allowed())
+                .isTrue();
+
+        registry.save(state("running", false, "light", NOW, NOW));
+        assertThat(evaluate("lighting", "adjust", Map.of("intensity", 70)).allowed())
+                .isTrue();
+    }
+
+    @Test
     void unsupportedDeviceTypeFailsClosed() {
         registry.save(state("online", false, "vendor-model-x", NOW, NOW));
         assertReason(evaluate("ventilation", "turn_on", Map.of()),
@@ -122,7 +156,7 @@ class DefaultDeviceSafetyPolicyTest {
     void registryTtlMustRemainGreaterThanFreshness() {
         assertThatThrownBy(() -> new DefaultDeviceSafetyPolicy(
                 registry,
-                java.util.List.of(new DefaultDeviceCapabilityResolver()),
+                List.of(new DefaultDeviceCapabilityResolver()),
                 new SimpleMeterRegistry(),
                 Clock.fixed(NOW, ZoneOffset.UTC),
                 120,
@@ -130,6 +164,17 @@ class DefaultDeviceSafetyPolicyTest {
                 10))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("greater than the freshness");
+    }
+
+    private DefaultDeviceSafetyPolicy policyWith(List<DeviceCapabilityResolver> resolvers) {
+        return new DefaultDeviceSafetyPolicy(
+                registry,
+                resolvers,
+                new SimpleMeterRegistry(),
+                Clock.fixed(NOW, ZoneOffset.UTC),
+                120,
+                600,
+                10);
     }
 
     private DeviceSafetyDecision evaluate(
