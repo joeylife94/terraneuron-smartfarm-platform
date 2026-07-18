@@ -4,11 +4,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import org.springframework.core.io.ClassPathResource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -20,7 +20,7 @@ class DbSeedPasswordHashTest {
 
     @Test
     void composeSeedContainsWorkingCostTwelveBcryptHashes() throws IOException {
-        String sql = Files.readString(findSeedSql());
+        String sql = new ClassPathResource("db/local/R__compose_seed.sql").getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
         Matcher matcher = SEED_USER.matcher(sql);
         Map<String, String> passwords = Map.of(
                 "admin", "admin123",
@@ -39,15 +39,5 @@ class DbSeedPasswordHashTest {
         }
 
         assertThat(matchedUsers).isEqualTo(passwords.size());
-    }
-
-    private static Path findSeedSql() {
-        Path serviceWorkingDirectory = Path.of("..", "..", "infra", "mysql", "init.sql");
-        if (Files.exists(serviceWorkingDirectory)) {
-            return serviceWorkingDirectory;
-        }
-        Path repositoryWorkingDirectory = Path.of("infra", "mysql", "init.sql");
-        assertThat(repositoryWorkingDirectory).exists();
-        return repositoryWorkingDirectory;
     }
 }

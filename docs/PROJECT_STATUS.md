@@ -200,7 +200,7 @@ Phase 4: Advanced Features                     ░░░░░░░░░░░
 |---|------|------|------|
 | H-1 | **MQTT 리스너 미구현** | terra-sense | IoT 디바이스 MQTT 연결 불가 |
 | H-2 | **InfluxDB Writer 미구현** | terra-sense | 시계열 데이터 미저장 |
-| H-3 | **DB 스키마 불일치** — `init.sql`의 `sensor_id BIGINT FK` vs JPA의 `farm_id VARCHAR` | init.sql vs Insight.java | 데이터 무결성 문제 가능 |
+| H-3 | ✅ **해결됨:** Flyway V1/V2와 Hibernate validation으로 스키마 소스 통일 | terra-ops migrations | 기존 volume은 baseline 0으로 비파괴 도입 |
 | H-4 | **`terra.control.command` 소비자 없음** | ActionPlanService | 실행된 명령이 어디로도 전달 안 됨 |
 | H-5 | **SafetyValidator Layer 4** — 디바이스 상태를 시뮬레이션 값으로 확인 | SafetyValidator.java | 안전하지 않은 명령 승인 가능성 |
 
@@ -212,7 +212,7 @@ Phase 4: Advanced Features                     ░░░░░░░░░░░
 | M-2 | **레거시 코드** `logic.py` | terra-cortex | 혼란 유발 |
 | M-3 | **Dashboard 페이지네이션 없음** | DashboardController | 대량 데이터 시 메모리 문제 |
 | M-4 | **CI/CD 파이프라인 없음** | 프로젝트 루트 | 수동 배포만 가능 |
-| M-5 | **`ddl-auto=update`** | terra-ops application.properties | 프로덕션에서 비제어 스키마 변경 |
+| M-5 | ✅ **해결됨:** `ddl-auto=validate` + Flyway | terra-ops application.properties | 런타임 비제어 DDL 제거 |
 | M-6 | **SensorData 모델 불일치** | terra-sense vs terra-cortex | `sensorId` 필드 호환성 |
 
 ---
@@ -315,7 +315,6 @@ terraneuron-smartfarm-platform/
 │               └── SecurityConfig.java
 │
 ├── infra/                             # 인프라 설정
-│   ├── mysql/init.sql                # DB 초기화 스크립트
 │   ├── mosquitto/mosquitto.conf      # MQTT 브로커
 │   ├── prometheus/prometheus.yml     # 메트릭 수집
 │   ├── grafana/                      # 대시보드 + 데이터소스

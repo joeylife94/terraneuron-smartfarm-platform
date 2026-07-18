@@ -17,7 +17,8 @@ Terra-Ops is a Java-based management service that consumes AI-processed insights
 - **Database**: MySQL 8.0
 - **Message Broker**: Apache Kafka
 - **Build Tool**: Gradle 8.5
-- **ORM**: Spring Data JPA (Hibernate)
+- **ORM**: Spring Data JPA (Hibernate validation only)
+- **Schema versioning**: Flyway
 
 ## Quick Start
 
@@ -93,6 +94,10 @@ curl http://localhost:8083/api/v1/health
 | `/api/auth/validate` | GET | Validate current token |
 
 ### 3. Database Schema
+
+Flyway owns every production schema change; Hibernate validates the result with
+`ddl-auto=validate`. Docker Compose opts into a separate local demo seed. See
+[`docs/TERRA_OPS_SCHEMA_MIGRATIONS.md`](../../docs/TERRA_OPS_SCHEMA_MIGRATIONS.md).
 
 ```sql
 insights

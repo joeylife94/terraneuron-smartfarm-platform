@@ -146,10 +146,16 @@ spring.datasource.url=jdbc:mysql://mysql:3306/terra_db
 spring.datasource.username=terra
 spring.datasource.password=terra2025
 
-# JPA
-spring.jpa.hibernate.ddl-auto=update
+# Flyway + JPA
+spring.flyway.baseline-on-migrate=true
+spring.flyway.baseline-version=0
+spring.jpa.hibernate.ddl-auto=validate
 spring.jpa.show-sql=true
 ```
+
+Production schema changes live in `src/main/resources/db/migration`. See
+[`docs/TERRA_OPS_SCHEMA_MIGRATIONS.md`](../../docs/TERRA_OPS_SCHEMA_MIGRATIONS.md)
+for the existing-volume adoption and recovery policy.
 
 ### Environment Variables (Docker)
 ```bash

@@ -123,8 +123,6 @@ terraneuron-smartfarm-platform/
 │   ├── grafana/
 │   │   ├── dashboards/
 │   │   └── provisioning/
-│   ├── mysql/
-│   │   └── init.sql             # Database schema initialization
 │   └── mosquitto/
 │       └── mosquitto.conf       # MQTT broker config
 ├── tools/

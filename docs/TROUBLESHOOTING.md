@@ -193,9 +193,12 @@ docker exec -it terraneuron-mysql mysql -u terra -pterra2025 terra_ops
 
 mysql> SHOW TABLES;
 
-# 초기화 스크립트 재실행
-docker-compose down -v
-docker-compose up -d
+# Flyway 적용 이력과 실패 여부 확인
+docker exec -it terraneuron-mysql mysql -u terra -pterra2025 terra_ops \
+  -e "SELECT installed_rank, version, description, success FROM flyway_schema_history ORDER BY installed_rank"
+
+# Terra-Ops migration/validation 로그 확인
+docker compose logs terra-ops
 ```
 
 ## 🏗️ 인프라 문제
@@ -241,20 +244,22 @@ environment:
 
 ### MySQL
 
-#### 문제: 초기화 스크립트가 실행되지 않음
+#### 문제: Flyway migration 또는 Hibernate validation 실패
 
 **증상:**
-초기 데이터가 없음
+Terra-Ops가 시작되지 않거나 migration checksum/schema validation 오류가 표시됨
 
 **해결:**
 ```bash
-# 볼륨 삭제 후 재시작
-docker-compose down -v
-docker-compose up -d
-
-# 수동으로 초기화 스크립트 실행
-docker exec -i terraneuron-mysql mysql -u terra -pterra2025 terra_ops < infra/mysql/init.sql
+# 먼저 이력과 로그를 확인한다. 운영/보존 대상 volume은 삭제하지 않는다.
+docker exec -it terraneuron-mysql mysql -u terra -pterra2025 terra_ops \
+  -e "SELECT * FROM flyway_schema_history ORDER BY installed_rank"
+docker compose logs terra-ops
 ```
+
+적용된 migration 파일을 수정하거나 history row를 수동 삭제하지 않는다. 백업 후
+새 forward migration을 작성한다. 실패 복구와 기존 volume 도입 절차는
+[`TERRA_OPS_SCHEMA_MIGRATIONS.md`](TERRA_OPS_SCHEMA_MIGRATIONS.md)를 따른다.
 
 ### Prometheus & Grafana
 
@@ -472,11 +477,12 @@ docker exec -it terra-cortex python src/ingest_knowledge.py
 **해결 방향:** 기존 환경은 명시적인 계정 마이그레이션을 적용. 폐기 가능한 로컬 환경만
 `docker compose down -v` 후 재생성
 
-### 3. init.sql과 JPA 엔티티 스키마 불일치
+### 3. Flyway baseline 이후 알 수 없는 legacy drift
 
-**현상:** `docker-compose down -v` 후 재시작 시 테이블 구조가 예상과 다를 수 있음
-**원인:** `init.sql`의 `insights.sensor_id BIGINT FK` vs JPA `Insight.farmId VARCHAR`. `ddl-auto=update`가 JPA 기준으로 테이블을 변경
-**임시 대응:** JPA 엔티티를 소스 오브 트루스로 사용. init.sql은 참고용
+**현상:** 기존 volume에서 Flyway 또는 Hibernate `validate`가 시작을 중단함
+**원인:** baseline version 0이 지원하는 역사적 스키마 외에 수동 변경이 존재함
+**대응:** DB를 백업하고 실제 drift를 확인한 뒤 additive forward migration을 작성한다.
+운영 volume을 삭제하거나 `ddl-auto=update`로 우회하지 않는다.
 
 ### 4. MQTT 수집 미구현
 

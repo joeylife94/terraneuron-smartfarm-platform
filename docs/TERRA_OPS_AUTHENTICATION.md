@@ -26,11 +26,11 @@ enabled state and roles from MySQL before issuing a new access token.
 
 ## Local bootstrap
 
-`infra/mysql/init.sql` provisions three local Compose/E2E accounts with BCrypt
-cost 12. Their credentials remain documented in the API reference for local use.
-The seed SQL runs only when MySQL initializes an empty data volume. Existing
-volumes are not silently overwritten; apply an explicit account migration or
-recreate a disposable local volume when testing the new seed.
+The `compose` Spring profile applies `db/local/R__compose_seed.sql`, which provisions
+three local Compose/E2E accounts with BCrypt cost 12. Their credentials remain
+documented in the API reference for local use. The repeatable seed is idempotent and
+does not overwrite an account already present in an existing volume. Production
+profiles do not load this migration location.
 
 Production environments must provision their own users and password hashes. The
 repository's demo credentials must not be reused outside local development and
