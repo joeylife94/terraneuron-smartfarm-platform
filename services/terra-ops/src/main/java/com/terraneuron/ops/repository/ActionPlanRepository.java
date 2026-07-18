@@ -1,9 +1,11 @@
 package com.terraneuron.ops.repository;
 
 import com.terraneuron.ops.entity.ActionPlan;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -16,6 +18,11 @@ import java.util.Optional;
 public interface ActionPlanRepository extends JpaRepository<ActionPlan, Long> {
 
     Optional<ActionPlan> findByPlanId(String planId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT p FROM ActionPlan p WHERE p.planId = :planId")
+    Optional<ActionPlan> findByPlanIdForUpdate(@Param("planId") String planId);
+
     Optional<ActionPlan> findByTraceId(String traceId);
     Optional<ActionPlan> findByCommandId(String commandId);
     List<ActionPlan> findByFarmIdOrderByCreatedAtDesc(String farmId);
