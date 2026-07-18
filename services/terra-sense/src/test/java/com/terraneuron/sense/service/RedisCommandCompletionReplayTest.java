@@ -6,7 +6,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.redis.core.SetOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
@@ -21,7 +20,6 @@ class RedisCommandCompletionReplayTest {
 
     @Mock private StringRedisTemplate redisTemplate;
     @Mock private ValueOperations<String, String> values;
-    @Mock private SetOperations<String, String> sets;
 
     @Test
     void durableCompletionCanBeLoadedAfterPublicationStateCleanup() throws Exception {
@@ -46,7 +44,6 @@ class RedisCommandCompletionReplayTest {
                 Instant.parse("2026-07-18T03:00:01Z"));
 
         when(redisTemplate.opsForValue()).thenReturn(values);
-        when(redisTemplate.opsForSet()).thenReturn(sets);
         when(values.get(RedisCommandRegistry.COMPLETED_PREFIX + command.getCommandId()))
                 .thenReturn(objectMapper.writeValueAsString(completion));
 
