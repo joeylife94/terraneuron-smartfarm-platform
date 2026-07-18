@@ -206,10 +206,9 @@ public class MqttGatewayService implements MqttCallback {
             Instant observedAt = clock.instant();
             status.setFarmId(topicFarmId);
             status.setAssetId(topicAssetId);
-            if (status.getReportedAt() == null) {
-                status.setReportedAt(observedAt);
-            }
 
+            // Never synthesize reportedAt from broker observation time. The safety policy
+            // must be able to distinguish a device timestamp from Terra-Sense receipt time.
             deviceStateRegistry.save(DeviceStateRecord.from(status, observedAt));
             statusReceived.incrementAndGet();
 
@@ -257,12 +256,18 @@ public class MqttGatewayService implements MqttCallback {
             return;
         }
 
+        // Feedback transport still needs a timestamp even when the device omitted
+        // reportedAt. This fallback does not alter the stored state used by safety checks.
+        Instant acknowledgedAt = status.getReportedAt() != null
+                ? status.getReportedAt()
+                : clock.instant();
+
         Map<String, Object> feedback = Map.of(
                 "specversion", "1.0",
                 "type", "terra.sense.command.feedback",
                 "source", "//terraneuron/terra-sense",
                 "id", java.util.UUID.randomUUID().toString(),
-                "time", status.getReportedAt().toString(),
+                "time", acknowledgedAt.toString(),
                 "datacontenttype", "application/json",
                 "data", Map.of(
                         "trace_id", safe(command.getTraceId()),
@@ -272,7 +277,7 @@ public class MqttGatewayService implements MqttCallback {
                         "target_asset_id", command.getTargetAssetId(),
                         "status", feedbackStatus,
                         "error", error,
-                        "timestamp", status.getReportedAt().toString()
+                        "timestamp", acknowledgedAt.toString()
                 )
         );
 
