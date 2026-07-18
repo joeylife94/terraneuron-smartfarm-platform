@@ -18,11 +18,16 @@ import java.time.Instant;
  * at-least-once delivery semantics.
  */
 @Entity
-@Table(name = "command_outbox", indexes = {
-        @Index(name = "idx_outbox_status_due", columnList = "status,next_attempt_at"),
-        @Index(name = "idx_outbox_plan_id", columnList = "plan_id"),
-        @Index(name = "idx_outbox_locked_at", columnList = "locked_at")
-})
+@Table(
+        name = "command_outbox",
+        uniqueConstraints = @UniqueConstraint(
+                name = "uk_outbox_plan_id",
+                columnNames = "plan_id"),
+        indexes = {
+                @Index(name = "idx_outbox_status_due", columnList = "status,next_attempt_at"),
+                @Index(name = "idx_outbox_plan_id", columnList = "plan_id"),
+                @Index(name = "idx_outbox_locked_at", columnList = "locked_at")
+        })
 @Data
 @Builder
 @NoArgsConstructor
