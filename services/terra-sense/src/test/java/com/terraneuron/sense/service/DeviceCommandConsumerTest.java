@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.terraneuron.sense.model.DeviceCommand;
 import com.terraneuron.sense.model.DeviceSafetyDecision;
 import com.terraneuron.sense.model.DeviceSafetyReason;
+import com.terraneuron.sense.model.DeviceSafetyRequest;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -78,6 +79,27 @@ class DeviceCommandConsumerTest {
                 .containsEntry("plan_id", "plan-123")
                 .containsEntry("status", "DELIVERED")
                 .containsEntry("error", "");
+    }
+
+    @Test
+    void preSafetyOutboxPayloadWithoutNewFieldsRemainsDispatchable() {
+        stubPublishableCommandAndFeedback();
+
+        consumer.onCommand(legacyCommandEvent());
+
+        ArgumentCaptor<DeviceCommand> commandCaptor = ArgumentCaptor.forClass(DeviceCommand.class);
+        verify(commandRegistry).register(commandCaptor.capture());
+        DeviceCommand command = commandCaptor.getValue();
+        assertThat(command.getTargetAssetType()).isNull();
+        assertThat(command.getActionCategory()).isNull();
+        assertThat(command.getParameters()).containsEntry("duration_minutes", 30);
+
+        ArgumentCaptor<DeviceSafetyRequest> safetyCaptor =
+                ArgumentCaptor.forClass(DeviceSafetyRequest.class);
+        verify(deviceSafetyPolicy).evaluate(safetyCaptor.capture());
+        assertThat(safetyCaptor.getValue().actionCategory()).isNull();
+        verify(mqttGateway).publishCommand(command);
+        verify(commandRegistry).markPublished("cmd-1a2b3c4d");
     }
 
     @Test
@@ -197,6 +219,25 @@ class DeviceCommandConsumerTest {
                         Map.entry("action_category", "ventilation"),
                         Map.entry("action_type", "turn_on"),
                         Map.entry("parameters", parameters),
+                        Map.entry("executed_by", "operator-01")));
+    }
+
+    private Map<String, Object> legacyCommandEvent() {
+        return Map.of(
+                "specversion", "1.0",
+                "type", "terra.ops.command.execute",
+                "source", "//terraneuron/terra-ops",
+                "id", "d4e5f6a7-b8c9-4d01-8efa-234567890abc",
+                "time", "2025-12-09T10:35:00Z",
+                "datacontenttype", "application/json",
+                "data", Map.ofEntries(
+                        Map.entry("trace_id", "trace-123"),
+                        Map.entry("plan_id", "plan-123"),
+                        Map.entry("command_id", "cmd-1a2b3c4d"),
+                        Map.entry("farm_id", "farm-001"),
+                        Map.entry("target_asset_id", "fan-01"),
+                        Map.entry("action_type", "turn_on"),
+                        Map.entry("parameters", "{\"duration_minutes\":30}"),
                         Map.entry("executed_by", "operator-01")));
     }
 }
