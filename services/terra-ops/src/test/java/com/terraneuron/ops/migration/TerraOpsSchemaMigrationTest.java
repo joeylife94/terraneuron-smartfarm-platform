@@ -32,10 +32,11 @@ class TerraOpsSchemaMigrationTest {
         Flyway fresh = productionFlyway();
         MigrateResult freshResult = fresh.migrate();
 
-        assertThat(freshResult.migrationsExecuted).isEqualTo(2);
-        assertThat(appliedVersions(fresh)).containsExactly("1", "2");
+        assertThat(freshResult.migrationsExecuted).isEqualTo(3);
+        assertThat(appliedVersions(fresh)).containsExactly("1", "2", "3");
         assertThat(tableExists("command_outbox")).isTrue();
         assertThat(columnExists("action_plans", "ack_deadline_at")).isTrue();
+        assertThat(columnDataType("command_outbox", "status")).isEqualTo("varchar");
         assertThat(rowCount("users")).isZero();
 
         fresh.clean();
@@ -49,8 +50,8 @@ class TerraOpsSchemaMigrationTest {
         Flyway legacy = productionFlyway();
         MigrateResult legacyResult = legacy.migrate();
 
-        assertThat(legacyResult.migrationsExecuted).isEqualTo(2);
-        assertThat(appliedVersions(legacy)).containsExactly("0", "1", "2");
+        assertThat(legacyResult.migrationsExecuted).isEqualTo(3);
+        assertThat(appliedVersions(legacy)).containsExactly("0", "1", "2", "3");
         assertThat(scalar("SELECT plan_id FROM action_plans WHERE plan_id = 'legacy-plan-preserved'"))
                 .isEqualTo("legacy-plan-preserved");
         assertThat(columnExists("action_plans", "command_id")).isTrue();
@@ -59,6 +60,19 @@ class TerraOpsSchemaMigrationTest {
         assertThat(columnExists("action_plans", "ack_deadline_at")).isTrue();
         assertThat(indexExists("action_plans", "idx_plan_command_id")).isTrue();
         assertThat(tableExists("command_outbox")).isTrue();
+
+        assertThat(columnDataType("action_plans", "status")).isEqualTo("varchar");
+        assertThat(columnDataType("action_plans", "priority")).isEqualTo("varchar");
+        assertThat(columnDataType("audit_logs", "event_type")).isEqualTo("varchar");
+        assertThat(columnDataType("command_outbox", "status")).isEqualTo("varchar");
+        assertThat(scalar("SELECT status FROM action_plans WHERE plan_id = 'legacy-plan-preserved'"))
+                .isEqualTo("APPROVED");
+        assertThat(scalar("SELECT priority FROM action_plans WHERE plan_id = 'legacy-plan-preserved'"))
+                .isEqualTo("HIGH");
+        assertThat(scalar("SELECT event_type FROM audit_logs WHERE log_id = 'legacy-log-preserved'"))
+                .isEqualTo("PLAN_CREATED");
+        assertThat(scalar("SELECT status FROM command_outbox WHERE command_id = 'legacy-command-preserved'"))
+                .isEqualTo("PUBLISHED");
         assertThat(legacy.migrate().migrationsExecuted).isZero();
 
         Flyway compose = composeFlyway();
@@ -104,6 +118,14 @@ class TerraOpsSchemaMigrationTest {
     private static boolean columnExists(String table, String column) throws Exception {
         return metadataExists(
                 "SELECT 1 FROM information_schema.COLUMNS "
+                        + "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '" + table + "' "
+                        + "AND COLUMN_NAME = '" + column + "'"
+        );
+    }
+
+    private static String columnDataType(String table, String column) throws Exception {
+        return scalar(
+                "SELECT DATA_TYPE FROM information_schema.COLUMNS "
                         + "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '" + table + "' "
                         + "AND COLUMN_NAME = '" + column + "'"
         );
