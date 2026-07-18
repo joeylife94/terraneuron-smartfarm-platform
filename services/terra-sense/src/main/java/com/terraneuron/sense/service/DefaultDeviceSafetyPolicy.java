@@ -124,7 +124,7 @@ public class DefaultDeviceSafetyPolicy implements DeviceSafetyPolicy {
         }
 
         DeviceCapabilityResolver.DeviceCapabilities resolved = capabilities.get();
-        String category = normalize(request.actionCategory());
+        String category = resolveCategory(request.actionCategory(), resolved);
         String action = normalize(request.actionType());
 
         if (!resolved.actionCategories().contains(category)) {
@@ -144,6 +144,21 @@ public class DefaultDeviceSafetyPolicy implements DeviceSafetyPolicy {
         DeviceSafetyDecision decision = DeviceSafetyDecision.allowed(now, observedAge, reportedAge);
         record(decision);
         return decision;
+    }
+
+    private String resolveCategory(
+            String requestedCategory,
+            DeviceCapabilityResolver.DeviceCapabilities capabilities) {
+        String normalized = normalize(requestedCategory);
+        if (!normalized.isBlank()) {
+            return normalized;
+        }
+        // Pre-safety-rollout outbox rows did not carry action_category. A legacy
+        // command is accepted only when the explicit device capability resolves
+        // to exactly one category; ambiguous adapters remain fail-closed.
+        return capabilities.actionCategories().size() == 1
+                ? capabilities.actionCategories().iterator().next()
+                : "";
     }
 
     private DeviceSafetyDecision blocked(
