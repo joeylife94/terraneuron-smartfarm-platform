@@ -15,6 +15,8 @@ alters, or drops database objects.
 `CREATE TABLE IF NOT EXISTS` so it can create a fresh database and adopt the tables
 already present in a legacy volume. `V2__Reconcile_legacy_terra_ops_schema` adds the
 command-correlation columns and indexes that the historical `init.sql` lacked.
+Lifecycle enums are persisted as `VARCHAR`, not MySQL native `ENUM`, so adding an
+application state remains an explicit forward-compatible code/migration decision.
 New production changes must be appended as `V3`, `V4`, and so on; an applied
 migration must never be edited.
 
