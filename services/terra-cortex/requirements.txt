@@ -9,7 +9,7 @@ uvicorn[standard]==0.27.0        # ASGI server; runs FastAPI app with websockets
 # ============================
 aiokafka==0.10.0                 # Async Kafka consumer/producer for streaming sensor events
 pydantic==2.7.4                  # Data validation; minimum supported by LangChain 0.3.x
-pydantic-settings==2.1.0         # Structured environment variable management
+pydantic-settings==2.4.0         # Structured settings; required by langchain-community 0.3.x
 PyJWT==2.13.0                    # Short-lived scoped service JWTs; includes 2026 security fixes
 
 # ============================
