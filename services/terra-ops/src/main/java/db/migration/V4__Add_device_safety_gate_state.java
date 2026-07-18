@@ -48,11 +48,12 @@ public class V4__Add_device_safety_gate_state extends BaseJavaMigration {
     }
 
     /**
-     * Older releases allowed multiple outbox rows per plan. Keep the row already
-     * referenced by action_plans.command_id where possible. Otherwise retain the
-     * strongest lifecycle truth, then the newest row. Published and dead records
-     * are terminal and must outrank live retry states. All removed rows are copied
-     * to a durable archive table before deletion.
+     * Older releases allowed multiple outbox rows per plan. Preserve the strongest
+     * lifecycle truth first: PUBLISHED and DEAD always outrank live retry rows,
+     * even when action_plans.command_id still points at a PENDING or PROCESSING
+     * duplicate. The command reference is only a tie-breaker between rows of the
+     * same lifecycle strength, followed by the newest row. All removed rows are
+     * copied to a durable archive table before deletion.
      */
     private static void archiveAndRemoveDuplicateOutboxRows(Connection connection)
             throws SQLException {
@@ -72,7 +73,6 @@ public class V4__Add_device_safety_gate_state extends BaseJavaMigration {
                            ROW_NUMBER() OVER (
                                PARTITION BY co.plan_id
                                ORDER BY
-                                   CASE WHEN ap.command_id = co.command_id THEN 0 ELSE 1 END,
                                    CASE co.status
                                        WHEN 'PUBLISHED' THEN 0
                                        WHEN 'DEAD' THEN 1
@@ -80,6 +80,7 @@ public class V4__Add_device_safety_gate_state extends BaseJavaMigration {
                                        WHEN 'PENDING' THEN 3
                                        ELSE 4
                                    END,
+                                   CASE WHEN ap.command_id = co.command_id THEN 0 ELSE 1 END,
                                    co.id DESC
                            ) AS row_rank
                     FROM command_outbox co
