@@ -19,11 +19,29 @@ import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /** HTTP implementation of the Terra-Ops -> Terra-Sense safety boundary. */
 @Slf4j
 @Component
 public class HttpDeviceSafetyClient implements DeviceSafetyClient {
+
+    private static final Set<String> ALLOWED_REMOTE_REASON_CODES = Set.of(
+            "ALLOWED",
+            "REGISTRY_UNAVAILABLE",
+            "STATE_MISSING",
+            "IDENTITY_MISMATCH",
+            "STATE_STALE",
+            "REPORTED_STATE_STALE",
+            "REPORTED_TIME_INVALID",
+            "STATE_OFFLINE",
+            "STATE_ERROR",
+            "STATE_UNKNOWN",
+            "MAINTENANCE_MODE",
+            "UNSUPPORTED_DEVICE_TYPE",
+            "ACTION_CATEGORY_MISMATCH",
+            "ACTION_UNSUPPORTED",
+            "ADJUST_PARAMETERS_MISSING");
 
     private final ObjectMapper objectMapper;
     private final SenseServiceJwtProvider jwtProvider;
@@ -102,12 +120,18 @@ public class HttpDeviceSafetyClient implements DeviceSafetyClient {
 
         try {
             SenseDecision decision = objectMapper.readValue(response.body(), SenseDecision.class);
-            if (decision.reasonCode() == null || decision.reasonCode().isBlank()) {
+            String reasonCode = decision.reasonCode();
+            if (reasonCode == null || !ALLOWED_REMOTE_REASON_CODES.contains(reasonCode)) {
                 return DeviceSafetyResult.blocked("SENSE_MALFORMED_RESPONSE");
             }
-            return decision.allowed()
-                    ? DeviceSafetyResult.allow()
-                    : DeviceSafetyResult.blocked(decision.reasonCode());
+            if (decision.allowed()) {
+                return "ALLOWED".equals(reasonCode)
+                        ? DeviceSafetyResult.allow()
+                        : DeviceSafetyResult.blocked("SENSE_MALFORMED_RESPONSE");
+            }
+            return "ALLOWED".equals(reasonCode)
+                    ? DeviceSafetyResult.blocked("SENSE_MALFORMED_RESPONSE")
+                    : DeviceSafetyResult.blocked(reasonCode);
         } catch (Exception ex) {
             return DeviceSafetyResult.blocked("SENSE_MALFORMED_RESPONSE");
         }
