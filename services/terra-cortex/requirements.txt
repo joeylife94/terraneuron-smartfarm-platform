@@ -8,9 +8,9 @@ uvicorn[standard]==0.27.0        # ASGI server; runs FastAPI app with websockets
 # 🔄 Messaging & Config
 # ============================
 aiokafka==0.10.0                 # Async Kafka consumer/producer for streaming sensor events
-pydantic==2.5.3                  # Data validation & model definitions
-pydantic-settings==2.1.0         # Structured environment variable management
-PyJWT==2.9.0                     # Short-lived scoped service JWTs for Terra-Ops calls
+pydantic==2.7.4                  # Data validation; minimum supported by LangChain 0.3.x
+pydantic-settings==2.4.0         # Structured settings; required by langchain-community 0.3.x
+PyJWT==2.13.0                    # Short-lived scoped service JWTs; includes 2026 security fixes
 
 # ============================
 # 🤖 Cloud LLM Integration
@@ -21,8 +21,8 @@ httpx==0.27.2                    # Required by OpenAI client; pinned for compati
 # ============================
 # 🧠 RAG (Retrieval-Augmented Generation)
 # ============================
-langchain==0.1.0                 # LangChain core for RAG pipeline orchestration
-langchain-community==0.0.10      # Embeddings, loaders, vector store integrations
+langchain==0.3.30                # RAG orchestration; fixes CVE-2026-45134
+langchain-community==0.3.27      # Integrations; fixes known pickle, SSRF, and XML issues
 chromadb==0.4.22                 # Local vector DB for document embeddings
 pypdf==3.17.4                    # PDF parsing for document ingestion
 sentence-transformers==2.2.2     # Embedding model loader (MiniLM, MPNet, etc.)
