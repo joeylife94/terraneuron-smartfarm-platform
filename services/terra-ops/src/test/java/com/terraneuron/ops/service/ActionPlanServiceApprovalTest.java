@@ -19,7 +19,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
@@ -54,7 +53,7 @@ class ActionPlanServiceApprovalTest {
     void freshOnlinePlanIsApprovedAndAtomicallyQueued() {
         ActionPlan plan = pendingPlanBuilder().build();
         when(actionPlanRepository.findByPlanId("plan-1")).thenReturn(Optional.of(plan));
-        when(deviceSafetyClient.evaluate(plan)).thenReturn(DeviceSafetyClient.DeviceSafetyResult.allowed());
+        when(deviceSafetyClient.evaluate(plan)).thenReturn(DeviceSafetyClient.DeviceSafetyResult.allow());
         stubOutboxEnqueue();
 
         ActionPlan result = service.approvePlan("plan-1", "operator", "looks good");
@@ -94,7 +93,7 @@ class ActionPlanServiceApprovalTest {
                 .safetyBlockedAt(Instant.now())
                 .build();
         when(actionPlanRepository.findByPlanId("plan-1")).thenReturn(Optional.of(plan));
-        when(deviceSafetyClient.evaluate(plan)).thenReturn(DeviceSafetyClient.DeviceSafetyResult.allowed());
+        when(deviceSafetyClient.evaluate(plan)).thenReturn(DeviceSafetyClient.DeviceSafetyResult.allow());
         stubOutboxEnqueue();
 
         ActionPlan result = service.revalidateSafety("plan-1");
@@ -126,7 +125,7 @@ class ActionPlanServiceApprovalTest {
     void validationOutcomeIsAlwaysAudited() {
         ActionPlan plan = pendingPlanBuilder().build();
         when(actionPlanRepository.findByPlanId("plan-1")).thenReturn(Optional.of(plan));
-        when(deviceSafetyClient.evaluate(plan)).thenReturn(DeviceSafetyClient.DeviceSafetyResult.allowed());
+        when(deviceSafetyClient.evaluate(plan)).thenReturn(DeviceSafetyClient.DeviceSafetyResult.allow());
         stubOutboxEnqueue();
 
         service.approvePlan("plan-1", "operator", "ok");
