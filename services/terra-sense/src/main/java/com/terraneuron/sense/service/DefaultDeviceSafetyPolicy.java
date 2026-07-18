@@ -135,7 +135,9 @@ public class DefaultDeviceSafetyPolicy implements DeviceSafetyPolicy {
         }
         if ("adjust".equals(action)) {
             boolean hasSupportedParameter = request.parameters() != null
-                    && resolved.adjustParameterAnyOf().stream().anyMatch(request.parameters()::containsKey);
+                    && resolved.adjustParameterAnyOf().stream().anyMatch(parameter ->
+                    request.parameters().containsKey(parameter)
+                            && request.parameters().get(parameter) != null);
             if (!hasSupportedParameter) {
                 return blocked(DeviceSafetyReason.ADJUST_PARAMETERS_MISSING, now, observedAge, reportedAge);
             }

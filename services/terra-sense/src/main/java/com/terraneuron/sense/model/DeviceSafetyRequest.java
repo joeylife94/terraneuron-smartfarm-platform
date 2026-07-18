@@ -1,5 +1,7 @@
 package com.terraneuron.sense.model;
 
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /** Internal safety-evaluation request. */
@@ -11,6 +13,8 @@ public record DeviceSafetyRequest(
         Map<String, Object> parameters
 ) {
     public DeviceSafetyRequest {
-        parameters = parameters == null ? Map.of() : Map.copyOf(parameters);
+        parameters = parameters == null
+                ? Map.of()
+                : Collections.unmodifiableMap(new LinkedHashMap<>(parameters));
     }
 }
