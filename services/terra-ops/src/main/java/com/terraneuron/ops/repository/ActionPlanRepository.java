@@ -12,34 +12,30 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
-/**
- * Repository for ActionPlan entity
- */
 @Repository
 public interface ActionPlanRepository extends JpaRepository<ActionPlan, Long> {
 
     Optional<ActionPlan> findByPlanId(String planId);
-
     Optional<ActionPlan> findByTraceId(String traceId);
-
     Optional<ActionPlan> findByCommandId(String commandId);
-
     List<ActionPlan> findByFarmIdOrderByCreatedAtDesc(String farmId);
-
     List<ActionPlan> findByStatusOrderByPriorityDescCreatedAtDesc(ActionPlan.PlanStatus status);
-
     Page<ActionPlan> findByStatus(ActionPlan.PlanStatus status, Pageable pageable);
-
     List<ActionPlan> findByStatusAndAckDeadlineAtBefore(ActionPlan.PlanStatus status, Instant deadline);
 
     @Query("SELECT p FROM ActionPlan p WHERE p.status = :status AND p.farmId = :farmId ORDER BY p.priority DESC, p.createdAt DESC")
-    List<ActionPlan> findByStatusAndFarmId(@Param("status") ActionPlan.PlanStatus status, @Param("farmId") String farmId);
+    List<ActionPlan> findByStatusAndFarmId(
+            @Param("status") ActionPlan.PlanStatus status,
+            @Param("farmId") String farmId);
 
     @Query("SELECT p FROM ActionPlan p WHERE p.status = 'PENDING' AND p.expiresAt < :now")
     List<ActionPlan> findExpiredPendingPlans(@Param("now") Instant now);
 
     @Query("SELECT p FROM ActionPlan p WHERE p.status = 'APPROVED' AND p.expiresAt < :now")
     List<ActionPlan> findExpiredApprovedPlans(@Param("now") Instant now);
+
+    @Query("SELECT p FROM ActionPlan p WHERE p.status = 'SAFETY_BLOCKED' AND p.expiresAt < :now")
+    List<ActionPlan> findExpiredSafetyBlockedPlans(@Param("now") Instant now);
 
     @Query("SELECT COUNT(p) FROM ActionPlan p WHERE p.status = :status")
     long countByStatus(@Param("status") ActionPlan.PlanStatus status);
