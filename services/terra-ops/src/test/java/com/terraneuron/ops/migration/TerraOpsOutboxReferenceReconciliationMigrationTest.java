@@ -25,7 +25,7 @@ class TerraOpsOutboxReferenceReconciliationMigrationTest {
             .withPassword("terra2025");
 
     @Test
-    void planCommandReferenceTracksTheOutboxRowPreservedByDeduplication() throws Exception {
+    void planReferenceAndLifecycleTrackTheOutboxRowPreservedByDeduplication() throws Exception {
         try (Connection connection = connection()) {
             ScriptUtils.executeSqlScript(
                     connection,
@@ -45,8 +45,25 @@ class TerraOpsOutboxReferenceReconciliationMigrationTest {
         assertThat(scalar("SELECT command_id FROM action_plans "
                 + "WHERE plan_id = 'legacy-dead-plan'"))
                 .isEqualTo("legacy-command-dead");
+        assertThat(scalar("SELECT status FROM action_plans "
+                + "WHERE plan_id = 'legacy-dead-plan'"))
+                .isEqualTo("DISPATCH_FAILED");
+        assertThat(scalar("SELECT execution_result FROM action_plans "
+                + "WHERE plan_id = 'legacy-dead-plan'"))
+                .isEqualTo("OUTBOX_DEAD_LETTER");
+
+        assertThat(scalar("SELECT command_id FROM action_plans "
+                + "WHERE plan_id = 'legacy-plan-preserved'"))
+                .isEqualTo("legacy-command-preserved");
+        assertThat(scalar("SELECT status FROM action_plans "
+                + "WHERE plan_id = 'legacy-plan-preserved'"))
+                .isEqualTo("DISPATCHED");
+        assertThat(scalar("SELECT execution_result FROM action_plans "
+                + "WHERE plan_id = 'legacy-plan-preserved'"))
+                .isEqualTo("KAFKA_ACKNOWLEDGED");
         assertThat(scalar("SELECT COUNT(*) FROM action_plans "
-                + "WHERE command_id = 'legacy-command-dead'"))
+                + "WHERE plan_id = 'legacy-plan-preserved' "
+                + "AND dispatched_at IS NOT NULL"))
                 .isEqualTo("1");
     }
 
