@@ -79,7 +79,18 @@ public class DeviceCommandConsumer {
         CommandRegistry.Registration registration = commandRegistry.register(command);
 
         if (registration.isCompletedDuplicate()) {
-            log.info("Ignoring completed duplicate command: {}", command.getCommandId());
+            CommandRegistry.CommandCompletion completion = commandRegistry
+                    .findCompletion(command.getCommandId())
+                    .orElseThrow(() -> new IllegalStateException(
+                            "Completed command is missing terminal feedback state: "
+                                    + command.getCommandId()));
+            sendFeedback(
+                    completion.command(),
+                    completion.terminalStatus(),
+                    completion.error());
+            commandRegistry.finishCompletion(command.getCommandId());
+            log.info("Replayed terminal feedback for completed command: {} status={}",
+                    command.getCommandId(), completion.terminalStatus());
             return;
         }
 
