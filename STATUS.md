@@ -55,6 +55,10 @@ notes below are deliberately factual and verified against the current `main`-der
   blocks fixable HIGH/CRITICAL dependency vulnerabilities on every PR and `main` push.
 - **Tests exist:** terra-ops has unit tests for security, event validation, insight parsing,
   the SafetyValidator, and the approval lifecycle.
+- **Terra-Ops database schema is versioned by Flyway.** Production startup applies additive
+  migrations and Hibernate uses `ddl-auto=validate`. Existing pre-Flyway volumes are baselined
+  at version 0 and reconciled without dropping application data. Compose demo credentials and
+  sample data live in a profile-only seed and are excluded from production migrations.
 
 ## Partially implemented / advisory
 
@@ -145,3 +149,12 @@ notes below are deliberately factual and verified against the current `main`-der
 - Added explicit access/refresh token type claims and rejected cross-use at the refresh endpoint
   and protected API filter.
 - Added JPA, service, seed-hash contract, MVC security, and Docker E2E coverage.
+
+## Recently fixed (Terra-Ops schema versioning)
+
+- Replaced MySQL entrypoint initialization and Hibernate `ddl-auto=update` with Flyway V1/V2
+  migrations plus startup schema validation.
+- Added non-destructive baseline-0 adoption for existing volumes, including the outbox and
+  action-plan command correlation schema introduced by earlier reliability work.
+- Isolated idempotent demo data behind the Docker Compose profile and added MySQL 8 migration
+  tests for fresh installs, populated legacy upgrades, reruns, and data preservation.

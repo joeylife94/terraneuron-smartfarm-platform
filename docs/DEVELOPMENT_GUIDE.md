@@ -383,7 +383,8 @@ src/
 | 파일 | 설명 |
 |------|------|
 | `docker-compose.yml` | 전체 서비스 + 인프라 정의 |
-| `infra/mysql/init.sql` | DB 초기화 (테이블 + 데모 데이터) |
+| `services/terra-ops/src/main/resources/db/migration/` | Flyway 운영 스키마 migration |
+| `services/terra-ops/src/main/resources/db/local/` | Compose/E2E 전용 멱등 seed |
 | `infra/mosquitto/mosquitto.conf` | MQTT 브로커 설정 |
 | `infra/prometheus/prometheus.yml` | 메트릭 수집 타겟 |
 | `infra/grafana/dashboards/*.json` | Grafana 대시보드 |
@@ -475,7 +476,7 @@ docker stats
 | terra-ops 계속 재시작 | MySQL 아직 준비 안 됨 | MySQL 완전 기동 후 재시작 `docker-compose restart terra-ops` |
 | LLM 추천이 비어있음 | OpenAI API 키 미설정 / Ollama 미설치 | `.env` 확인 또는 `OLLAMA_SETUP.md` 참조 |
 | Rate limit 429 에러 | Gateway rate limiter 동작 | Redis 상태 확인 또는 limit 조정 |
-| JPA 엔티티 오류 | init.sql과 JPA 설계 충돌 | `docker-compose down -v` 후 재시작 |
+| JPA 엔티티 오류 | Flyway migration과 엔티티 불일치 | migration 이력/로그 확인 후 forward migration 작성 |
 
 ---
 
@@ -509,7 +510,7 @@ Java 테스트 의존성 (`spring-boot-starter-test`, `spring-kafka-test`, `H2`)
 **A:**
 1. `terra-cortex/src/local_analyzer.py` — 임계치 규칙 추가
 2. `terra-cortex/src/main.py` — Action Plan 생성 시 디바이스 매핑 추가
-3. `infra/mysql/init.sql` — 필요 시 센서 데모 데이터 추가
+3. `terra-ops/src/main/resources/db/local/R__compose_seed.sql` — 필요 시 센서 데모 데이터 추가
 4. `tools/sensor-simulator.py` — 시뮬레이터에 새 센서 추가
 
 ---

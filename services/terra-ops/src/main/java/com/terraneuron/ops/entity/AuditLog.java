@@ -54,7 +54,7 @@ public class AuditLog {
     @Column(name = "actor", nullable = false, length = 100)
     private String actor; // user_id or "system"
 
-    @Column(name = "action", nullable = false, length = 100)
+    @Column(name = "action", nullable = false, length = 255)
     private String action; // Human-readable action description
 
     @Column(name = "details", columnDefinition = "JSON")

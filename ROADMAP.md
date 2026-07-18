@@ -322,7 +322,7 @@
 | Action API | ✅ | `ActionController.java`, `ActionPlanService.java` |
 | JWT Security | ✅ | `JwtTokenProvider.java`, `SecurityConfig.java` |
 | Auth API | ✅ | `AuthController.java` |
-| DB Schema | ✅ | `init.sql` |
+| DB Schema | ✅ | Flyway V1/V2 + Hibernate validation |
 | InfluxDB 시계열 저장 | ✅ | `InfluxDbConfig.java`, `InfluxDbWriterService.java` |
 | Weather API 연동 | ✅ | `weather_provider.py` |
 | 작물 프로필 (DB) | ✅ | `CropProfile.java`, `GrowthStage.java`, `FarmCrop.java` |

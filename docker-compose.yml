@@ -54,7 +54,6 @@ services:
       - "3306:3306"
     volumes:
       - mysql-data:/var/lib/mysql
-      - ./infra/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - terraneuron-net
 
@@ -250,6 +249,7 @@ services:
       - kafka
       - mysql
     environment:
+      SPRING_PROFILES_ACTIVE: compose
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/terra_ops
       SPRING_DATASOURCE_USERNAME: terra
