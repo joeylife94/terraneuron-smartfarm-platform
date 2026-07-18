@@ -10,11 +10,7 @@ import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
 
-/**
- * Action Plan Entity - CloudEvents v1.0 Compliant
- * Represents AI-generated action recommendations awaiting human approval.
- * FarmOS Compatible: Maps to Plan entity structure.
- */
+/** AI-generated action recommendation with approval, safety, and command lifecycle state. */
 @Entity
 @Table(name = "action_plans", indexes = {
     @Index(name = "idx_plan_farm_id", columnList = "farm_id"),
@@ -46,7 +42,7 @@ public class ActionPlan {
 
     @Column(name = "plan_type", length = 30)
     @Builder.Default
-    private String planType = "input"; // FarmOS: input, harvest, maintenance
+    private String planType = "input";
 
     @Column(name = "target_asset_id", nullable = false, length = 50)
     private String targetAssetId;
@@ -56,13 +52,13 @@ public class ActionPlan {
     private String targetAssetType = "device";
 
     @Column(name = "action_category", nullable = false, length = 30)
-    private String actionCategory; // ventilation, irrigation, lighting, heating, cooling, alert
+    private String actionCategory;
 
     @Column(name = "action_type", nullable = false, length = 30)
-    private String actionType; // turn_on, turn_off, adjust, alert_only
+    private String actionType;
 
     @Column(name = "parameters", columnDefinition = "JSON")
-    private String parameters; // JSON string of action parameters
+    private String parameters;
 
     @Column(name = "reasoning", columnDefinition = "TEXT")
     private String reasoning;
@@ -83,13 +79,12 @@ public class ActionPlan {
     private String estimatedImpact;
 
     @Column(name = "safety_conditions", columnDefinition = "JSON")
-    private String safetyConditions; // JSON array of required conditions
+    private String safetyConditions;
 
     @Column(name = "requires_approval")
     @Builder.Default
     private Boolean requiresApproval = true;
 
-    // Approval tracking
     @Column(name = "approved_by", length = 100)
     private String approvedBy;
 
@@ -99,7 +94,12 @@ public class ActionPlan {
     @Column(name = "rejection_reason", columnDefinition = "TEXT")
     private String rejectionReason;
 
-    // Command correlation and execution tracking
+    @Column(name = "safety_block_reason_code", length = 64)
+    private String safetyBlockReasonCode;
+
+    @Column(name = "safety_blocked_at")
+    private Instant safetyBlockedAt;
+
     @Column(name = "command_id", length = 50)
     private String commandId;
 
@@ -121,7 +121,6 @@ public class ActionPlan {
     @Column(name = "execution_error", columnDefinition = "TEXT")
     private String executionError;
 
-    // Timestamps
     @Column(name = "generated_at", nullable = false)
     private Instant generatedAt;
 
@@ -138,9 +137,7 @@ public class ActionPlan {
     protected void onCreate() {
         createdAt = Instant.now();
         updatedAt = Instant.now();
-        if (generatedAt == null) {
-            generatedAt = Instant.now();
-        }
+        if (generatedAt == null) generatedAt = Instant.now();
     }
 
     @PreUpdate
@@ -148,43 +145,42 @@ public class ActionPlan {
         updatedAt = Instant.now();
     }
 
-    /**
-     * Check if the plan has expired
-     */
     public boolean isExpired() {
         return expiresAt != null && Instant.now().isAfter(expiresAt);
     }
 
-    /**
-     * Check if the plan can be approved
-     */
     public boolean canBeApproved() {
         return status == PlanStatus.PENDING && !isExpired();
     }
 
-    /**
-     * Check if an approved plan can be dispatched to the command transport.
-     * Dispatch is not equivalent to device execution.
-     */
+    public boolean canBeSafetyRevalidated() {
+        return status == PlanStatus.SAFETY_BLOCKED
+                && commandId == null
+                && !isExpired();
+    }
+
     public boolean canBeDispatched() {
-        return status == PlanStatus.APPROVED && !isExpired();
+        return status == PlanStatus.APPROVED
+                && commandId == null
+                && !isExpired();
     }
 
     public enum PlanStatus {
-        PENDING,          // Awaiting human approval
-        APPROVED,         // Approved, ready for dispatch
-        DISPATCHING,      // Command is being published to Kafka
-        DISPATCHED,       // Kafka acknowledged the command publication
-        DELIVERED,        // Terra-Sense published the command to MQTT
-        EXECUTED,         // Device-confirmed execution completion
-        REJECTED,         // Rejected by human or safety policy
-        DISPATCH_FAILED,  // Kafka command publication failed
-        DELIVERY_FAILED,  // Kafka-to-MQTT delivery failed
-        EXECUTION_FAILED, // Device reported execution failure
-        ACK_TIMEOUT,      // Device did not acknowledge before the deadline
-        FAILED,           // Legacy failure state retained for stored records
-        EXPIRED,          // Plan expired before action
-        CANCELLED         // Cancelled by user
+        PENDING,
+        APPROVED,
+        SAFETY_BLOCKED,
+        DISPATCHING,
+        DISPATCHED,
+        DELIVERED,
+        EXECUTED,
+        REJECTED,
+        DISPATCH_FAILED,
+        DELIVERY_FAILED,
+        EXECUTION_FAILED,
+        ACK_TIMEOUT,
+        FAILED,
+        EXPIRED,
+        CANCELLED
     }
 
     public enum ActionPriority {
