@@ -51,6 +51,8 @@ notes below are deliberately factual and verified against the current `main`-der
   classes). These are present and configured. *(Full end-to-end runtime is not re-verified in
   this PR — see Known gaps.)*
 - **CI exists:** `.github/workflows/ci-cd.yml` and `.github/workflows/security-scan.yml`.
+  The reusable Trivy workflow uploads a complete all-severity SARIF report and separately
+  blocks fixable HIGH/CRITICAL dependency vulnerabilities on every PR and `main` push.
 - **Tests exist:** terra-ops has unit tests for security, event validation, insight parsing,
   the SafetyValidator, and the approval lifecycle.
 
