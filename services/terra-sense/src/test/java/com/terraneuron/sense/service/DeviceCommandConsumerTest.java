@@ -19,6 +19,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -156,15 +157,29 @@ class DeviceCommandConsumerTest {
     }
 
     @Test
-    void completedDuplicateIsFullySuppressed() {
+    void completedDuplicateReplaysStoredTerminalFeedbackWithoutMqtt() {
+        DeviceCommand command = command();
+        CommandRegistry.CommandCompletion completion = new CommandRegistry.CommandCompletion(
+                command,
+                "FAILED",
+                "DEVICE_SAFETY_BLOCKED:STATE_OFFLINE",
+                Instant.parse("2026-07-18T03:00:00Z"));
         when(commandRegistry.register(any(DeviceCommand.class)))
                 .thenReturn(new CommandRegistry.Registration(
                         CommandRegistry.RegistrationState.COMPLETED));
+        when(commandRegistry.findCompletion("cmd-1a2b3c4d"))
+                .thenReturn(Optional.of(completion));
+        stubFeedbackSuccess();
 
         consumer.onCommand(commandEvent(Map.of("duration_minutes", 30)));
 
         verify(mqttGateway, never()).publishCommand(any());
-        verifyNoInteractions(kafkaTemplate);
+        verify(deviceSafetyPolicy, never()).evaluate(any());
+        verify(commandRegistry).finishCompletion("cmd-1a2b3c4d");
+        Map<String, Object> data = capturedFeedbackData();
+        assertThat(data).containsEntry("command_id", "cmd-1a2b3c4d")
+                .containsEntry("status", "FAILED")
+                .containsEntry("error", "DEVICE_SAFETY_BLOCKED:STATE_OFFLINE");
     }
 
     @Test
@@ -199,6 +214,22 @@ class DeviceCommandConsumerTest {
         verify(kafkaTemplate).send(eq("terra.control.feedback"), eq("farm-001"), captor.capture());
         Map<String, Object> event = (Map<String, Object>) captor.getValue();
         return (Map<String, Object>) event.get("data");
+    }
+
+    private DeviceCommand command() {
+        return DeviceCommand.builder()
+                .commandId("cmd-1a2b3c4d")
+                .traceId("trace-123")
+                .planId("plan-123")
+                .farmId("farm-001")
+                .targetAssetId("fan-01")
+                .targetAssetType("device")
+                .actionCategory("ventilation")
+                .actionType("turn_on")
+                .parameters(Map.of("duration_minutes", 30))
+                .executedBy("operator-01")
+                .issuedAt(Instant.parse("2026-07-18T03:00:00Z"))
+                .build();
     }
 
     private Map<String, Object> commandEvent(Object parameters) {
