@@ -11,7 +11,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DataJpaTest
 @TestPropertySource(properties = {
         "spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.H2Dialect",
-        "spring.flyway.enabled=false"
+        "spring.flyway.enabled=false",
+        "spring.jpa.hibernate.ddl-auto=create-drop"
 })
 class UserAccountRepositoryTest {
 
