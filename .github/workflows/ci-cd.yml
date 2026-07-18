@@ -190,37 +190,84 @@ jobs:
           docker run --rm --entrypoint /bin/promtool \
             -v "${{ github.workspace }}/infra/prometheus:/etc/prometheus:ro" \
             prom/prometheus:v2.48.0 \
-            check rules /etc/prometheus/alerts.yml
+            check config /etc/prometheus/prometheus.yml
+          docker run --rm --entrypoint /bin/promtool \
+            -v "${{ github.workspace }}/infra/prometheus:/etc/prometheus:ro" \
+            -w /etc/prometheus/tests \
+            prom/prometheus:v2.48.0 \
+            test rules terra-cortex-alerts.test.yml
 
-      - name: 🐳 Start Docker Compose Stack
-        run: docker compose up -d --build
+      - name: 🐳 Start Required Docker Compose Services
+        run: |
+          docker compose up -d \
+            redis zookeeper kafka mysql influxdb mosquitto \
+            terra-sense terra-cortex terra-ops terra-gateway \
+            prometheus grafana
 
       - name: ⏳ Wait for Services
+        shell: bash
         run: |
-          chmod +x scripts/ci/wait-for-services.sh
-          scripts/ci/wait-for-services.sh
+          wait_for_service() {
+            local service="$1"
+            local url="$2"
 
-      - name: 🧪 Run E2E Test
+            echo "Waiting for ${service} at ${url}"
+            for attempt in {1..60}; do
+              if curl --fail --silent --show-error --max-time 5 "${url}" > /dev/null; then
+                echo "${service} is ready"
+                return 0
+              fi
+              sleep 5
+            done
+
+            echo "${service} did not become ready"
+            docker compose logs --tail=100 "${service}"
+            return 1
+          }
+
+          wait_for_service terra-sense http://localhost:8081/actuator/health
+          wait_for_service terra-cortex http://localhost:8082/health/ready
+          wait_for_service terra-ops http://localhost:8080/actuator/health
+          wait_for_service terra-gateway http://localhost:8000/actuator/health
+          wait_for_service prometheus http://localhost:9090/-/ready
+          wait_for_service grafana http://localhost:3000/api/health
+
+      - name: 🐍 Setup Python for E2E Tests
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 📦 Install Test Dependencies
+        run: pip install requests
+
+      - name: 🔎 Validate E2E Test Syntax
+        run: python -m py_compile tests/neural-flow-test.py
+
+      - name: 🧪 Run E2E Tests
+        shell: bash
         run: |
-          chmod +x scripts/ci/e2e-test.sh
-          scripts/ci/e2e-test.sh
+          set -o pipefail
+          python tests/neural-flow-test.py 2>&1 | tee e2e-test-output.log
 
-      - name: 📋 Show Container Status
+      - name: 🧾 Capture E2E Diagnostics
         if: always()
-        run: docker compose ps
+        shell: bash
+        run: |
+          docker compose ps --all > e2e-compose-ps.txt 2>&1 || true
+          docker compose logs --no-color > e2e-compose.log 2>&1 || true
 
-      - name: 🧾 Collect Docker Logs
-        if: always()
-        run: docker compose logs --no-color > docker-compose.log
-
-      - name: 📊 Upload E2E Diagnostics
+      - name: 📦 Upload E2E Diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: e2e-diagnostics
-          if-no-files-found: warn
-          path: docker-compose.log
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            e2e-test-output.log
+            e2e-compose-ps.txt
+            e2e-compose.log
 
-      - name: 🧹 Stop Docker Compose Stack
+      - name: 🛑 Stop Docker Compose
         if: always()
-        run: docker compose down -v --remove-orphans
+        run: docker compose down -v
