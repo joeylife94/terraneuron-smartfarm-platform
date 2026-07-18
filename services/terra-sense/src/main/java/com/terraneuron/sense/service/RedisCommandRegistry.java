@@ -241,8 +241,10 @@ public class RedisCommandRegistry implements CommandRegistry {
                 && Objects.equals(incoming.getPlanId(), stored.getPlanId())
                 && Objects.equals(incoming.getFarmId(), stored.getFarmId())
                 && Objects.equals(incoming.getTargetAssetId(), stored.getTargetAssetId())
-                && Objects.equals(incoming.getTargetAssetType(), stored.getTargetAssetType())
-                && Objects.equals(incoming.getActionCategory(), stored.getActionCategory())
+                && legacyMetadataCompatible(
+                        incoming.getTargetAssetType(), stored.getTargetAssetType())
+                && legacyMetadataCompatible(
+                        incoming.getActionCategory(), stored.getActionCategory())
                 && Objects.equals(incoming.getActionType(), stored.getActionType())
                 && Objects.equals(incoming.getParameters(), stored.getParameters())
                 && Objects.equals(incoming.getExecutedBy(), stored.getExecutedBy());
@@ -251,6 +253,16 @@ public class RedisCommandRegistry implements CommandRegistry {
             throw new IllegalStateException(
                     "Conflicting payload received for existing commandId " + incoming.getCommandId());
         }
+    }
+
+    /**
+     * targetAssetType and actionCategory were introduced with the device-safety rollout.
+     * During a rolling deployment either the stored or incoming copy can be from the
+     * previous version and legitimately omit them. If both versions supplied a value,
+     * the values must still match exactly.
+     */
+    private boolean legacyMetadataCompatible(String incoming, String stored) {
+        return incoming == null || stored == null || Objects.equals(incoming, stored);
     }
 
     private String serialize(Object value) throws JsonProcessingException {
