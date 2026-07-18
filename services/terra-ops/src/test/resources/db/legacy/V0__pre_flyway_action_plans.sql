@@ -107,10 +107,13 @@ CREATE TABLE command_outbox (
     INDEX idx_outbox_locked_at (locked_at)
 );
 
+-- The pre-safety schema allowed multiple commands for one plan. V4 must
+-- preserve the most advanced lifecycle truth and archive the other rows.
 INSERT INTO command_outbox (
     event_id, plan_id, command_id, topic, message_key, payload, status,
     attempts, next_attempt_at, created_at, updated_at
-) VALUES (
+) VALUES
+(
     '00000000-0000-0000-0000-000000000001',
     'legacy-plan-preserved',
     'legacy-command-preserved',
@@ -119,6 +122,32 @@ INSERT INTO command_outbox (
     '{}',
     'PUBLISHED',
     1,
+    CURRENT_TIMESTAMP(6),
+    CURRENT_TIMESTAMP(6),
+    CURRENT_TIMESTAMP(6)
+),
+(
+    '00000000-0000-0000-0000-000000000002',
+    'legacy-plan-preserved',
+    'legacy-command-processing',
+    'terra.control.command',
+    'legacy-command-processing',
+    '{}',
+    'PROCESSING',
+    1,
+    CURRENT_TIMESTAMP(6),
+    CURRENT_TIMESTAMP(6),
+    CURRENT_TIMESTAMP(6)
+),
+(
+    '00000000-0000-0000-0000-000000000003',
+    'legacy-plan-preserved',
+    'legacy-command-pending',
+    'terra.control.command',
+    'legacy-command-pending',
+    '{}',
+    'PENDING',
+    0,
     CURRENT_TIMESTAMP(6),
     CURRENT_TIMESTAMP(6),
     CURRENT_TIMESTAMP(6)
