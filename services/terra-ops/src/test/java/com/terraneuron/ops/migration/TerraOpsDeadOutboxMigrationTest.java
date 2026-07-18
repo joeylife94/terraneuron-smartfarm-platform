@@ -25,20 +25,25 @@ class TerraOpsDeadOutboxMigrationTest {
             .withPassword("terra2025");
 
     @Test
-    void deadTerminalRowOutranksPendingRetryDuringLegacyDeduplication() throws Exception {
+    void terminalRowOutranksReferencedLiveRetryDuringLegacyDeduplication() throws Exception {
         try (Connection connection = connection()) {
             ScriptUtils.executeSqlScript(
                     connection,
                     new ClassPathResource("db/legacy/V0__pre_flyway_action_plans.sql"));
         }
 
-        Flyway.configure()
-                .dataSource(MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword())
-                .locations("classpath:db/migration")
-                .baselineOnMigrate(true)
-                .baselineVersion("0")
-                .load()
-                .migrate();
+        // Reproduce an upgraded database immediately before V4. V2 introduced
+        // action_plans.command_id; legacy runtime state can point it at a live retry
+        // even though another duplicate row already contains terminal DEAD truth.
+        flywayThroughVersion3().migrate();
+        execute("UPDATE action_plans "
+                + "SET command_id = 'legacy-command-retry' "
+                + "WHERE plan_id = 'legacy-dead-plan'");
+        assertThat(scalar("SELECT command_id FROM action_plans "
+                + "WHERE plan_id = 'legacy-dead-plan'"))
+                .isEqualTo("legacy-command-retry");
+
+        productionFlyway().migrate();
 
         assertThat(scalar("SELECT COUNT(*) FROM command_outbox "
                 + "WHERE plan_id = 'legacy-dead-plan'"))
@@ -58,6 +63,32 @@ class TerraOpsDeadOutboxMigrationTest {
         assertThat(scalar("SELECT archive_reason FROM command_outbox_dedup_archive "
                 + "WHERE plan_id = 'legacy-dead-plan'"))
                 .isEqualTo("DUPLICATE_PLAN_ID_BEFORE_UNIQUE_CONSTRAINT");
+    }
+
+    private static Flyway flywayThroughVersion3() {
+        return Flyway.configure()
+                .dataSource(MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword())
+                .locations("classpath:db/migration")
+                .baselineOnMigrate(true)
+                .baselineVersion("0")
+                .target("3")
+                .load();
+    }
+
+    private static Flyway productionFlyway() {
+        return Flyway.configure()
+                .dataSource(MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword())
+                .locations("classpath:db/migration")
+                .baselineOnMigrate(true)
+                .baselineVersion("0")
+                .load();
+    }
+
+    private static void execute(String sql) throws Exception {
+        try (Connection connection = connection();
+             Statement statement = connection.createStatement()) {
+            statement.execute(sql);
+        }
     }
 
     private static String scalar(String sql) throws Exception {
