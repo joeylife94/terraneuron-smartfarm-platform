@@ -73,7 +73,10 @@ public class CommandFeedbackConsumer {
         Instant now = Instant.now();
         switch (status) {
             case "DELIVERED":
-                if (current == ActionPlan.PlanStatus.DISPATCHED) {
+                // Feedback can arrive before the outbox publisher commits DISPATCHED.
+                // CommandOutboxStateService never regresses a later state.
+                if (current == ActionPlan.PlanStatus.DISPATCHING
+                        || current == ActionPlan.PlanStatus.DISPATCHED) {
                     plan.setStatus(ActionPlan.PlanStatus.DELIVERED);
                     plan.setDeliveredAt(now);
                     plan.setAckDeadlineAt(now.plusSeconds(ackTimeoutSeconds));
@@ -89,7 +92,8 @@ public class CommandFeedbackConsumer {
                 throw invalidTransition(plan, status);
 
             case "EXECUTED":
-                if (current == ActionPlan.PlanStatus.DISPATCHED
+                if (current == ActionPlan.PlanStatus.DISPATCHING
+                        || current == ActionPlan.PlanStatus.DISPATCHED
                         || current == ActionPlan.PlanStatus.DELIVERED
                         || current == ActionPlan.PlanStatus.ACK_TIMEOUT) {
                     boolean late = current == ActionPlan.PlanStatus.ACK_TIMEOUT;
@@ -105,7 +109,8 @@ public class CommandFeedbackConsumer {
                 throw invalidTransition(plan, status);
 
             case "FAILED":
-                if (current == ActionPlan.PlanStatus.DISPATCHED) {
+                if (current == ActionPlan.PlanStatus.DISPATCHING
+                        || current == ActionPlan.PlanStatus.DISPATCHED) {
                     plan.setStatus(ActionPlan.PlanStatus.DELIVERY_FAILED);
                     plan.setExecutionResult(error != null && error.startsWith(SAFETY_BLOCK_PREFIX)
                             ? "DEVICE_SAFETY_BLOCKED"
