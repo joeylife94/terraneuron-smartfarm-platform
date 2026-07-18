@@ -140,6 +140,19 @@ public class RedisCommandRegistry implements CommandRegistry {
     }
 
     @Override
+    public Optional<CommandCompletion> findCompletion(String commandId) {
+        if (commandId == null || commandId.isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            String payload = redisTemplate.opsForValue().get(completedKey(commandId));
+            return payload == null ? Optional.empty() : Optional.of(deserializeCompletion(payload));
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to load command completion from Redis", e);
+        }
+    }
+
+    @Override
     public boolean claimCompletion(String commandId, String terminalStatus, String error) {
         if (commandId == null || commandId.isBlank()) {
             return false;
