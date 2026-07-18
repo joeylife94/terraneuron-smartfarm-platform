@@ -9,8 +9,10 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 
-/** Adds retryable safety-block metadata without changing existing lifecycle values. */
+/** Adds retryable safety-block metadata and one-command-per-plan enforcement. */
 public class V4__Add_device_safety_gate_state extends BaseJavaMigration {
+
+    private static final String UNIQUE_OUTBOX_PLAN_INDEX = "uk_outbox_plan_id";
 
     @Override
     public boolean canExecuteInTransaction() {
@@ -30,6 +32,11 @@ public class V4__Add_device_safety_gate_state extends BaseJavaMigration {
                 "action_plans",
                 "safety_blocked_at",
                 "DATETIME(6) NULL AFTER `safety_block_reason_code`");
+        addUniqueIndexIfMissing(
+                connection,
+                "command_outbox",
+                UNIQUE_OUTBOX_PLAN_INDEX,
+                "plan_id");
     }
 
     private static void addColumnIfMissing(
@@ -43,6 +50,20 @@ public class V4__Add_device_safety_gate_state extends BaseJavaMigration {
         try (Statement statement = connection.createStatement()) {
             statement.execute(
                     "ALTER TABLE `" + table + "` ADD COLUMN `" + column + "` " + definition);
+        }
+    }
+
+    private static void addUniqueIndexIfMissing(
+            Connection connection,
+            String table,
+            String index,
+            String column) throws SQLException {
+        if (indexExists(connection, table, index)) {
+            return;
+        }
+        try (Statement statement = connection.createStatement()) {
+            statement.execute(
+                    "ALTER TABLE `" + table + "` ADD UNIQUE INDEX `" + index + "` (`" + column + "`)");
         }
     }
 
@@ -60,6 +81,26 @@ public class V4__Add_device_safety_gate_state extends BaseJavaMigration {
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setString(1, table);
             statement.setString(2, column);
+            try (ResultSet result = statement.executeQuery()) {
+                return result.next();
+            }
+        }
+    }
+
+    private static boolean indexExists(
+            Connection connection,
+            String table,
+            String index) throws SQLException {
+        String sql = """
+                SELECT 1
+                FROM information_schema.STATISTICS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME = ?
+                  AND INDEX_NAME = ?
+                """;
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, table);
+            statement.setString(2, index);
             try (ResultSet result = statement.executeQuery()) {
                 return result.next();
             }
