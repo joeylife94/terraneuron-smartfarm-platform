@@ -27,8 +27,6 @@
         "command_id",
         "farm_id",
         "target_asset_id",
-        "target_asset_type",
-        "action_category",
         "action_type",
         "parameters",
         "executed_by"
@@ -57,11 +55,12 @@
         },
         "target_asset_type": {
           "type": "string",
-          "description": "Explicit asset classification supplied by the action plan"
+          "description": "Explicit asset classification. Optional only for command outbox rows created before the device-safety rollout."
         },
         "action_category": {
           "type": "string",
-          "enum": ["ventilation", "irrigation", "lighting", "heating", "cooling", "alert"]
+          "enum": ["ventilation", "irrigation", "lighting", "heating", "cooling", "alert"],
+          "description": "Explicit action category. Optional only for command outbox rows created before the device-safety rollout."
         },
         "action_type": {
           "type": "string",
