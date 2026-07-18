@@ -27,6 +27,7 @@ public class DeviceCommandConsumer {
 
     private static final String FEEDBACK_TOPIC = "terra.control.feedback";
     private static final String SAFETY_BLOCK_PREFIX = "DEVICE_SAFETY_BLOCKED:";
+    private static final String MQTT_PUBLISH_FAILURE_PREFIX = "MQTT_PUBLISH_FAILED:";
 
     private final MqttGatewayService mqttGateway;
     private final ObjectMapper objectMapper;
@@ -114,7 +115,10 @@ public class DeviceCommandConsumer {
             mqttGateway.publishCommand(command);
         } catch (Exception publishError) {
             commandRegistry.releasePending(command.getCommandId());
-            sendFeedback(command, "FAILED", rootCauseMessage(publishError));
+            sendFeedback(
+                    command,
+                    "FAILED",
+                    MQTT_PUBLISH_FAILURE_PREFIX + rootCauseMessage(publishError));
             log.error("MQTT command delivery failed: command={} error={}",
                     command.getCommandId(), publishError.getClass().getSimpleName(), publishError);
             return;
