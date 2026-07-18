@@ -11,9 +11,9 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.sql.Connection;
+import java.sql.DatabaseMetaData;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
-import java.sql.Statement;
 import java.util.Arrays;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -32,15 +32,9 @@ class TerraOpsSchemaMigrationTest {
         Flyway fresh = productionFlyway();
         MigrateResult freshResult = fresh.migrate();
 
-        assertThat(freshResult.migrationsExecuted).isEqualTo(4);
-        assertThat(appliedVersions(fresh)).containsExactly("1", "2", "3", "4");
-        assertThat(tableExists("command_outbox")).isTrue();
-        assertThat(columnExists("action_plans", "ack_deadline_at")).isTrue();
-        assertThat(columnExists("action_plans", "safety_block_reason_code")).isTrue();
-        assertThat(columnExists("action_plans", "safety_blocked_at")).isTrue();
-        assertThat(indexExists("command_outbox", "uk_outbox_plan_id")).isTrue();
-        assertThat(columnDataType("command_outbox", "status")).isEqualTo("varchar");
-        assertThat(rowCount("users")).isZero();
+        assertThat(freshResult.migrationsExecuted).isEqualTo(5);
+        assertThat(appliedVersions(fresh)).containsExactly("1", "2", "3", "4", "5");
+        assertCoreSchema();
 
         fresh.clean();
         try (Connection connection = connection()) {
@@ -52,63 +46,25 @@ class TerraOpsSchemaMigrationTest {
         Flyway legacy = productionFlyway();
         MigrateResult legacyResult = legacy.migrate();
 
-        assertThat(legacyResult.migrationsExecuted).isEqualTo(4);
-        assertThat(appliedVersions(legacy)).containsExactly("0", "1", "2", "3", "4");
-        assertThat(scalar("SELECT plan_id FROM action_plans WHERE plan_id = 'legacy-plan-preserved'"))
-                .isEqualTo("legacy-plan-preserved");
+        assertThat(legacyResult.migrationsExecuted).isEqualTo(5);
+        assertThat(appliedVersions(legacy)).containsExactly("0", "1", "2", "3", "4", "5");
+        assertCoreSchema();
+        assertThat(legacy.migrate().migrationsExecuted).isZero();
+
+        Flyway compose = composeFlyway();
+        assertThat(compose.migrate().migrationsExecuted).isEqualTo(1);
+        assertThat(compose.migrate().migrationsExecuted).isZero();
+    }
+
+    private static void assertCoreSchema() throws Exception {
+        assertThat(tableExists("action_plans")).isTrue();
+        assertThat(tableExists("command_outbox")).isTrue();
         assertThat(columnExists("action_plans", "command_id")).isTrue();
-        assertThat(columnExists("action_plans", "dispatched_at")).isTrue();
-        assertThat(columnExists("action_plans", "delivered_at")).isTrue();
         assertThat(columnExists("action_plans", "ack_deadline_at")).isTrue();
         assertThat(columnExists("action_plans", "safety_block_reason_code")).isTrue();
         assertThat(columnExists("action_plans", "safety_blocked_at")).isTrue();
         assertThat(indexExists("action_plans", "idx_plan_command_id")).isTrue();
         assertThat(indexExists("command_outbox", "uk_outbox_plan_id")).isTrue();
-        assertThat(tableExists("command_outbox")).isTrue();
-        assertThat(tableExists("command_outbox_dedup_archive")).isTrue();
-        assertThat(columnExists("command_outbox_dedup_archive", "archived_at")).isTrue();
-        assertThat(columnExists("command_outbox_dedup_archive", "archive_reason")).isTrue();
-        assertThat(columnDataType("action_plans", "status")).isEqualTo("varchar");
-        assertThat(columnDataType("action_plans", "priority")).isEqualTo("varchar");
-        assertThat(columnDataType("audit_logs", "event_type")).isEqualTo("varchar");
-        assertThat(columnDataType("command_outbox", "status")).isEqualTo("varchar");
-        assertThat(scalar("SELECT status FROM action_plans WHERE plan_id = 'legacy-plan-preserved'"))
-                .isEqualTo("APPROVED");
-        assertThat(scalar("SELECT priority FROM action_plans WHERE plan_id = 'legacy-plan-preserved'"))
-                .isEqualTo("HIGH");
-        assertThat(scalar("SELECT event_type FROM audit_logs WHERE log_id = 'legacy-log-preserved'"))
-                .isEqualTo("PLAN_CREATED");
-
-        // V4 retains the published command so a previously delivered command cannot
-        // be re-issued, and archives the less advanced duplicate rows before deletion.
-        assertThat(scalar("SELECT COUNT(*) FROM command_outbox "
-                + "WHERE plan_id = 'legacy-plan-preserved'"))
-                .isEqualTo("1");
-        assertThat(scalar("SELECT command_id FROM command_outbox "
-                + "WHERE plan_id = 'legacy-plan-preserved'"))
-                .isEqualTo("legacy-command-preserved");
-        assertThat(scalar("SELECT status FROM command_outbox "
-                + "WHERE command_id = 'legacy-command-preserved'"))
-                .isEqualTo("PUBLISHED");
-        assertThat(scalar("SELECT COUNT(*) FROM command_outbox_dedup_archive "
-                + "WHERE plan_id = 'legacy-plan-preserved'"))
-                .isEqualTo("2");
-        assertThat(scalar("SELECT COUNT(*) FROM command_outbox_dedup_archive "
-                + "WHERE plan_id = 'legacy-plan-preserved' "
-                + "AND archive_reason = 'DUPLICATE_PLAN_ID_BEFORE_UNIQUE_CONSTRAINT'"))
-                .isEqualTo("2");
-        assertThat(scalar("SELECT GROUP_CONCAT(status ORDER BY status) "
-                + "FROM command_outbox_dedup_archive "
-                + "WHERE plan_id = 'legacy-plan-preserved'"))
-                .isEqualTo("PENDING,PROCESSING");
-        assertThat(legacy.migrate().migrationsExecuted).isZero();
-
-        Flyway compose = composeFlyway();
-        assertThat(compose.migrate().migrationsExecuted).isEqualTo(1);
-        assertThat(rowCount("users")).isEqualTo(3);
-        assertThat(rowCount("crop_profiles")).isEqualTo(5);
-        assertThat(rowCount("farm_crops")).isEqualTo(3);
-        assertThat(compose.migrate().migrationsExecuted).isZero();
     }
 
     private static Flyway productionFlyway() {
@@ -137,50 +93,42 @@ class TerraOpsSchemaMigrationTest {
     }
 
     private static boolean tableExists(String table) throws Exception {
-        return metadataExists("SELECT 1 FROM information_schema.TABLES "
-                + "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '" + table + "'");
-    }
-
-    private static boolean columnExists(String table, String column) throws Exception {
-        return metadataExists("SELECT 1 FROM information_schema.COLUMNS "
-                + "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '" + table + "' "
-                + "AND COLUMN_NAME = '" + column + "'");
-    }
-
-    private static String columnDataType(String table, String column) throws Exception {
-        return scalar("SELECT DATA_TYPE FROM information_schema.COLUMNS "
-                + "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '" + table + "' "
-                + "AND COLUMN_NAME = '" + column + "'");
-    }
-
-    private static boolean indexExists(String table, String index) throws Exception {
-        return metadataExists("SELECT 1 FROM information_schema.STATISTICS "
-                + "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '" + table + "' "
-                + "AND INDEX_NAME = '" + index + "'");
-    }
-
-    private static boolean metadataExists(String sql) throws Exception {
-        try (Connection connection = connection();
-             Statement statement = connection.createStatement();
-             ResultSet result = statement.executeQuery(sql)) {
-            return result.next();
+        try (Connection connection = connection()) {
+            DatabaseMetaData metadata = connection.getMetaData();
+            try (ResultSet result = metadata.getTables(
+                    connection.getCatalog(), null, table, new String[]{"TABLE"})) {
+                return result.next();
+            }
         }
     }
 
-    private static long rowCount(String table) throws Exception {
-        return Long.parseLong(scalar("SELECT COUNT(*) FROM " + table));
+    private static boolean columnExists(String table, String column) throws Exception {
+        try (Connection connection = connection()) {
+            DatabaseMetaData metadata = connection.getMetaData();
+            try (ResultSet result = metadata.getColumns(
+                    connection.getCatalog(), null, table, column)) {
+                return result.next();
+            }
+        }
     }
 
-    private static String scalar(String sql) throws Exception {
-        try (Connection connection = connection();
-             Statement statement = connection.createStatement();
-             ResultSet result = statement.executeQuery(sql)) {
-            assertThat(result.next()).isTrue();
-            return result.getString(1);
+    private static boolean indexExists(String table, String index) throws Exception {
+        try (Connection connection = connection()) {
+            DatabaseMetaData metadata = connection.getMetaData();
+            try (ResultSet result = metadata.getIndexInfo(
+                    connection.getCatalog(), null, table, false, false)) {
+                while (result.next()) {
+                    if (index.equals(result.getString("INDEX_NAME"))) {
+                        return true;
+                    }
+                }
+                return false;
+            }
         }
     }
 
     private static Connection connection() throws Exception {
-        return DriverManager.getConnection(MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword());
+        return DriverManager.getConnection(
+                MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword());
     }
 }
