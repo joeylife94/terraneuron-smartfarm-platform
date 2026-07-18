@@ -17,6 +17,7 @@ import java.util.Map;
 public class CommandFeedbackConsumer {
 
     private static final String SAFETY_BLOCK_PREFIX = "DEVICE_SAFETY_BLOCKED:";
+    private static final String MQTT_PUBLISH_FAILURE_PREFIX = "MQTT_PUBLISH_FAILED:";
 
     private final ActionPlanRepository actionPlanRepository;
     private final AuditService auditService;
@@ -86,7 +87,9 @@ public class CommandFeedbackConsumer {
                     return true;
                 }
                 if (current == ActionPlan.PlanStatus.DELIVERED
-                        || current == ActionPlan.PlanStatus.EXECUTED) {
+                        || current == ActionPlan.PlanStatus.EXECUTED
+                        || current == ActionPlan.PlanStatus.EXECUTION_FAILED) {
+                    // A terminal device result is stronger than a later transport acknowledgement.
                     return false;
                 }
                 throw invalidTransition(plan, status);
@@ -109,12 +112,27 @@ public class CommandFeedbackConsumer {
                 throw invalidTransition(plan, status);
 
             case "FAILED":
+                boolean safetyBlocked = error != null && error.startsWith(SAFETY_BLOCK_PREFIX);
+                boolean mqttPublishFailed = error != null
+                        && error.startsWith(MQTT_PUBLISH_FAILURE_PREFIX);
+
                 if (current == ActionPlan.PlanStatus.DISPATCHING
                         || current == ActionPlan.PlanStatus.DISPATCHED) {
-                    plan.setStatus(ActionPlan.PlanStatus.DELIVERY_FAILED);
-                    plan.setExecutionResult(error != null && error.startsWith(SAFETY_BLOCK_PREFIX)
-                            ? "DEVICE_SAFETY_BLOCKED"
-                            : "MQTT_DELIVERY_FAILED");
+                    if (safetyBlocked || mqttPublishFailed) {
+                        plan.setStatus(ActionPlan.PlanStatus.DELIVERY_FAILED);
+                        plan.setExecutionResult(safetyBlocked
+                                ? "DEVICE_SAFETY_BLOCKED"
+                                : "MQTT_DELIVERY_FAILED");
+                    } else {
+                        // A non-transport terminal failure may race ahead of DELIVERED.
+                        // Record the stronger device truth and ignore a later delivery ACK.
+                        plan.setStatus(ActionPlan.PlanStatus.EXECUTION_FAILED);
+                        if (plan.getDeliveredAt() == null) {
+                            plan.setDeliveredAt(now);
+                        }
+                        plan.setAckDeadlineAt(null);
+                        plan.setExecutionResult("DEVICE_EXECUTION_FAILED");
+                    }
                 } else if (current == ActionPlan.PlanStatus.DELIVERED
                         || current == ActionPlan.PlanStatus.ACK_TIMEOUT) {
                     plan.setStatus(ActionPlan.PlanStatus.EXECUTION_FAILED);
