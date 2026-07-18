@@ -21,195 +21,154 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-/**
- * Action Plan Controller
- * REST API for managing AI-generated action plans with human approval workflow.
- * CloudEvents v1.0 compliant with trace_id propagation.
- */
-@Slf4j
 @RestController
 @RequestMapping("/api/actions")
 @RequiredArgsConstructor
-@Tag(name = "Action Plans", description = "AI-generated action plans management with safety validation")
+@Slf4j
+@Tag(name = "Action Plans", description = "AI-generated plans with approval and device safety gating")
 public class ActionController {
 
     private final ActionPlanService actionPlanService;
     private final AuditService auditService;
 
-    // ========== Pending Plans Endpoints ==========
-
     @GetMapping("/pending")
-    @Operation(summary = "Get all pending action plans",
-               description = "Returns all action plans awaiting human approval, ordered by priority")
     public ResponseEntity<List<ActionPlan>> getPendingPlans() {
-        log.info("📋 GET /api/actions/pending");
-        List<ActionPlan> plans = actionPlanService.getPendingPlans();
-        return ResponseEntity.ok(plans);
+        return ResponseEntity.ok(actionPlanService.getPendingPlans());
+    }
+
+    @GetMapping("/safety-blocked")
+    @Operation(summary = "Get approved plans waiting for device safety revalidation")
+    public ResponseEntity<List<ActionPlan>> getSafetyBlockedPlans() {
+        return ResponseEntity.ok(actionPlanService.getSafetyBlockedPlans());
     }
 
     @GetMapping("/pending/paged")
-    @Operation(summary = "Get pending plans with pagination")
     public ResponseEntity<Page<ActionPlan>> getPendingPlansPaged(
-            @Parameter(description = "Page number (0-indexed)") @RequestParam(defaultValue = "0") int page,
-            @Parameter(description = "Page size") @RequestParam(defaultValue = "20") int size) {
-        log.info("📋 GET /api/actions/pending/paged - page={}, size={}", page, size);
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
         Pageable pageable = PageRequest.of(page, size);
-        Page<ActionPlan> plans = actionPlanService.getPendingPlans(pageable);
-        return ResponseEntity.ok(plans);
+        return ResponseEntity.ok(actionPlanService.getPendingPlans(pageable));
     }
 
     @GetMapping("/pending/farm/{farmId}")
-    @Operation(summary = "Get pending plans for a specific farm")
-    public ResponseEntity<List<ActionPlan>> getPendingPlansByFarm(
-            @Parameter(description = "Farm ID") @PathVariable String farmId) {
-        log.info("📋 GET /api/actions/pending/farm/{}", farmId);
-        List<ActionPlan> plans = actionPlanService.getPendingPlansByFarm(farmId);
-        return ResponseEntity.ok(plans);
+    public ResponseEntity<List<ActionPlan>> getPendingPlansByFarm(@PathVariable String farmId) {
+        return ResponseEntity.ok(actionPlanService.getPendingPlansByFarm(farmId));
     }
 
-    // ========== Plan Details Endpoint ==========
-
     @GetMapping("/{planId}")
-    @Operation(summary = "Get action plan details by ID")
-    public ResponseEntity<ActionPlan> getPlanById(
-            @Parameter(description = "Plan ID") @PathVariable String planId) {
-        log.info("📋 GET /api/actions/{}", planId);
+    public ResponseEntity<ActionPlan> getPlanById(@PathVariable String planId) {
         return actionPlanService.getPlanById(planId)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    // ========== Approval/Rejection Endpoints ==========
-
     @PostMapping("/{planId}/approve")
-    @Operation(summary = "Approve an action plan",
-               description = "Approves the plan and runs configured safety validation before execution")
     public ResponseEntity<?> approvePlan(
-            @Parameter(description = "Plan ID") @PathVariable String planId,
+            @PathVariable String planId,
             @RequestBody ApprovalRequest request,
             Principal principal) {
-        String actor = principal.getName();
-        log.info("✅ POST /api/actions/{}/approve by {}", planId, actor);
-
         try {
-            ActionPlan approvedPlan = actionPlanService.approvePlan(
-                    planId,
-                    actor,
-                    request.getNotes()
-            );
-
-            return approvalResponse(approvedPlan);
-
+            return lifecycleResponse(actionPlanService.approvePlan(
+                    planId, principal.getName(), request.getNotes()));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.notFound().build();
         } catch (IllegalStateException e) {
             return ResponseEntity.badRequest().body(Map.of(
                     "status", "error",
-                    "message", e.getMessage()
-            ));
+                    "message", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/{planId}/safety/revalidate")
+    @Operation(summary = "Revalidate an already approved plan after a transient device safety block")
+    public ResponseEntity<?> revalidateSafety(@PathVariable String planId) {
+        try {
+            return lifecycleResponse(actionPlanService.revalidateSafety(planId));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.notFound().build();
+        } catch (IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "status", "error",
+                    "message", e.getMessage()));
         }
     }
 
     @PostMapping("/{planId}/reject")
-    @Operation(summary = "Reject an action plan")
     public ResponseEntity<?> rejectPlan(
-            @Parameter(description = "Plan ID") @PathVariable String planId,
+            @PathVariable String planId,
             @RequestBody RejectionRequest request,
             Principal principal) {
-        String actor = principal.getName();
-        log.info("❌ POST /api/actions/{}/reject by {}", planId, actor);
-
         try {
-            ActionPlan rejectedPlan = actionPlanService.rejectPlan(
-                    planId,
-                    actor,
-                    request.getReason()
-            );
-
+            ActionPlan plan = actionPlanService.rejectPlan(
+                    planId, principal.getName(), request.getReason());
             return ResponseEntity.ok(Map.of(
                     "status", "rejected",
                     "message", "Plan rejected",
-                    "planStatus", rejectedPlan.getStatus().name(),
-                    "plan", rejectedPlan
-            ));
-
+                    "planStatus", plan.getStatus().name(),
+                    "plan", plan));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.notFound().build();
         } catch (IllegalStateException e) {
             return ResponseEntity.badRequest().body(Map.of(
                     "status", "error",
-                    "message", e.getMessage()
-            ));
+                    "message", e.getMessage()));
         }
     }
 
-    private ResponseEntity<?> approvalResponse(ActionPlan plan) {
+    private ResponseEntity<?> lifecycleResponse(ActionPlan plan) {
         String planStatus = plan.getStatus().name();
         String responseStatus = planStatus.toLowerCase(Locale.ROOT);
-
+        if (plan.getStatus() == ActionPlan.PlanStatus.SAFETY_BLOCKED) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                    "status", responseStatus,
+                    "message", "Approved plan is blocked pending device safety revalidation",
+                    "planStatus", planStatus,
+                    "reasonCode", defaultIfBlank(
+                            plan.getSafetyBlockReasonCode(), "DEVICE_SAFETY_BLOCKED"),
+                    "plan", plan));
+        }
         if (plan.getStatus() == ActionPlan.PlanStatus.REJECTED) {
             return ResponseEntity.unprocessableEntity().body(Map.of(
                     "status", responseStatus,
                     "message", "Plan rejected by safety validation",
                     "planStatus", planStatus,
-                    "reason", defaultIfBlank(plan.getRejectionReason(), "Safety validation rejected the plan"),
-                    "plan", plan
-            ));
+                    "reason", defaultIfBlank(
+                            plan.getRejectionReason(), "Safety validation rejected the plan"),
+                    "plan", plan));
         }
-
         if (plan.getStatus() == ActionPlan.PlanStatus.FAILED) {
             return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of(
                     "status", responseStatus,
                     "message", "Plan approval completed but execution failed",
                     "planStatus", planStatus,
-                    "error", defaultIfBlank(plan.getExecutionError(), "Execution failed without an error message"),
-                    "plan", plan
-            ));
+                    "error", defaultIfBlank(plan.getExecutionError(), "Execution failed"),
+                    "plan", plan));
         }
-
         return ResponseEntity.ok(Map.of(
                 "status", responseStatus,
-                "message", "Plan approval completed",
+                "message", "Plan approval lifecycle updated",
                 "planStatus", planStatus,
-                "plan", plan
-        ));
+                "plan", plan));
+    }
+
+    @GetMapping("/statistics")
+    public ResponseEntity<Map<String, Long>> getStatistics() {
+        return ResponseEntity.ok(actionPlanService.getPlanStatistics());
+    }
+
+    @GetMapping("/{planId}/audit")
+    public ResponseEntity<List<AuditLog>> getPlanAuditTrail(@PathVariable String planId) {
+        return ResponseEntity.ok(auditService.getPlanHistory(planId));
+    }
+
+    @GetMapping("/audit/trace/{traceId}")
+    public ResponseEntity<List<AuditLog>> getAuditTrailByTrace(@PathVariable String traceId) {
+        return ResponseEntity.ok(auditService.getAuditTrail(traceId));
     }
 
     private String defaultIfBlank(String value, String fallback) {
         return value == null || value.isBlank() ? fallback : value;
     }
-
-    // ========== Statistics Endpoint ==========
-
-    @GetMapping("/statistics")
-    @Operation(summary = "Get action plan statistics")
-    public ResponseEntity<Map<String, Long>> getStatistics() {
-        log.info("📊 GET /api/actions/statistics");
-        return ResponseEntity.ok(actionPlanService.getPlanStatistics());
-    }
-
-    // ========== Audit Trail Endpoints ==========
-
-    @GetMapping("/{planId}/audit")
-    @Operation(summary = "Get audit trail for a specific plan")
-    public ResponseEntity<List<AuditLog>> getPlanAuditTrail(
-            @Parameter(description = "Plan ID") @PathVariable String planId) {
-        log.info("📝 GET /api/actions/{}/audit", planId);
-        List<AuditLog> auditTrail = auditService.getPlanHistory(planId);
-        return ResponseEntity.ok(auditTrail);
-    }
-
-    @GetMapping("/audit/trace/{traceId}")
-    @Operation(summary = "Get complete audit trail by trace ID",
-               description = "Returns all audit events for a distributed trace")
-    public ResponseEntity<List<AuditLog>> getAuditTrailByTrace(
-            @Parameter(description = "Trace ID for distributed tracing") @PathVariable String traceId) {
-        log.info("📝 GET /api/actions/audit/trace/{}", traceId);
-        List<AuditLog> auditTrail = auditService.getAuditTrail(traceId);
-        return ResponseEntity.ok(auditTrail);
-    }
-
-    // ========== Request/Response DTOs ==========
 
     @lombok.Data
     public static class ApprovalRequest {
