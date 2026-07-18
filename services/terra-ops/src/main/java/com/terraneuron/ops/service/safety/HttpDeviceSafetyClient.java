@@ -106,7 +106,7 @@ public class HttpDeviceSafetyClient implements DeviceSafetyClient {
                 return DeviceSafetyResult.blocked("SENSE_MALFORMED_RESPONSE");
             }
             return decision.allowed()
-                    ? DeviceSafetyResult.allowed()
+                    ? DeviceSafetyResult.allow()
                     : DeviceSafetyResult.blocked(decision.reasonCode());
         } catch (Exception ex) {
             return DeviceSafetyResult.blocked("SENSE_MALFORMED_RESPONSE");
