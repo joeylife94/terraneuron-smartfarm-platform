@@ -196,6 +196,18 @@ class MqttDeviceAckCorrelationTest {
         assertThat(gateway.getStats()).containsEntry("pending_command_acks", 1L);
     }
 
+    @Test
+    void malformedStatusPayloadInvalidatesTopicState() throws Exception {
+        gateway.messageArrived(
+                "terra/devices/farm-001/fan-01/status",
+                mqttMessage("{not-json"));
+
+        verify(deviceStateRegistry).invalidate("farm-001", "fan-01");
+        verify(deviceStateRegistry, never()).save(any());
+        verify(kafkaTemplate, never()).send(any(), any(), any());
+        assertThat(gateway.getStats()).containsEntry("error_count", 1L);
+    }
+
     @ParameterizedTest
     @CsvSource({
             "other-farm, fan-01",
