@@ -22,6 +22,15 @@ public record DeviceSafetyDecision(
                 reportedAge);
     }
 
+    public static DeviceSafetyDecision allowedWithoutDeviceState(Instant evaluatedAt) {
+        return new DeviceSafetyDecision(
+                true,
+                DeviceSafetyReason.ALLOWED,
+                evaluatedAt,
+                null,
+                null);
+    }
+
     public static DeviceSafetyDecision blocked(
             DeviceSafetyReason reasonCode,
             Instant evaluatedAt,
