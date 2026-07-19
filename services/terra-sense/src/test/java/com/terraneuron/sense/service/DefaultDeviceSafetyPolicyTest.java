@@ -40,6 +40,17 @@ class DefaultDeviceSafetyPolicyTest {
     }
 
     @Test
+    void alertOnlyNotificationDoesNotRequirePhysicalDeviceState() {
+        registry.unavailable = true;
+
+        DeviceSafetyDecision decision = evaluate("alert", "alert_only", Map.of());
+
+        assertThat(decision.allowed()).isTrue();
+        assertThat(decision.observedAgeSeconds()).isNull();
+        assertThat(decision.reportedAgeSeconds()).isNull();
+    }
+
+    @Test
     void legacyMissingCategoryUsesSingleExplicitDeviceCapability() {
         registry.save(state("online", false, "fan", NOW.minusSeconds(30), NOW.minusSeconds(5)));
 
