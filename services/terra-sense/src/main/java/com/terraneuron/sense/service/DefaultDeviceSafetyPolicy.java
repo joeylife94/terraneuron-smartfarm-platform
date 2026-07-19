@@ -62,6 +62,16 @@ public class DefaultDeviceSafetyPolicy implements DeviceSafetyPolicy {
             return blocked(DeviceSafetyReason.IDENTITY_MISMATCH, now, null, null);
         }
 
+        // The exact alert/alert_only pair is a notification-only action. It has no
+        // physical actuator state or capability to validate, so Redis availability
+        // must not prevent the platform's fail-safe notification path. Other alert
+        // category/action combinations continue through the physical-device gate.
+        if (isAlertOnly(request)) {
+            DeviceSafetyDecision decision = DeviceSafetyDecision.allowedWithoutDeviceState(now);
+            record(decision);
+            return decision;
+        }
+
         final Optional<DeviceStateRecord> stateResult;
         try {
             stateResult = registry.find(request.farmId(), request.assetId());
@@ -188,6 +198,11 @@ public class DefaultDeviceSafetyPolicy implements DeviceSafetyPolicy {
             return null;
         }
         return Math.max(0L, Duration.between(timestamp, now).getSeconds());
+    }
+
+    private boolean isAlertOnly(DeviceSafetyRequest request) {
+        return "alert".equals(normalize(request.actionCategory()))
+                && "alert_only".equals(normalize(request.actionType()));
     }
 
     private String normalize(String value) {
