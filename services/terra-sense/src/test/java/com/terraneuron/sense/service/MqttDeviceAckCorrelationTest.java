@@ -26,6 +26,7 @@ import java.util.concurrent.CompletableFuture;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -88,6 +89,25 @@ class MqttDeviceAckCorrelationTest {
         assertThat(stateCaptor.getValue().getLastCommandStatus()).isEqualTo("EXECUTED");
         assertThat(stateCaptor.getValue().getLastCommandError()).isNull();
         verify(commandRegistry).finishCompletion("cmd-1a2b3c4d");
+    }
+
+    @Test
+    void terminalAckIsForwardedWhenSharedStateWriteFails() throws Exception {
+        stubPendingCommandAndFeedback();
+        doThrow(new DeviceStateRegistryUnavailableException(
+                "state registry unavailable", new RuntimeException("redis unavailable")))
+                .when(deviceStateRegistry)
+                .save(any(DeviceStateRecord.class));
+
+        gateway.messageArrived(
+                "terra/devices/farm-001/fan-01/status",
+                mqttMessage(statusJson("farm-001", "fan-01", "EXECUTED", null)));
+
+        verify(kafkaTemplate).send(eq("terra.control.feedback"), eq("farm-001"), any());
+        verify(commandRegistry).finishCompletion("cmd-1a2b3c4d");
+        assertThat(gateway.getStats())
+                .containsEntry("status_received", 1L)
+                .containsEntry("error_count", 1L);
     }
 
     @Test
