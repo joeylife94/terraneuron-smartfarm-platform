@@ -328,6 +328,9 @@ public class MqttGatewayService implements MqttCallback {
                 .state(state.getState())
                 .maintenanceMode(state.isMaintenanceMode())
                 .capabilities(state.getCapabilities())
+                .lastCommandId(state.getLastCommandId())
+                .lastCommandStatus(state.getLastCommandStatus())
+                .lastCommandError(state.getLastCommandError())
                 .attributes(state.getAttributes())
                 .reportedAt(state.getReportedAt())
                 .build();
