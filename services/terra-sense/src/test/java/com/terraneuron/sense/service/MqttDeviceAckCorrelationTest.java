@@ -3,6 +3,7 @@ package com.terraneuron.sense.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.terraneuron.sense.model.DeviceCommand;
 import com.terraneuron.sense.model.DeviceStateRecord;
+import com.terraneuron.sense.model.DeviceStatus;
 import org.eclipse.paho.client.mqttv3.MqttClient;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
 import org.junit.jupiter.api.BeforeEach;
@@ -33,6 +34,8 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class MqttDeviceAckCorrelationTest {
 
+    private static final Instant REPORTED_AT = Instant.parse("2026-07-15T12:00:00Z");
+
     @Mock private MqttClient mqttClient;
     @Mock private KafkaProducerService kafkaProducerService;
     @Mock private KafkaTemplate<String, Object> kafkaTemplate;
@@ -44,7 +47,7 @@ class MqttDeviceAckCorrelationTest {
 
     @BeforeEach
     void setUp() {
-        clock = Clock.fixed(Instant.parse("2026-07-15T12:00:00Z"), ZoneOffset.UTC);
+        clock = Clock.fixed(REPORTED_AT, ZoneOffset.UTC);
         lenient().when(deviceStateRegistry.status()).thenReturn(
                 new DeviceStateRegistry.RegistryStatus("redis", true, clock.instant(), 1));
         gateway = new MqttGatewayService(
@@ -59,7 +62,7 @@ class MqttDeviceAckCorrelationTest {
     }
 
     @Test
-    void explicitDeviceExecutionAckIsForwardedWithOriginalPlanContext() throws Exception {
+    void explicitDeviceExecutionAckIsForwardedAndPersistedWithOriginalPlanContext() throws Exception {
         stubPendingCommandAndFeedback();
 
         gateway.messageArrived(
@@ -77,8 +80,43 @@ class MqttDeviceAckCorrelationTest {
                 .containsEntry("plan_id", "plan-123")
                 .containsEntry("command_id", "cmd-1a2b3c4d")
                 .containsEntry("status", "EXECUTED");
-        verify(deviceStateRegistry).save(any(DeviceStateRecord.class));
+
+        ArgumentCaptor<DeviceStateRecord> stateCaptor =
+                ArgumentCaptor.forClass(DeviceStateRecord.class);
+        verify(deviceStateRegistry).save(stateCaptor.capture());
+        assertThat(stateCaptor.getValue().getLastCommandId()).isEqualTo("cmd-1a2b3c4d");
+        assertThat(stateCaptor.getValue().getLastCommandStatus()).isEqualTo("EXECUTED");
+        assertThat(stateCaptor.getValue().getLastCommandError()).isNull();
         verify(commandRegistry).finishCompletion("cmd-1a2b3c4d");
+    }
+
+    @Test
+    void deviceStatusQueriesPreserveAckFieldsFromSharedRegistry() {
+        DeviceStateRecord stored = DeviceStateRecord.builder()
+                .farmId("farm-001")
+                .assetId("fan-01")
+                .deviceType("fan")
+                .state("error")
+                .lastCommandId("cmd-1a2b3c4d")
+                .lastCommandStatus("FAILED")
+                .lastCommandError("motor overload")
+                .reportedAt(REPORTED_AT)
+                .observedAt(REPORTED_AT)
+                .build();
+        when(deviceStateRegistry.find("farm-001", "fan-01"))
+                .thenReturn(Optional.of(stored));
+        when(deviceStateRegistry.findAll())
+                .thenReturn(Map.of("farm-001/fan-01", stored));
+
+        DeviceStatus single = gateway.getDeviceStatus("farm-001", "fan-01");
+        DeviceStatus listed = gateway.getAllDeviceStates().get("farm-001/fan-01");
+
+        assertThat(single.getLastCommandId()).isEqualTo("cmd-1a2b3c4d");
+        assertThat(single.getLastCommandStatus()).isEqualTo("FAILED");
+        assertThat(single.getLastCommandError()).isEqualTo("motor overload");
+        assertThat(listed.getLastCommandId()).isEqualTo("cmd-1a2b3c4d");
+        assertThat(listed.getLastCommandStatus()).isEqualTo("FAILED");
+        assertThat(listed.getLastCommandError()).isEqualTo("motor overload");
     }
 
     @Test
