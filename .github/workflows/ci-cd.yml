@@ -126,6 +126,43 @@ jobs:
             services/terra-cortex/pytest-results.xml
             services/terra-cortex/coverage.xml
 
+  # ========== Dashboard production build ==========
+  build-dashboard:
+    name: Build Dashboard (terra-dashboard)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 🟢 Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 📦 Install Dashboard Dependencies
+        working-directory: services/terra-dashboard
+        run: npm install --no-audit --no-fund
+
+      - name: 🏗️ Build Dashboard
+        working-directory: services/terra-dashboard
+        shell: bash
+        run: |
+          set +e
+          set -o pipefail
+          npm run build 2>&1 | tee dashboard-build.log
+          build_status=${PIPESTATUS[0]}
+          set -e
+          exit "${build_status}"
+
+      - name: 📊 Upload Dashboard Diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-results-terra-dashboard
+          if-no-files-found: warn
+          path: services/terra-dashboard/dashboard-build.log
+
   # ========== Docker 이미지 빌드 & 푸시 ==========
   build-and-push-images:
     name: Build & Push Docker Images
@@ -170,7 +207,7 @@ jobs:
   # ========== E2E 테스트 ==========
   e2e-test:
     name: E2E Integration Test
-    needs: [build-java-services, build-python-service]
+    needs: [build-java-services, build-python-service, build-dashboard]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
