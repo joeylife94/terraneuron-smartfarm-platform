@@ -187,15 +187,15 @@ public class MqttGatewayService implements MqttCallback {
     }
 
     private void handleDeviceStatus(String topic, String payload) {
+        String[] parts = topic.split("/");
+        if (parts.length < 5) {
+            throw new IllegalArgumentException("Invalid device status topic");
+        }
+
+        String topicFarmId = parts[2];
+        String topicAssetId = parts[3];
         try {
             DeviceStatus status = objectMapper.readValue(payload, DeviceStatus.class);
-            String[] parts = topic.split("/");
-            if (parts.length < 5) {
-                throw new IllegalArgumentException("Invalid device status topic");
-            }
-
-            String topicFarmId = parts[2];
-            String topicAssetId = parts[3];
             if (status.getFarmId() != null && !topicFarmId.equals(status.getFarmId())) {
                 invalidateTopicDeviceState(topicFarmId, topicAssetId, "farm identity mismatch");
                 throw new IllegalArgumentException("Device status farm identity mismatch");
@@ -235,6 +235,7 @@ public class MqttGatewayService implements MqttCallback {
                 publishDeviceAcknowledgement(status);
             }
         } catch (JsonProcessingException e) {
+            invalidateTopicDeviceState(topicFarmId, topicAssetId, "status payload parse failure");
             errorCount.incrementAndGet();
             log.warn("Device status parsing failed: topic={}", topic);
         }
