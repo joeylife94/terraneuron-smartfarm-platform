@@ -32,12 +32,17 @@ export const cortex = {
 
 /* ── terra-ops ── */
 export const ops = {
-  pendingActions: () => fetchJson<any>('/api/ops/actions/pending'),
+  pendingActions: () => fetchJson<any[]>('/api/ops/actions/pending'),
+  safetyBlockedActions: () => fetchJson<any[]>('/api/ops/actions/safety-blocked'),
   actionStats: () => fetchJson<any>('/api/ops/actions/statistics'),
   approveAction: (planId: string, approvedBy = 'dashboard-user') =>
     fetchJson<any>(`/api/ops/actions/${planId}/approve`, {
       method: 'POST',
       body: JSON.stringify({ approvedBy, notes: 'Approved via dashboard' }),
+    }),
+  revalidateSafety: (planId: string) =>
+    fetchJson<any>(`/api/ops/actions/${planId}/safety/revalidate`, {
+      method: 'POST',
     }),
   rejectAction: (planId: string, reason: string) =>
     fetchJson<any>(`/api/ops/actions/${planId}/reject`, {
