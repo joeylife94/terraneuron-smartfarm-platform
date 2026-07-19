@@ -166,8 +166,12 @@ public class DeviceCommandConsumer {
             log.warn("Command blocked before MQTT dispatch: command={} reason={}",
                     command.getCommandId(), reason);
         } catch (RuntimeException feedbackError) {
-            commandRegistry.rollbackCompletion(command.getCommandId());
-            commandRegistry.releasePending(command.getCommandId());
+            // Keep the durable terminal completion marker and pending command payload.
+            // Kafka redelivery must replay the same FAILED feedback instead of
+            // re-evaluating a recovered device and publishing the previously blocked
+            // command to MQTT.
+            log.warn("Safety-block feedback was not acknowledged; preserving terminal state for replay: command={}",
+                    command.getCommandId());
             throw feedbackError;
         }
     }
