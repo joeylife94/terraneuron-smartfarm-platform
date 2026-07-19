@@ -92,7 +92,7 @@ class MqttDeviceAckCorrelationTest {
     }
 
     @Test
-    void terminalAckIsForwardedWhenSharedStateWriteFails() throws Exception {
+    void terminalAckIsForwardedAndPreviousStateInvalidatedWhenSharedWriteFails() throws Exception {
         stubPendingCommandAndFeedback();
         doThrow(new DeviceStateRegistryUnavailableException(
                 "state registry unavailable", new RuntimeException("redis unavailable")))
@@ -103,6 +103,7 @@ class MqttDeviceAckCorrelationTest {
                 "terra/devices/farm-001/fan-01/status",
                 mqttMessage(statusJson("farm-001", "fan-01", "EXECUTED", null)));
 
+        verify(deviceStateRegistry).invalidate("farm-001", "fan-01");
         verify(kafkaTemplate).send(eq("terra.control.feedback"), eq("farm-001"), any());
         verify(commandRegistry).finishCompletion("cmd-1a2b3c4d");
         assertThat(gateway.getStats())
