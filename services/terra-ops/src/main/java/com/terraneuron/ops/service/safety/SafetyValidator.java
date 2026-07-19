@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /** Four-layer fail-closed validation performed before an outbox event is created. */
 @Slf4j
@@ -108,6 +109,10 @@ public class SafetyValidator {
     }
 
     private LayerResult validateDeviceState(ActionPlan plan) {
+        if (isAlertOnly(plan)) {
+            return layer("DEVICE_STATE", List.of(), "NOT_APPLICABLE");
+        }
+
         DeviceSafetyClient.DeviceSafetyResult decision = deviceSafetyClient.evaluate(plan);
         if (decision.allowed()) {
             return layer("DEVICE_STATE", List.of(), "ALLOWED");
@@ -126,6 +131,15 @@ public class SafetyValidator {
                 .warnings(new ArrayList<>())
                 .reasonCode(reasonCode)
                 .build();
+    }
+
+    private boolean isAlertOnly(ActionPlan plan) {
+        return "alert".equals(normalize(plan.getActionCategory()))
+                && "alert_only".equals(normalize(plan.getActionType()));
+    }
+
+    private String normalize(String value) {
+        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
     }
 
     private boolean isBlank(String value) {
