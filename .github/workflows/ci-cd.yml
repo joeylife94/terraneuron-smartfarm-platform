@@ -135,6 +135,9 @@ jobs:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
 
+      - name: 🏷️ Validate GHCR Image Tag Compatibility
+        run: python3 tests/image-tag-compatibility-test.py
+
       - name: 🟢 Setup Node.js 20
         uses: actions/setup-node@v4
         with:
@@ -203,6 +206,8 @@ jobs:
           tags: |
             ${{ env.DOCKER_REGISTRY }}/${{ github.repository }}/${{ matrix.service }}:latest
             ${{ env.DOCKER_REGISTRY }}/${{ github.repository }}/${{ matrix.service }}:${{ github.sha }}
+            ${{ env.DOCKER_REGISTRY }}/${{ github.repository_owner }}/terraneuron-${{ matrix.service }}:latest
+            ${{ env.DOCKER_REGISTRY }}/${{ github.repository_owner }}/terraneuron-${{ matrix.service }}:${{ github.sha }}
 
   # ========== E2E 테스트 ==========
   e2e-test:
