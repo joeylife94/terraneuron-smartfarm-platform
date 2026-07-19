@@ -197,9 +197,11 @@ public class MqttGatewayService implements MqttCallback {
             String topicFarmId = parts[2];
             String topicAssetId = parts[3];
             if (status.getFarmId() != null && !topicFarmId.equals(status.getFarmId())) {
+                invalidateTopicDeviceState(topicFarmId, topicAssetId, "farm identity mismatch");
                 throw new IllegalArgumentException("Device status farm identity mismatch");
             }
             if (status.getAssetId() != null && !topicAssetId.equals(status.getAssetId())) {
+                invalidateTopicDeviceState(topicFarmId, topicAssetId, "asset identity mismatch");
                 throw new IllegalArgumentException("Device status asset identity mismatch");
             }
 
@@ -215,13 +217,7 @@ public class MqttGatewayService implements MqttCallback {
             try {
                 deviceStateRegistry.save(DeviceStateRecord.from(status, observedAt));
             } catch (DeviceStateRegistryUnavailableException stateWriteError) {
-                try {
-                    deviceStateRegistry.invalidate(topicFarmId, topicAssetId);
-                } catch (DeviceStateRegistryUnavailableException invalidationError) {
-                    log.warn(
-                            "Shared device state cleanup failed; local quarantine remains active: asset={}",
-                            topicAssetId);
-                }
+                invalidateTopicDeviceState(topicFarmId, topicAssetId, "state write failure");
                 if (!terminalAcknowledgement) {
                     throw stateWriteError;
                 }
@@ -241,6 +237,17 @@ public class MqttGatewayService implements MqttCallback {
         } catch (JsonProcessingException e) {
             errorCount.incrementAndGet();
             log.warn("Device status parsing failed: topic={}", topic);
+        }
+    }
+
+    private void invalidateTopicDeviceState(String farmId, String assetId, String reason) {
+        try {
+            deviceStateRegistry.invalidate(farmId, assetId);
+        } catch (DeviceStateRegistryUnavailableException invalidationError) {
+            log.warn(
+                    "Shared device state cleanup failed; local quarantine remains active: asset={} reason={}",
+                    assetId,
+                    reason);
         }
     }
 
