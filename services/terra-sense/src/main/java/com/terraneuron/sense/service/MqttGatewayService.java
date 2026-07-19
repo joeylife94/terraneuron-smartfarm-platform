@@ -206,16 +206,29 @@ public class MqttGatewayService implements MqttCallback {
             Instant observedAt = clock.instant();
             status.setFarmId(topicFarmId);
             status.setAssetId(topicAssetId);
+            boolean terminalAcknowledgement = status.hasTerminalCommandAcknowledgement();
 
             // Never synthesize reportedAt from broker observation time. The safety policy
             // must be able to distinguish a device timestamp from Terra-Sense receipt time.
-            deviceStateRegistry.save(DeviceStateRecord.from(status, observedAt));
+            // A shared-state write failure remains fail-closed for future command dispatch,
+            // but it must not suppress an already-received terminal device acknowledgement.
+            try {
+                deviceStateRegistry.save(DeviceStateRecord.from(status, observedAt));
+            } catch (DeviceStateRegistryUnavailableException stateWriteError) {
+                if (!terminalAcknowledgement) {
+                    throw stateWriteError;
+                }
+                errorCount.incrementAndGet();
+                log.warn(
+                        "Device state was not persisted; continuing terminal ACK forwarding: command={}",
+                        status.getLastCommandId());
+            }
             statusReceived.incrementAndGet();
 
             log.info("Device status accepted: state={} ack_present={}",
                     status.getState(), status.getLastCommandId() != null);
 
-            if (status.hasTerminalCommandAcknowledgement()) {
+            if (terminalAcknowledgement) {
                 publishDeviceAcknowledgement(status);
             }
         } catch (JsonProcessingException e) {
