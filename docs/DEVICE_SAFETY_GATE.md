@@ -19,6 +19,8 @@ operator approval
 
 The approval-time check prevents known-unsafe plans from entering the command outbox. The pre-dispatch check reduces the time-of-check/time-of-use window between approval and physical delivery.
 
+The exact notification-only pair `action_category=alert` and `action_type=alert_only` is non-actuating. Terra-Ops marks the device-state layer as not applicable, and Terra-Sense allows the same pair without reading Redis or resolving a physical device capability. Farm and target identities, contract validation, approval, outbox, and delivery semantics still apply. No other category/action combination receives this exemption.
+
 ## Shared device state
 
 The registry key is the exact `(farmId, assetId)` pair. Identifiers are encoded into Redis keys and are not used as Prometheus labels.
@@ -40,11 +42,11 @@ Default configuration:
 
 The TTL must remain greater than the freshness window. An expired or absent Redis record is `STATE_MISSING`; an existing record older than the freshness window is stale and cannot authorize a command.
 
-Redis read or write failure is fail-closed. This may temporarily block otherwise valid commands.
+Redis read or write failure is fail-closed. This may temporarily block otherwise valid physical device commands. The exact `alert`/`alert_only` notification path does not depend on Redis.
 
 ## Core safety policy
 
-Allowed states are `online`, `running`, and `idle`, subject to every other check. The policy blocks:
+Allowed states are `online`, `running`, and `idle`, subject to every other check. For physical device actions, the policy blocks:
 
 - missing or mismatched `(farmId, assetId)` state;
 - stale observed state or stale/invalid device-reported time;
@@ -58,6 +60,8 @@ Allowed states are `online`, `running`, and `idle`, subject to every other check
 Device type matching is exact after normalization. The implementation never infers device type from an asset identifier substring.
 
 The built-in conservative capability table covers generic `fan`, `vent`, `pump`, `valve`, `humidifier`, `heater`, `cooler`, `dehumidifier`, `led`, and `light` types. `DeviceCapabilityResolver` is the extension point for manufacturer/model-specific adapters. A manufacturer adapter should return an explicit capability set; unknown models remain blocked.
+
+`alert`/`alert_only` is handled as an explicit policy exception rather than a pseudo-device capability. This prevents the fail-safe notification path from requiring a fabricated device type or heartbeat while keeping mismatched alert actions fail-closed.
 
 ## Approval and retry lifecycle
 
@@ -121,7 +125,8 @@ This implementation guarantees that:
 
 - a plan blocked at approval time has no outbox row;
 - plan transition and outbox enqueue remain one MySQL transaction;
-- Redis registry failure, Sense timeout, 5xx, authentication failure, or malformed response cannot fail open;
+- Redis registry failure, Sense timeout, 5xx, authentication failure, or malformed response cannot fail open for physical device actions;
+- exact `alert`/`alert_only` notifications do not require physical device state or capability;
 - a pre-dispatch safety failure cannot call MQTT;
 - a terminal safety failure keeps `commandId` feedback correlation;
 - command redelivery cannot bypass the existing Redis idempotency state;
@@ -132,7 +137,8 @@ This implementation guarantees that:
 - Device status is device-reported information and does not prove the physical state of the equipment.
 - Without MQTT authentication and TLS, an attacker with broker access may forge status messages.
 - Freshness must be tuned to the actual device heartbeat interval and network characteristics.
-- Redis failure intentionally blocks valid commands as well as unsafe commands.
+- Redis failure intentionally blocks valid physical device commands as well as unsafe commands.
 - The pre-dispatch recheck reduces but cannot completely eliminate a state change after the final check and before physical actuation.
 - Manufacturer-specific validation is only as complete as the installed Device Adapter / `DeviceCapabilityResolver` implementation.
+- The alert-only exemption prevents physical-gate deadlock; it does not by itself guarantee downstream notification delivery or operator acknowledgement.
 - This gate does not replace electrical interlocks, emergency stops, local controller limits, or other physical safety controls.
