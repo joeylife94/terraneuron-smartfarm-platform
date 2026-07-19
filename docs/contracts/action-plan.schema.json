@@ -96,7 +96,7 @@
         },
         "parameters": {
           "type": "object",
-          "description": "Action parameters (e.g., duration, intensity)",
+          "description": "Action parameters (e.g., duration, intensity, device-specific setpoints)",
           "properties": {
             "duration_minutes": {
               "type": "integer",
@@ -108,15 +108,48 @@
               "enum": ["low", "medium", "high", "max"],
               "description": "Speed level for devices"
             },
+            "power_percentage": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100,
+              "description": "Device power percentage"
+            },
+            "position_percentage": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100,
+              "description": "Valve or vent position percentage"
+            },
+            "flow_rate": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Requested non-negative flow rate"
+            },
+            "target_humidity": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100,
+              "description": "Target relative humidity percentage"
+            },
+            "target_temperature": {
+              "type": "number",
+              "description": "Target temperature setpoint"
+            },
+            "brightness_percentage": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100,
+              "description": "Lighting brightness percentage"
+            },
             "target_value": {
               "type": "number",
-              "description": "Target value for adjustment"
+              "description": "Generic target value for adjustment"
             },
             "intensity": {
               "type": "integer",
               "minimum": 0,
               "maximum": 100,
-              "description": "Intensity percentage"
+              "description": "Generic intensity percentage"
             }
           },
           "additionalProperties": false
