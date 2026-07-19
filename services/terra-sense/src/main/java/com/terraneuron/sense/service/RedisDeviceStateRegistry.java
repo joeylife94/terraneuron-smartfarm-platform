@@ -1,6 +1,5 @@
 package com.terraneuron.sense.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.terraneuron.sense.model.DeviceStateRecord;
 import io.micrometer.core.instrument.Gauge;
@@ -20,6 +19,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -35,6 +35,7 @@ public class RedisDeviceStateRegistry implements DeviceStateRegistry {
     private final ObjectMapper objectMapper;
     private final Clock clock;
     private final Duration ttl;
+    private final Set<String> quarantinedKeys = ConcurrentHashMap.newKeySet();
     private final AtomicInteger backendAvailable = new AtomicInteger(1);
     private final AtomicLong lastSuccessfulReadEpochMillis = new AtomicLong(0L);
 
@@ -72,15 +73,44 @@ public class RedisDeviceStateRegistry implements DeviceStateRegistry {
             state.setObservedAt(clock.instant());
         }
 
+        String stateKey = key(state.getFarmId(), state.getAssetId());
+        // Quarantine before the shared write. A concurrent local safety read must not
+        // authorize from the previous Redis value while a newer status is being stored.
+        quarantinedKeys.add(stateKey);
         try {
-            String key = key(state.getFarmId(), state.getAssetId());
-            redisTemplate.opsForValue().set(key, objectMapper.writeValueAsString(state), ttl);
-            redisTemplate.opsForSet().add(INDEX_KEY, key);
+            redisTemplate.opsForValue().set(
+                    stateKey, objectMapper.writeValueAsString(state), ttl);
+            redisTemplate.opsForSet().add(INDEX_KEY, stateKey);
             redisTemplate.expire(INDEX_KEY, ttl.multipliedBy(2));
+            quarantinedKeys.remove(stateKey);
             markSuccess();
         } catch (Exception ex) {
+            // Keep the local quarantine until a later successful save. The MQTT
+            // ingestion path also calls invalidate to remove the superseded shared
+            // record for other replicas when Redis permits the cleanup operation.
             markFailure();
             throw unavailable("Failed to store device state in Redis", ex);
+        }
+    }
+
+    @Override
+    public void invalidate(String farmId, String assetId) {
+        if (isBlank(farmId) || isBlank(assetId)) {
+            return;
+        }
+
+        String stateKey = key(farmId, assetId);
+        quarantinedKeys.add(stateKey);
+        try {
+            redisTemplate.delete(stateKey);
+            redisTemplate.opsForSet().remove(INDEX_KEY, stateKey);
+            markSuccess();
+        } catch (Exception ex) {
+            // Local reads remain quarantined even when the best-effort shared cleanup
+            // cannot complete. A later successful save is the only operation that
+            // restores authority for this identity on this replica.
+            markFailure();
+            throw unavailable("Failed to invalidate device state in Redis", ex);
         }
     }
 
@@ -90,8 +120,13 @@ public class RedisDeviceStateRegistry implements DeviceStateRegistry {
             return Optional.empty();
         }
 
+        String stateKey = key(farmId, assetId);
+        if (quarantinedKeys.contains(stateKey)) {
+            return Optional.empty();
+        }
+
         try {
-            String payload = redisTemplate.opsForValue().get(key(farmId, assetId));
+            String payload = redisTemplate.opsForValue().get(stateKey);
             markSuccess();
             if (payload == null) {
                 return Optional.empty();
@@ -115,6 +150,9 @@ public class RedisDeviceStateRegistry implements DeviceStateRegistry {
 
             Map<String, DeviceStateRecord> states = new LinkedHashMap<>();
             for (String stateKey : keys) {
+                if (quarantinedKeys.contains(stateKey)) {
+                    continue;
+                }
                 String payload = redisTemplate.opsForValue().get(stateKey);
                 if (payload == null) {
                     sets.remove(INDEX_KEY, stateKey);
