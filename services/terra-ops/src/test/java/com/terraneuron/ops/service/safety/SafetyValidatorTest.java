@@ -4,6 +4,7 @@ import com.terraneuron.ops.entity.ActionPlan;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -48,6 +49,26 @@ class SafetyValidatorTest {
 
         assertThat(result.isOverallPassed()).isTrue();
         assertThat(result.getRecommendedAction()).isEqualTo("EXECUTE");
+    }
+
+    @Test
+    void approvedAlertOnlyPlanSkipsPhysicalDeviceSafetyClient() {
+        AtomicBoolean clientCalled = new AtomicBoolean(false);
+        SafetyValidator validator = new SafetyValidator(plan -> {
+            clientCalled.set(true);
+            return DeviceSafetyClient.DeviceSafetyResult.blocked("REGISTRY_UNAVAILABLE");
+        });
+        ActionPlan plan = approvedPlan();
+        plan.setTargetAssetId("operator-notifications");
+        plan.setTargetAssetType("notification");
+        plan.setActionCategory("alert");
+        plan.setActionType("alert_only");
+
+        SafetyValidator.ValidationResult result = validator.validate(plan);
+
+        assertThat(result.isOverallPassed()).isTrue();
+        assertThat(result.getDeviceStateValidation().getReasonCode()).isEqualTo("NOT_APPLICABLE");
+        assertThat(clientCalled).isFalse();
     }
 
     @Test
