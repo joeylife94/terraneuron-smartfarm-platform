@@ -38,6 +38,11 @@ public class DeviceStateRecord {
     @Builder.Default
     private Map<String, Object> attributes = new LinkedHashMap<>();
 
+    /** Latest command acknowledgement reported by the device, when present. */
+    private String lastCommandId;
+    private String lastCommandStatus;
+    private String lastCommandError;
+
     private Instant reportedAt;
     private Instant observedAt;
 
@@ -54,6 +59,9 @@ public class DeviceStateRecord {
                 .attributes(status.getAttributes() != null
                         ? new LinkedHashMap<>(status.getAttributes())
                         : new LinkedHashMap<>())
+                .lastCommandId(status.getLastCommandId())
+                .lastCommandStatus(status.getLastCommandStatus())
+                .lastCommandError(status.getLastCommandError())
                 .reportedAt(status.getReportedAt())
                 .observedAt(observedAt)
                 .build();
