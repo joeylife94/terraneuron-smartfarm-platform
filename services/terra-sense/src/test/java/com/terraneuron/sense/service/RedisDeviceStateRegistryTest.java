@@ -21,6 +21,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -68,6 +70,33 @@ class RedisDeviceStateRegistryTest {
         assertThat(loaded.getFarmId()).isEqualTo("farm-1");
         assertThat(loaded.getAssetId()).isEqualTo("fan-01");
         assertThat(loaded.getObservedAt()).isEqualTo(state.getObservedAt());
+    }
+
+    @Test
+    void failedSaveQuarantinesOldRecordUntilACompleteSaveSucceeds() throws Exception {
+        DeviceStateRecord state = state();
+        doThrow(new RuntimeException("write rejected"))
+                .doNothing()
+                .when(values)
+                .set(anyString(), anyString(), eq(Duration.ofSeconds(600)));
+        when(values.get(anyString())).thenReturn(objectMapper.writeValueAsString(state));
+
+        assertThatThrownBy(() -> registry.save(state))
+                .isInstanceOf(DeviceStateRegistryUnavailableException.class);
+        assertThat(registry.find("farm-1", "fan-01")).isEmpty();
+
+        registry.save(state);
+
+        assertThat(registry.find("farm-1", "fan-01")).isPresent();
+    }
+
+    @Test
+    void invalidationRemovesSharedRecordAndKeepsLocalReadsFailClosed() {
+        registry.invalidate("farm-1", "fan-01");
+
+        verify(redisTemplate).delete(anyString());
+        verify(sets).remove(eq(RedisDeviceStateRegistry.INDEX_KEY), anyString());
+        assertThat(registry.find("farm-1", "fan-01")).isEmpty();
     }
 
     @Test
