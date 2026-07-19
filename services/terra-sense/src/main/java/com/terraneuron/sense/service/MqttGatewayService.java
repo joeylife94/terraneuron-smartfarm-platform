@@ -215,6 +215,13 @@ public class MqttGatewayService implements MqttCallback {
             try {
                 deviceStateRegistry.save(DeviceStateRecord.from(status, observedAt));
             } catch (DeviceStateRegistryUnavailableException stateWriteError) {
+                try {
+                    deviceStateRegistry.invalidate(topicFarmId, topicAssetId);
+                } catch (DeviceStateRegistryUnavailableException invalidationError) {
+                    log.warn(
+                            "Shared device state cleanup failed; local quarantine remains active: asset={}",
+                            topicAssetId);
+                }
                 if (!terminalAcknowledgement) {
                     throw stateWriteError;
                 }
