@@ -9,6 +9,8 @@ import org.eclipse.paho.client.mqttv3.MqttMessage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -194,14 +196,22 @@ class MqttDeviceAckCorrelationTest {
         assertThat(gateway.getStats()).containsEntry("pending_command_acks", 1L);
     }
 
-    @Test
-    void topicPayloadIdentityMismatchDoesNotPoisonSharedRegistry() throws Exception {
+    @ParameterizedTest
+    @CsvSource({
+            "other-farm, fan-01",
+            "farm-001, heater-01"
+    })
+    void topicPayloadIdentityMismatchInvalidatesTopicState(
+            String payloadFarmId,
+            String payloadAssetId) throws Exception {
         gateway.messageArrived(
                 "terra/devices/farm-001/fan-01/status",
-                mqttMessage(statusJson("other-farm", "fan-01", "EXECUTED", null)));
+                mqttMessage(statusJson(payloadFarmId, payloadAssetId, "EXECUTED", null)));
 
+        verify(deviceStateRegistry).invalidate("farm-001", "fan-01");
         verify(deviceStateRegistry, never()).save(any());
         verify(kafkaTemplate, never()).send(any(), any(), any());
+        assertThat(gateway.getStats()).containsEntry("error_count", 1L);
     }
 
     private void stubPendingCommandAndFeedback() {
