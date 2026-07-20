@@ -6,7 +6,7 @@ import { NextRequest, NextResponse } from 'next/server';
 export const ACCESS_COOKIE = 'terraneuron_access_token';
 export const REFRESH_COOKIE = 'terraneuron_refresh_token';
 
-const AUTH_COOKIE_PATH = '/api';
+const AUTH_COOKIE_PATH = '/api/dashboard';
 const ALLOWED_OPS_ROOTS = new Set(['actions', 'crops', 'farms']);
 const OPS_BASE = (process.env.TERRA_OPS_INTERNAL_URL ?? 'http://terra-ops:8080/api').replace(/\/+$/, '');
 const OPS_TIMEOUT_MS = positiveMilliseconds(process.env.TERRA_OPS_BFF_TIMEOUT_MS, 5_000);
