@@ -46,7 +46,7 @@ function performFetch(url: string, opts?: RequestInit): Promise<Response> {
 }
 
 function isDashboardAuthPath(url: string): boolean {
-  return url.startsWith('/api/dashboard-auth/') || url.startsWith('/api/dashboard-ops/');
+  return url.startsWith('/api/dashboard/auth/') || url.startsWith('/api/dashboard/ops/');
 }
 
 /* ── terra-cortex ── */
@@ -62,7 +62,7 @@ export const cortex = {
 };
 
 /* ── protected terra-ops through dashboard BFF ── */
-const OPS = '/api/dashboard-ops';
+const OPS = '/api/dashboard/ops';
 export const ops = {
   pendingActions: () => fetchJson<any[]>(`${OPS}/actions/pending`),
   safetyBlockedActions: () => fetchJson<any[]>(`${OPS}/actions/safety-blocked`),
