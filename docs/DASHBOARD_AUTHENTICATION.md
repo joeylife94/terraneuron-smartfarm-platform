@@ -15,6 +15,8 @@ Next.js route handlers call Terra-Ops through the server-only `TERRA_OPS_INTERNA
 
 `DASHBOARD_PUBLIC_ORIGIN` may define the single externally visible Dashboard origin, for example `https://dashboard.example.com`. When it is absent, the BFF uses the request URL origin. The configured value must be an absolute HTTP(S) origin and must remain server-only.
 
+The historical `/api/ops/:path*` rewrite is removed. Protected Terra-Ops traffic must pass through the allowlisted BFF route, so `/api/ops/auth/login` cannot return raw tokens to browser code.
+
 ## Login
 
 1. The browser submits username and password to the same-origin Dashboard login route.
@@ -33,7 +35,7 @@ Passwords and raw tokens are not logged by the Dashboard implementation.
 
 ## Protected Terra-Ops proxy
 
-Dashboard client code uses `/api/dashboard-ops` instead of the historical unauthenticated `/api/ops` rewrite.
+Dashboard client code uses `/api/dashboard-ops` instead of the removed unauthenticated `/api/ops` rewrite.
 
 The BFF:
 
@@ -42,25 +44,38 @@ The BFF:
 3. reads the HttpOnly access cookie on the server;
 4. adds `Authorization: Bearer <access-token>` to the Terra-Ops request;
 5. forwards only the request method, body and required content type;
-6. returns the upstream status and response without exposing session cookies or tokens.
+6. returns the upstream status and response without exposing session cookies or tokens;
+7. never rotates a refresh token inside the protected proxy.
 
 Terra-Ops remains the authorization authority. Dashboard role display or controls are usability features and do not replace Spring Security or controller identity checks.
 
-## Refresh rotation
+## Serialized refresh rotation
 
-If the access token is absent or Terra-Ops returns `401 Unauthorized`, the BFF may attempt one refresh rotation with the HttpOnly refresh cookie.
+When a protected request returns `401 Unauthorized`, Dashboard client code restores the session through `GET /api/dashboard-auth/session` and retries the original protected request once.
 
-- A successful rotation replaces both cookies and retries the protected request once.
-- A failed rotation clears both Dashboard cookies and returns `401`.
-- The browser never handles the replacement refresh token.
-- The Terra-Ops single-use, replay-detection and token-family guarantees remain unchanged.
-- The BFF never loops on repeated `401` responses.
+Refresh is serialized at two levels:
 
-`GET /api/dashboard-auth/session` follows the same validation and one-time rotation behavior so the navigation shell can restore the current user after a page reload.
+- one module-level Promise coalesces concurrent requests in the current browser tab;
+- the same-origin Web Locks API serializes session restoration across tabs;
+- the Dashboard server coalesces simultaneous requests carrying the same refresh-token digest while the Terra-Ops rotation is in flight.
+
+The protected proxy itself retains the refresh cookie and returns `401`; it cannot independently race to rotate the same single-use credential.
+
+A successful session restoration:
+
+1. validates the current access token when present;
+2. otherwise rotates the HttpOnly refresh token through Terra-Ops;
+3. replaces both cookies;
+4. returns only the current username and roles;
+5. allows the client to retry the original request once.
+
+A failed rotation clears the Dashboard cookies and leaves the protected request unauthorized. The browser never handles the replacement refresh token, and Terra-Ops remains the owner of replay detection and token-family revocation.
+
+The server-side in-flight map is process-local defense in depth and is removed immediately after the rotation settles. A multi-replica production deployment must preserve the supported browser serialization path and should evaluate shared BFF session coordination or opaque server-side sessions.
 
 ## Logout
 
-`POST /api/dashboard-auth/logout` forwards the refresh token to Terra-Ops for individual server-side revocation and clears both Dashboard cookies regardless of the upstream result.
+`POST /api/dashboard-auth/logout` clears both Dashboard cookies and attempts individual server-side revocation through Terra-Ops with a 1.5-second timeout. An unavailable Terra-Ops instance cannot leave the browser waiting indefinitely with unchanged cookies.
 
 Already issued access JWTs remain stateless at Terra-Ops, but clearing the HttpOnly access cookie prevents the Dashboard BFF from sending that token again from the logged-out browser session.
 
@@ -76,12 +91,15 @@ Already issued access JWTs remain stateless at Terra-Ops, but clearing the HttpO
 `tests/dashboard-auth-e2e-test.py` runs against the Docker Compose stack and verifies:
 
 - cross-origin login rejection;
+- removal of the legacy `/api/ops/auth/login` bypass;
 - successful login using the Compose-only operator account;
 - absence of token values from browser-visible JSON;
 - HttpOnly, SameSite and `/api` cookie scope attributes;
 - authenticated session validation;
 - protected Terra-Ops access through the BFF;
 - rejection of non-allowlisted proxy routes;
+- access-cookie loss producing `401` without consuming the refresh token;
+- session-route rotation followed by a successful protected-request retry;
 - logout and post-logout access denial.
 
 The dedicated `Dashboard Authentication` GitHub Actions workflow builds the Compose services and executes this test.
@@ -90,5 +108,6 @@ The dedicated `Dashboard Authentication` GitHub Actions workflow builds the Comp
 
 - This is not access-token revocation. A copied access JWT remains valid directly against Terra-Ops until expiry.
 - Cookies reduce accidental token exposure but cannot protect a compromised Dashboard server or a browser with arbitrary script execution.
+- Browsers without Web Locks receive same-tab Promise coalescing but do not have the same cross-tab coordination guarantee.
 - Production HTTPS, CSP, trusted ingress isolation, secret management and key rotation remain deployment responsibilities.
 - Global logout, active-session administration, MFA, password reset and external identity providers remain separate work.
