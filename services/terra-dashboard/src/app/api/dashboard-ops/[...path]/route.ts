@@ -1,15 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
   ACCESS_COOKIE,
+  authError,
   callOps,
-  clearSessionCookies,
+  clearAccessCookie,
   copyUpstreamResponse,
   forbiddenOrigin,
   isAllowedOpsPath,
   isSameOrigin,
-  REFRESH_COOKIE,
-  rotateRefreshToken,
-  setSessionCookies,
 } from '@/lib/server/ops-session';
 
 export const dynamic = 'force-dynamic';
@@ -26,37 +24,17 @@ async function handle(request: NextRequest, context: RouteContext): Promise<Next
     return forbiddenOrigin();
   }
 
+  const accessToken = request.cookies.get(ACCESS_COOKIE)?.value;
+  if (!accessToken) return authError();
+
   const body = ['GET', 'HEAD'].includes(request.method) ? undefined : await request.arrayBuffer();
   const path = `/${segments.join('/')}${request.nextUrl.search}`;
-  let accessToken = request.cookies.get(ACCESS_COOKIE)?.value;
-  const refreshToken = request.cookies.get(REFRESH_COOKIE)?.value;
-  let rotated = null;
-
-  if (!accessToken && refreshToken) {
-    rotated = await rotateRefreshToken(refreshToken);
-    accessToken = rotated?.access_token;
-  }
-
-  if (!accessToken) {
-    const response = NextResponse.json({ status: 'error', message: 'Authentication required' }, { status: 401 });
-    clearSessionCookies(response);
-    return response;
-  }
-
-  let upstream = await forward(request, path, accessToken, body);
-  if (upstream.status === 401 && refreshToken && !rotated) {
-    rotated = await rotateRefreshToken(refreshToken);
-    if (rotated) {
-      upstream = await forward(request, path, rotated.access_token, body);
-    }
-  }
-
+  const upstream = await forward(request, path, accessToken, body);
   const response = await copyUpstreamResponse(upstream);
-  if (rotated) {
-    setSessionCookies(request, response, rotated);
-  } else if (upstream.status === 401) {
-    clearSessionCookies(response);
-  }
+
+  // Keep the refresh cookie so the browser's serialized session route can
+  // rotate once and retry the original request. The proxy never rotates.
+  if (upstream.status === 401) clearAccessCookie(response);
   return response;
 }
 
