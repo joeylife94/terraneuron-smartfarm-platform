@@ -111,7 +111,9 @@ The active CI/CD workflow verifies:
 - Terra-Dashboard production build;
 - JSON/YAML and contract consistency checks;
 - Prometheus configuration and alert-rule tests;
-- Docker Compose integration and command lifecycle behavior.
+- Docker Compose startup and the current neural-flow integration script.
+
+Command lifecycle, safety revalidation, MQTT publication and ACK/feedback behavior are verified through focused Terra-Ops and Terra-Sense tests. The current Compose E2E script does not exercise those paths end to end.
 
 The reusable Trivy workflow:
 
@@ -125,6 +127,7 @@ Prometheus metrics and alerts use bounded labels and avoid raw farm IDs, asset I
 
 - **Context validation remains advisory.** The framework is blocking-capable, but current context rules only generate warnings.
 - **Permission validation is lifecycle-oriented.** It validates approval metadata inside the action plan; farm/device ownership policy is not modeled as a domain authorization service.
+- **Dashboard authentication propagation is incomplete.** Safety-blocked list and revalidation client code exists, but the default dashboard path does not yet attach interactive authorization to protected Terra-Ops APIs.
 - **Action parameters are persisted as JSON text** on the current action-plan entity rather than a typed/queryable database structure.
 - **Device capability coverage is conservative and generic.** Manufacturer/model-specific adapters must implement explicit capability resolution.
 - **Alert-only delivery is not an acknowledgement system.** The physical safety exemption does not prove that a human received or acted on a notification.
