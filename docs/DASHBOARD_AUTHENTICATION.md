@@ -4,12 +4,12 @@ Terra-Dashboard uses a Next.js backend-for-frontend (BFF) boundary for interacti
 
 ## Architecture
 
-The browser calls same-origin Dashboard endpoints:
+All interactive authentication traffic shares one isolated prefix, `/api/dashboard`:
 
-- `POST /api/dashboard-auth/login`
-- `GET /api/dashboard-auth/session`
-- `POST /api/dashboard-auth/logout`
-- `/api/dashboard-ops/{allowed-path}` for protected Terra-Ops reads and mutations
+- `POST /api/dashboard/auth/login`
+- `GET /api/dashboard/auth/session`
+- `POST /api/dashboard/auth/logout`
+- `/api/dashboard/ops/{allowed-path}` for protected Terra-Ops reads and mutations
 
 Next.js route handlers call Terra-Ops through the server-only `TERRA_OPS_INTERNAL_URL`. The default Compose value is `http://terra-ops:8080/api`. This value must not use a `NEXT_PUBLIC_` prefix.
 
@@ -26,16 +26,18 @@ The historical `/api/ops/:path*` rewrite is removed. Protected Terra-Ops traffic
 5. The tokens are stored as separate cookies with:
    - `HttpOnly`;
    - `SameSite=Strict`;
-   - `Path=/api`, limiting delivery to Dashboard API handlers;
+   - `Path=/api/dashboard`, limiting delivery to Dashboard authentication and protected-proxy handlers;
    - expiry derived from the Terra-Ops token response;
    - `Secure` when the public Dashboard origin uses HTTPS.
 6. The browser receives only the authenticated username and roles.
+
+The cookie path does not match `/api/cortex`, `/api/sense` or any other service rewrite. Those proxied requests therefore cannot carry the interactive access or refresh JWT.
 
 Passwords and raw tokens are not logged by the Dashboard implementation.
 
 ## Protected Terra-Ops proxy
 
-Dashboard client code uses `/api/dashboard-ops` instead of the removed unauthenticated `/api/ops` rewrite.
+Dashboard client code uses `/api/dashboard/ops` instead of the removed unauthenticated `/api/ops` rewrite.
 
 The BFF:
 
@@ -51,7 +53,7 @@ Terra-Ops remains the authorization authority. Dashboard role display or control
 
 ## Serialized refresh rotation
 
-When a protected request returns `401 Unauthorized`, Dashboard client code restores the session through `GET /api/dashboard-auth/session` and retries the original protected request once.
+When a protected request returns `401 Unauthorized`, Dashboard client code restores the session through `GET /api/dashboard/auth/session` and retries the original protected request once.
 
 Refresh is serialized at two levels:
 
@@ -75,13 +77,13 @@ The server-side in-flight map is process-local defense in depth and is removed i
 
 ## Logout
 
-`POST /api/dashboard-auth/logout` clears both Dashboard cookies and attempts individual server-side revocation through Terra-Ops with a 1.5-second timeout. An unavailable Terra-Ops instance cannot leave the browser waiting indefinitely with unchanged cookies.
+`POST /api/dashboard/auth/logout` clears both Dashboard cookies and attempts individual server-side revocation through Terra-Ops with a 1.5-second timeout. An unavailable Terra-Ops instance cannot leave the browser waiting indefinitely with unchanged cookies.
 
 Already issued access JWTs remain stateless at Terra-Ops, but clearing the HttpOnly access cookie prevents the Dashboard BFF from sending that token again from the logged-out browser session.
 
 ## Cross-site request controls
 
-- Authentication cookies use `SameSite=Strict` and are scoped to `/api`.
+- Authentication cookies use `SameSite=Strict` and are scoped to `/api/dashboard`.
 - Login, logout and protected mutation requests reject a present `Origin` that does not equal the configured `DASHBOARD_PUBLIC_ORIGIN` or, when unset, the request URL origin.
 - The application does not derive the public origin directly from arbitrary `X-Forwarded-*` headers. Production ingress should set `DASHBOARD_PUBLIC_ORIGIN` explicitly and prevent direct access that bypasses the trusted proxy.
 - All authentication and protected API responses set `Cache-Control: no-store`.
@@ -94,7 +96,7 @@ Already issued access JWTs remain stateless at Terra-Ops, but clearing the HttpO
 - removal of the legacy `/api/ops/auth/login` bypass;
 - successful login using the Compose-only operator account;
 - absence of token values from browser-visible JSON;
-- HttpOnly, SameSite and `/api` cookie scope attributes;
+- HttpOnly, SameSite and `/api/dashboard` cookie scope attributes;
 - authenticated session validation;
 - protected Terra-Ops access through the BFF;
 - rejection of non-allowlisted proxy routes;
@@ -102,7 +104,7 @@ Already issued access JWTs remain stateless at Terra-Ops, but clearing the HttpO
 - session-route rotation followed by a successful protected-request retry;
 - logout and post-logout access denial.
 
-The dedicated `Dashboard Authentication` GitHub Actions workflow builds the Compose services and executes this test.
+The dedicated `Dashboard Authentication` GitHub Actions workflow builds the minimal Terra-Ops/Dashboard Compose stack and executes this test.
 
 ## Limits
 
