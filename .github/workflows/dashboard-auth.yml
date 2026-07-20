@@ -1,0 +1,104 @@
+name: Dashboard Authentication
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'services/terra-dashboard/**'
+      - 'services/terra-ops/**'
+      - 'tests/dashboard-auth-e2e-test.py'
+      - 'docker-compose.yml'
+      - '.github/workflows/dashboard-auth.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'services/terra-dashboard/**'
+      - 'services/terra-ops/**'
+      - 'tests/dashboard-auth-e2e-test.py'
+      - 'docker-compose.yml'
+      - '.github/workflows/dashboard-auth.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  dashboard-auth-e2e:
+    name: Dashboard Auth E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      JWT_SECRET: DEMO_ONLY_DASHBOARD_AUTH_CI_SECRET_32_CHARS_MIN
+      DASHBOARD_BASE_URL: http://localhost:3001
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Validate Docker Compose
+        run: docker compose config --quiet
+
+      - name: Start Terra-Ops Authentication Stack
+        run: |
+          docker compose up -d zookeeper kafka mysql
+          docker compose up -d --no-deps terra-ops
+          docker compose up -d --no-deps terra-dashboard
+
+      - name: Wait for Terra-Ops and Dashboard
+        shell: bash
+        run: |
+          wait_for_service() {
+            local service="$1"
+            local url="$2"
+            for attempt in {1..60}; do
+              if curl --fail --silent --show-error --max-time 5 "${url}" > /dev/null; then
+                echo "${service} is ready"
+                return 0
+              fi
+              sleep 5
+            done
+            echo "${service} did not become ready"
+            docker compose logs --tail=150 "${service}"
+            return 1
+          }
+
+          wait_for_service terra-ops http://localhost:8080/actuator/health
+          wait_for_service terra-dashboard http://localhost:3001/login
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Test Dependencies
+        run: pip install requests
+
+      - name: Validate Test Syntax
+        run: python -m py_compile tests/dashboard-auth-e2e-test.py
+
+      - name: Run Dashboard Authentication E2E
+        shell: bash
+        run: |
+          set -o pipefail
+          python tests/dashboard-auth-e2e-test.py 2>&1 | tee dashboard-auth-test.log
+
+      - name: Capture Diagnostics
+        if: always()
+        run: |
+          docker compose ps --all > dashboard-auth-compose-ps.txt 2>&1 || true
+          docker compose logs --no-color terra-dashboard terra-ops mysql > dashboard-auth-compose.log 2>&1 || true
+
+      - name: Upload Diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dashboard-auth-e2e-diagnostics
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            dashboard-auth-test.log
+            dashboard-auth-compose-ps.txt
+            dashboard-auth-compose.log
+
+      - name: Stop Docker Compose
+        if: always()
+        run: docker compose down -v
