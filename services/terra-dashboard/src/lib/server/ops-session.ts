@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { createHash } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 
 export const ACCESS_COOKIE = 'terraneuron_access_token';
@@ -8,6 +9,8 @@ export const REFRESH_COOKIE = 'terraneuron_refresh_token';
 const AUTH_COOKIE_PATH = '/api';
 const ALLOWED_OPS_ROOTS = new Set(['actions', 'crops', 'farms']);
 const OPS_BASE = (process.env.TERRA_OPS_INTERNAL_URL ?? 'http://terra-ops:8080/api').replace(/\/+$/, '');
+const OPS_TIMEOUT_MS = positiveMilliseconds(process.env.TERRA_OPS_BFF_TIMEOUT_MS, 5_000);
+const refreshFlights = new Map<string, Promise<OpsTokenEnvelope | null>>();
 
 export interface SessionUser {
   username: string;
@@ -37,6 +40,7 @@ export async function callOps(path: string, init?: RequestInit): Promise<Respons
     ...init,
     cache: 'no-store',
     redirect: 'manual',
+    signal: init?.signal ?? AbortSignal.timeout(OPS_TIMEOUT_MS),
     headers: {
       Accept: 'application/json',
       ...init?.headers,
@@ -44,7 +48,26 @@ export async function callOps(path: string, init?: RequestInit): Promise<Respons
   });
 }
 
+/**
+ * Coalesces refresh attempts using the same bearer credential while a rotation
+ * is in flight in this Dashboard process. The entry is removed immediately
+ * after settlement so replay detection remains owned by Terra-Ops.
+ */
 export async function rotateRefreshToken(refreshToken: string): Promise<OpsTokenEnvelope | null> {
+  const key = createHash('sha256').update(refreshToken).digest('hex');
+  const existing = refreshFlights.get(key);
+  if (existing) return existing;
+
+  const flight = rotateRefreshTokenOnce(refreshToken);
+  refreshFlights.set(key, flight);
+  try {
+    return await flight;
+  } finally {
+    if (refreshFlights.get(key) === flight) refreshFlights.delete(key);
+  }
+}
+
+async function rotateRefreshTokenOnce(refreshToken: string): Promise<OpsTokenEnvelope | null> {
   const response = await callOps('/auth/refresh', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -91,14 +114,17 @@ export function setSessionCookies(
   });
 }
 
+export function clearAccessCookie(response: NextResponse): void {
+  expireCookie(response, ACCESS_COOKIE);
+}
+
 export function clearSessionCookies(response: NextResponse): void {
-  response.cookies.set(ACCESS_COOKIE, '', {
-    httpOnly: true,
-    sameSite: 'strict',
-    path: AUTH_COOKIE_PATH,
-    maxAge: 0,
-  });
-  response.cookies.set(REFRESH_COOKIE, '', {
+  expireCookie(response, ACCESS_COOKIE);
+  expireCookie(response, REFRESH_COOKIE);
+}
+
+function expireCookie(response: NextResponse, name: string): void {
+  response.cookies.set(name, '', {
     httpOnly: true,
     sameSite: 'strict',
     path: AUTH_COOKIE_PATH,
@@ -153,12 +179,19 @@ function positiveSeconds(value: number): number {
   return Math.max(1, Math.floor(value));
 }
 
+function positiveMilliseconds(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+}
+
 function publicOrigin(request: NextRequest): string {
   const configured = process.env.DASHBOARD_PUBLIC_ORIGIN?.trim();
   if (!configured) return request.nextUrl.origin;
 
   try {
-    return new URL(configured).origin;
+    const origin = new URL(configured);
+    if (!['http:', 'https:'].includes(origin.protocol)) throw new Error('unsupported protocol');
+    return origin.origin;
   } catch {
     throw new Error('DASHBOARD_PUBLIC_ORIGIN must be an absolute HTTP(S) origin');
   }
