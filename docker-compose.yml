@@ -276,6 +276,9 @@ services:
       - "3001:3000"
     environment:
       NODE_ENV: production
+      TERRA_OPS_INTERNAL_URL: "${TERRA_OPS_INTERNAL_URL:-http://terra-ops:8080/api}"
+      DASHBOARD_PUBLIC_ORIGIN: "${DASHBOARD_PUBLIC_ORIGIN:-http://localhost:3001}"
+      TERRA_OPS_BFF_TIMEOUT_MS: "${TERRA_OPS_BFF_TIMEOUT_MS:-5000}"
     networks:
       - terraneuron-net
 
