@@ -1,160 +1,175 @@
 # TerraNeuron — Implementation Status
 
-> **Last updated:** 2026-07-17
-> **Scope of this document:** the single source of truth for what is actually implemented
-> in the current codebase. It supersedes the historical `docs/PROJECT_STATUS.md`,
-> `AUDIT_REPORT.md`, and `docs/IMPLEMENTATION_GAPS.md`, which described an earlier repository state and contradicted
-> the current code.
+> **Last updated:** 2026-07-20  
+> **Status:** production-oriented architecture prototype; not a production deployment  
+> **Authority:** this document is the single source of truth for repository implementation status.
 
-This is an architecture prototype that demonstrates production-grade patterns (microservices,
-Kafka, CloudEvents, human-in-the-loop safety). It is **not** a production deployment. The
-notes below are deliberately factual and verified against the current `main`-derived code.
+Historical status and audit documents may describe older repository states. When they conflict with this file or the current code, this file and the current code take precedence.
 
----
+## Current system boundary
 
-## Implemented / enforced
+TerraNeuron demonstrates an event-driven smart-farm control platform with:
 
-- **RBAC is enforced** in terra-ops via
-  [`SecurityConfig`](services/terra-ops/src/main/java/com/terraneuron/ops/security/SecurityConfig.java):
-  approve/reject endpoints require `ADMIN`/`OPERATOR`, read endpoints require an authenticated
-  role, and `anyRequest().authenticated()` is the default. Covered by `SecurityConfigTest`.
-- **JWT authentication** is wired (`JwtTokenProvider`, `JwtAuthenticationFilter`). The signing
-  key is sourced from `JWT_SECRET` with **no insecure in-repo fallback**
-  (`jwt.secret=${JWT_SECRET}`).
-- **Interactive users are authenticated from MySQL.** `AuthController` delegates to
-  `UserAuthenticationService`, which verifies BCrypt hashes, rejects disabled/misconfigured
-  accounts, records successful login time, and reloads enabled state and roles on refresh.
-  Access and refresh JWTs have enforced, non-interchangeable type claims.
-- **Human-in-the-loop approval flow** is implemented and now correct: a PENDING plan that
-  requires approval can be approved and proceeds to execution. See
-  [`ActionPlanService.approvePlan`](services/terra-ops/src/main/java/com/terraneuron/ops/service/ActionPlanService.java).
-- **4-layer SafetyValidator** runs on every approval (see advisory note below).
-- **Runtime JSON Schema validation** is enforced for canonical CloudEvents on all four ingress
-  paths. Both services load the packaged canonical schemas from `docs/contracts`; terra-ops
-  validates processed insights, action plans, and command feedback, while terra-sense validates
-  commands after normalizing legacy string parameters.
-- **Kafka consumers** persist action plans and insights to MySQL; approved/executed plans are
-  published to the `terra.control.command` topic.
-- **Command and feedback event contracts are documented** as Draft 7 JSON Schemas for
-  `terra.ops.command.execute` on `terra.control.command` and
-  `terra.sense.command.feedback` on `terra.control.feedback`. A unit test loads every contract
-  schema and validates all embedded examples. Command `parameters` are published as an object;
-  terra-sense retains support for the legacy JSON-string representation.
-- **Kafka consumer retry and dead-letter handling** is implemented for all three terra-ops
-  listeners. A shared `DefaultErrorHandler` retries failures twice with a fixed one-second
-  backoff, then `DeadLetterPublishingRecoverer` publishes the record to `<source-topic>.DLT`.
-  The three DLTs are declared through `KafkaAdmin`, and listener failures now propagate to the
-  container. Unit tests cover bounded recovery, DLT naming, failure propagation, and the insight
-  happy path.
-- **terra-sense** contains the command/feedback and persistence wiring
-  (`DeviceCommandConsumer`, `InfluxDbWriterService`, `MqttGatewayService`, plus their config
-  classes). These are present and configured. *(Full end-to-end runtime is not re-verified in
-  this PR — see Known gaps.)*
-- **CI exists:** `.github/workflows/ci-cd.yml` and `.github/workflows/security-scan.yml`.
-  The reusable Trivy workflow uploads a complete all-severity SARIF report and separately
-  blocks fixable HIGH/CRITICAL dependency vulnerabilities on every PR and `main` push.
-- **Tests exist:** terra-ops has unit tests for security, event validation, insight parsing,
-  the SafetyValidator, and the approval lifecycle.
-- **Terra-Ops database schema is versioned by Flyway.** Production startup applies additive
-  migrations and Hibernate uses `ddl-auto=validate`. Existing pre-Flyway volumes are baselined
-  at version 0 and reconciled without dropping application data. Compose demo credentials and
-  sample data live in a profile-only seed and are excluded from production migrations.
+- Java/Spring Boot ingestion and operations services;
+- Python/FastAPI analysis and RAG service;
+- Kafka event transport;
+- MySQL and InfluxDB persistence;
+- Redis command/device-state coordination;
+- MQTT device messaging;
+- a human approval and audit workflow;
+- Prometheus/Grafana observability;
+- GitHub Actions build, test, integration and dependency-security gates.
 
-## Partially implemented / advisory
+The repository validates production-grade software patterns in a local integration stack. It does not claim production infrastructure, physical equipment certification or unattended autonomous control.
 
-- **SafetyValidator layers 2 (Context) and 4 (Device State) are advisory/warning-only.** They
-  emit warnings but never produce blocking errors, so they cannot fail validation today. Only
-  **layer 1 (Logical)** and **layer 3 (Permission)** are enforced (blocking).
-- **Permission layer is structural, not identity-based.** Layer 3 checks plan status, the
-  `requiresApproval` flag, and approver metadata. Real RBAC/ownership/device-access checks are
-  marked `TODO` and are not yet implemented inside the validator (HTTP-layer RBAC is enforced
-  separately by `SecurityConfig`).
-- **Action `parameters` are stored as a JSON string** on the `ActionPlan` entity rather than a
-  typed/queryable column.
+## Implemented and enforced
 
-## Known gaps (out of scope for this PR)
+### Event contracts and processing
 
-- **Docker Compose startup is covered by the repository E2E smoke test**, but production-like
-  resilience and external-service behavior are not exhaustively verified.
-- **Refresh tokens remain stateless:** they are not persisted, rotated, or individually
-  revocable. Disabling an account blocks login/refresh/validate immediately, while an already
-  issued access token remains valid on protected APIs until expiry.
-- **Account administration and production secrets management** beyond externally supplied
-  `JWT_SECRET` are not implemented. The seeded users are local Compose/E2E fixtures only.
+- Canonical CloudEvents are runtime-validated against packaged JSON Schemas before domain processing.
+- Terra-Ops listeners use bounded retries and publish exhausted records to source-specific dead-letter topics.
+- Terra-Cortex uses stable event identifiers, a durable semantic deduplication ledger and Kafka transactional publication.
+- Critical Cortex task failures terminate the process rather than allowing partial processing against stale state.
+- Terra-Ops creates device commands through a transactional outbox.
+- A unique plan-to-outbox constraint prevents duplicate command creation.
+- Legacy command payloads and previously persisted outbox rows are reconciled without silently replaying terminal command truth.
 
-## Recently fixed (core TerraNeuron audit findings)
+### Command delivery and feedback
 
-- **Approval/safety lifecycle bug:** `approvePlan()` previously ran the SafetyValidator while
-  the plan was still `PENDING`, so layer 3 ("requires human approval") auto-rejected every
-  normal plan. Approval metadata (status `APPROVED`, approver, timestamp) is now set **before**
-  validation, so a valid human approval succeeds while invalid plans are still rejected.
-- **Added focused tests:** `SafetyValidatorTest` (layer behavior) and
-  `ActionPlanServiceApprovalTest` (approval happy path, rejection path, audit path).
-- **Removed unused DTOs:** `ActionPlanDto` and `CloudEventsEnvelope` were never referenced by
-  runtime or tests; the actual path is raw `Map` + `ActionPlanEventValidator`. Contract docs
-  updated to match.
-- **Retired stale audit docs** (`AUDIT_REPORT.md`, `docs/IMPLEMENTATION_GAPS.md`) in favor of
-  this document.
+- Terra-Sense claims command IDs through Redis before dispatch.
+- Duplicate Kafka delivery does not produce duplicate MQTT commands.
+- MQTT publication success/failure is represented through correlated feedback.
+- Device terminal ACKs are correlated to the original command and action plan.
+- ACK timeout and late-feedback behavior are represented in the action-plan lifecycle.
+- Safety-block terminal feedback can be replayed from Redis completion state when the Kafka command is redelivered.
+- Physical device ACK feedback does not have a separate durable outbox; if Kafka publication fails after an ACK, recovery depends on the device sending that ACK again.
 
-## Recently fixed (PR #7: "add Kafka retry and DLQ handling")
+### Four-layer approval validation
 
-- **Listener exceptions now propagate** from the action-plan, insight, and command-feedback
-  consumers instead of being logged and swallowed.
-- **Bounded retry and dead-letter recovery** now retries each failed record twice and publishes
-  exhausted records to the corresponding `.DLT` topic. Consumer auto-commit is explicitly
-  disabled and record acknowledgment is explicit.
+Terra-Ops evaluates four layers before creating an outbox command:
 
-## Recently fixed (PR #8: "add command and feedback schemas")
+1. **Logical — blocking:** required identity, action and lifecycle checks.
+2. **Context — advisory:** currently records contextual warnings such as a critical plan reduced to `alert_only`; it does not yet contain domain rules that block execution.
+3. **Permission — blocking:** requires the expected approval lifecycle and approver metadata. HTTP RBAC is separately enforced by Spring Security.
+4. **Device state — blocking for physical actions:** calls the Terra-Sense Device Safety Gate and fails closed.
 
-- **Added command and feedback JSON Schemas** matching the live terra-ops → terra-sense command
-  request and terra-sense → terra-ops feedback paths.
-- **Added schema/example consistency coverage** for every contract file. Runtime enforcement
-  was subsequently added in PR #11.
-- **Normalized command `parameters` at publication** from the entity's stored JSON text to a
-  JSON object and included `farm_id` explicitly in the command payload. The terra-sense
-  consumer remains backward-compatible with JSON-string parameters.
+The exact non-actuating pair `action_category=alert` and `action_type=alert_only` treats physical device state as not applicable. All other identity, contract, approval, outbox and delivery rules still apply.
 
-## Recently fixed (PR #10: "persist insight trace fields and audit detection")
+### Device Safety Gate
 
-- **Insight metadata is now persisted:** trace, asset, sensor, severity, raw value, confidence,
-  and RAG context fields parsed from canonical CloudEvents are retained on the insight entity;
-  available sensor/severity/value/confidence fields are also retained for legacy events.
-- **Insight detection is now recorded in audit logs** after the insight is saved, using the
-  persisted trace ID or a saved-insight-ID fallback for legacy events without one.
+Device safety is enforced twice:
 
-## Recently fixed (PR #11: "add runtime schema validation")
+- **Approval time:** Terra-Ops calls `POST /internal/device-safety/evaluate` using a short-lived service JWT.
+- **Pre-dispatch:** Terra-Sense evaluates the same policy after the Redis command claim and immediately before MQTT publication.
 
-- **Canonical CloudEvents are runtime-validated** against the corresponding schemas in
-  `docs/contracts` before domain parsing or processing.
-- **Validation failures propagate** to the listener container instead of being caught and
-  skipped. terra-ops validation failures propagate to the existing retry/DLT handling.
-  terra-sense command validation failures propagate to the listener container; no FAILED feedback
-  is emitted for schema-invalid commands, and no terra-sense DLT is introduced in this PR.
-- **Legacy compatibility remains intact:** legacy flat insight events are still parsed without
-  claiming schema validation, and legacy JSON-string command parameters are normalized to an
-  object before command-schema validation.
+The policy uses shared Redis state keyed by exact `(farmId, assetId)` identity and blocks physical actions when state is:
+
+- missing or stale;
+- offline, error, unknown or unrecognized;
+- in maintenance mode;
+- associated with an unknown or mismatched device type;
+- incompatible with the action category or action type;
+- missing a supported adjustment parameter.
+
+Approval-time safety failures create the retryable `SAFETY_BLOCKED` state:
+
+- approval identity and time are retained;
+- no command ID or outbox row is created;
+- the original expiration deadline remains authoritative;
+- explicit safety revalidation is required after state recovery;
+- a successful revalidation creates exactly one command/outbox pair in the same MySQL transaction.
+
+Pre-dispatch safety failures never call MQTT. Terra-Sense emits bounded, correlated terminal feedback and preserves command idempotency across redelivery.
+
+See [`docs/DEVICE_SAFETY_GATE.md`](docs/DEVICE_SAFETY_GATE.md).
+
+### Authentication and authorization
+
+- Interactive users are loaded from MySQL.
+- Passwords are verified using BCrypt.
+- Disabled accounts and invalid roles fail closed.
+- Access and refresh JWTs carry distinct token types and cannot be substituted for each other.
+- Account state and roles are reloaded during refresh and explicit validation.
+- Terra-Ops endpoints enforce authenticated access and role-based approval/rejection permissions.
+- Cortex → Ops and Ops → Sense use separate service-JWT boundaries with explicit subject, audience, scope and expiry checks.
+- CORS origins are explicit; wildcard configuration is not the intended deployment path.
+
+### Database ownership
+
+- Flyway is the sole Terra-Ops production schema owner.
+- Hibernate uses `ddl-auto=validate` rather than mutating production schema.
+- Empty databases install from canonical migrations.
+- Compatible pre-Flyway databases are baselined and forward-reconciled.
+- Legacy native ENUM columns, action-plan command references and duplicate outbox rows are normalized through versioned migrations.
+- Compose-only seed users and sample data are isolated from production migrations.
+
+### CI, security and observability
+
+The active CI/CD workflow verifies:
+
+- Terra-Sense and Terra-Ops Gradle builds and tests;
+- Terra-Cortex dependency installation, lint and tests;
+- Terra-Dashboard production build;
+- JSON/YAML and contract consistency checks;
+- Prometheus configuration and alert-rule tests;
+- Docker Compose startup and the current neural-flow integration script.
+
+Command lifecycle, safety revalidation, MQTT publication and ACK/feedback behavior are verified through focused Terra-Ops and Terra-Sense tests. The current Compose E2E script does not exercise those paths end to end.
+
+The reusable Trivy workflow:
+
+- uploads an all-severity SARIF report;
+- separately fails CI for fixable HIGH or CRITICAL dependency vulnerabilities;
+- runs from the active PR/main pipeline and remains available for scheduled/manual scans.
+
+Prometheus metrics and alerts use bounded labels and avoid raw farm IDs, asset IDs, event IDs, command IDs, payloads and secrets.
+
+## Partially implemented or advisory
+
+- **Context validation remains advisory.** The framework is blocking-capable, but current context rules only generate warnings.
+- **Permission validation is lifecycle-oriented.** It validates approval metadata inside the action plan; farm/device ownership policy is not modeled as a domain authorization service.
+- **Dashboard authentication propagation is incomplete.** Safety-blocked list and revalidation client code exists, but the default dashboard path does not yet attach interactive authorization to protected Terra-Ops APIs.
+- **Device ACK feedback durability is incomplete.** Command completion is rolled back when ACK-to-Kafka publication fails, so recovery depends on the physical device repeating the terminal ACK.
+- **Action parameters are persisted as JSON text** on the current action-plan entity rather than a typed/queryable database structure.
+- **Device capability coverage is conservative and generic.** Manufacturer/model-specific adapters must implement explicit capability resolution.
+- **Alert-only delivery is not an acknowledgement system.** The physical safety exemption does not prove that a human received or acted on a notification.
+
+## Known production gaps
+
+### Device and physical safety
+
+- MQTT client authentication, topic authorization and TLS are not yet production-enforced.
+- Device-reported status can be forged by an actor with broker access.
+- Application freshness checks do not prove physical equipment state.
+- The final safety check cannot eliminate a state change between evaluation and actuation.
+- Electrical interlocks, emergency stops, local controller limits and certified physical controls remain external requirements.
+- Manufacturer/model capability adapters and real-device integration evidence are incomplete.
+
+### Identity and account lifecycle
+
+- Refresh tokens are stateless and are not persisted, rotated or individually revoked.
+- Already issued access tokens remain usable until expiry unless an external revocation/session boundary is added.
+- Account administration, MFA, password reset and external identity-provider integration are not implemented.
+
+### Infrastructure and operations
+
+- Production secrets management, automated key rotation and deployment-specific access controls are not implemented in this repository.
+- Kafka, Redis, MySQL, InfluxDB, Mosquitto, Prometheus and Grafana are configured as a local/integration stack rather than a highly available production platform.
+- Production deployment manifests, backup/restore drills, disaster recovery objectives and runbooks require further work.
+- Large-scale load tests, long-duration soak tests and systematic fault-injection evidence are incomplete.
+
+## Documentation authority
+
+- [`README.md`](README.md) — repository overview and local execution
+- [`docs/DEVICE_SAFETY_GATE.md`](docs/DEVICE_SAFETY_GATE.md) — enforced device-safety flow, guarantees and limits
+- [`docs/ACTION_PROTOCOL.md`](docs/ACTION_PROTOCOL.md) — action/event contracts
+- [`docs/TERRA_OPS_SCHEMA_MIGRATIONS.md`](docs/TERRA_OPS_SCHEMA_MIGRATIONS.md) — schema ownership and upgrade behavior
+- [`docs/SECURITY_SCANNING.md`](docs/SECURITY_SCANNING.md) — dependency-security policy
+- [`AUDIT_REPORT.md`](AUDIT_REPORT.md) — retired historical audit pointer
 
 ## Recommended next PRs
 
-1. Promote SafetyValidator layers 2/4 from advisory warnings to enforced checks where the
-   domain requires hard gating.
-2. Add refresh-token persistence/rotation and an account administration or external identity
-   provider boundary.
-
-## Recently fixed (PR #37: database-backed authentication)
-
-- Removed the hardcoded plaintext user map from `AuthController`; login now verifies the
-  MySQL `users.password_hash` value with BCrypt and records `last_login`.
-- Added fail-closed account and role validation plus dummy BCrypt work for unknown usernames.
-- Added explicit access/refresh token type claims and rejected cross-use at the refresh endpoint
-  and protected API filter.
-- Added JPA, service, seed-hash contract, MVC security, and Docker E2E coverage.
-
-## Recently fixed (Terra-Ops schema versioning)
-
-- Replaced MySQL entrypoint initialization and Hibernate `ddl-auto=update` with Flyway V1/V2
-  migrations plus startup schema validation.
-- Added non-destructive baseline-0 adoption for existing volumes, including the outbox and
-  action-plan command correlation schema introduced by earlier reliability work.
-- Isolated idempotent demo data behind the Docker Compose profile and added MySQL 8 migration
-  tests for fresh installs, populated legacy upgrades, reruns, and data preservation.
+1. Persist, rotate and individually revoke refresh tokens.
+2. Add MQTT client identity, topic authorization and TLS deployment contracts.
+3. Define manufacturer/model capability adapter boundaries and contract tests.
+4. Add production deployment, secrets, high-availability and fault-injection evidence.

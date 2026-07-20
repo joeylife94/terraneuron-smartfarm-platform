@@ -1,22 +1,19 @@
 # TerraNeuron Audit Report — Retired
 
-> **This document has been retired.**
+> **Retired:** 2026-07-20  
+> **Replacement:** [`STATUS.md`](STATUS.md)
 
-The previous audit report (dated June 2026) described an earlier repository state and no
-longer matches the current code. Several of its headline findings are now stale, for example:
+This file is retained only to prevent old links from breaking. It is not an active audit, release gate or implementation-status document.
 
-- It claimed security was disabled via `anyRequest().permitAll()`. The current
-  [`SecurityConfig`](services/terra-ops/src/main/java/com/terraneuron/ops/security/SecurityConfig.java)
-  enforces role-based access and `anyRequest().authenticated()`.
-- It claimed **0% test coverage**. terra-ops now has unit tests for security, event
-  validation, insight parsing, the SafetyValidator, and the approval lifecycle.
-- It claimed **no CI/CD pipeline**. `.github/workflows/` now contains `ci-cd.yml` and
-  `security-scan.yml`.
-- It claimed the command consumer, InfluxDB writer, and MQTT gateway were absent/unwired.
-  terra-sense now includes `DeviceCommandConsumer`, `InfluxDbWriterService`, and
-  `MqttGatewayService`.
-- It claimed the JWT secret had an insecure in-repo fallback. The config is now
-  `jwt.secret=${JWT_SECRET}` with no fallback.
+The former audit described an earlier repository state and included findings that are no longer true, including claims that:
 
-For the current, verified status of what is implemented, enforced, advisory, or still missing,
-see **[STATUS.md](STATUS.md)** — the single source of truth.
+- Spring Security allowed all requests;
+- JWT secrets used an insecure in-repository fallback;
+- Terra-Ops had no meaningful test coverage;
+- CI/CD and security scanning were absent;
+- Terra-Sense command, InfluxDB and MQTT runtime paths were missing;
+- Device Safety layer 4 was only advisory.
+
+The current repository now includes enforced RBAC, database-backed users, separated user/service JWT boundaries, runtime schema validation, Kafka retry/DLT handling, transactional outbox delivery, command idempotency and ACK correlation, Flyway schema ownership, CI security gates and a two-stage fail-closed Device Safety Gate.
+
+For current verified behavior, remaining operational limits and recommended follow-up work, use [`STATUS.md`](STATUS.md). For the safety implementation specifically, use [`docs/DEVICE_SAFETY_GATE.md`](docs/DEVICE_SAFETY_GATE.md).
