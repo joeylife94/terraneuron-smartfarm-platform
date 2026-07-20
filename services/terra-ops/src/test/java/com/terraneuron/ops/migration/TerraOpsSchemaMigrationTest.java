@@ -32,8 +32,8 @@ class TerraOpsSchemaMigrationTest {
         Flyway fresh = productionFlyway();
         MigrateResult freshResult = fresh.migrate();
 
-        assertThat(freshResult.migrationsExecuted).isEqualTo(5);
-        assertThat(appliedVersions(fresh)).containsExactly("1", "2", "3", "4", "5");
+        assertThat(freshResult.migrationsExecuted).isEqualTo(6);
+        assertThat(appliedVersions(fresh)).containsExactly("1", "2", "3", "4", "5", "6");
         assertCoreSchema();
 
         fresh.clean();
@@ -46,8 +46,8 @@ class TerraOpsSchemaMigrationTest {
         Flyway legacy = productionFlyway();
         MigrateResult legacyResult = legacy.migrate();
 
-        assertThat(legacyResult.migrationsExecuted).isEqualTo(5);
-        assertThat(appliedVersions(legacy)).containsExactly("0", "1", "2", "3", "4", "5");
+        assertThat(legacyResult.migrationsExecuted).isEqualTo(6);
+        assertThat(appliedVersions(legacy)).containsExactly("0", "1", "2", "3", "4", "5", "6");
         assertCoreSchema();
         assertThat(legacy.migrate().migrationsExecuted).isZero();
 
@@ -59,12 +59,19 @@ class TerraOpsSchemaMigrationTest {
     private static void assertCoreSchema() throws Exception {
         assertThat(tableExists("action_plans")).isTrue();
         assertThat(tableExists("command_outbox")).isTrue();
+        assertThat(tableExists("refresh_token_sessions")).isTrue();
         assertThat(columnExists("action_plans", "command_id")).isTrue();
         assertThat(columnExists("action_plans", "ack_deadline_at")).isTrue();
         assertThat(columnExists("action_plans", "safety_block_reason_code")).isTrue();
         assertThat(columnExists("action_plans", "safety_blocked_at")).isTrue();
+        assertThat(columnExists("refresh_token_sessions", "token_hash")).isTrue();
+        assertThat(columnExists("refresh_token_sessions", "family_id")).isTrue();
+        assertThat(columnExists("refresh_token_sessions", "revoked_at")).isTrue();
         assertThat(indexExists("action_plans", "idx_plan_command_id")).isTrue();
         assertThat(indexExists("command_outbox", "uk_outbox_plan_id")).isTrue();
+        assertThat(indexExists("refresh_token_sessions", "uk_refresh_token_id")).isTrue();
+        assertThat(indexExists("refresh_token_sessions", "uk_refresh_token_hash")).isTrue();
+        assertThat(indexExists("refresh_token_sessions", "idx_refresh_family")).isTrue();
     }
 
     private static Flyway productionFlyway() {
