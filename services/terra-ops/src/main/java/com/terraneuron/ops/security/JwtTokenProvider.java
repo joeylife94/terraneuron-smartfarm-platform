@@ -1,6 +1,7 @@
 package com.terraneuron.ops.security;
 
 import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
@@ -20,9 +21,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-/**
- * JWT token provider for interactive Terra-Ops users.
- */
+/** JWT token provider for interactive Terra-Ops users. */
 @Slf4j
 @Component
 public class JwtTokenProvider {
@@ -115,40 +114,66 @@ public class JwtTokenProvider {
         return new GeneratedRefreshToken(token, tokenId, familyId, issuedAt, expiresAt);
     }
 
-    /** Parse and validate all required refresh-token identity claims. */
+    /** Parse a non-expired refresh token with every required rotation claim. */
     public Optional<RefreshTokenClaims> parseRefreshToken(String token) {
         if (!StringUtils.hasText(token)) {
             return Optional.empty();
         }
 
         try {
-            Claims claims = parseClaims(token);
-            String type = claims.get("type", String.class);
-            String username = claims.getSubject();
-            String tokenId = claims.getId();
-            String familyId = claims.get(REFRESH_FAMILY_CLAIM, String.class);
-            Date issuedAt = claims.getIssuedAt();
-            Date expiresAt = claims.getExpiration();
-
-            if (!REFRESH_TYPE.equals(type)
-                    || !StringUtils.hasText(username)
-                    || !StringUtils.hasText(tokenId)
-                    || !StringUtils.hasText(familyId)
-                    || issuedAt == null
-                    || expiresAt == null) {
-                return Optional.empty();
-            }
-
-            return Optional.of(new RefreshTokenClaims(
-                    username,
-                    tokenId,
-                    familyId,
-                    issuedAt.toInstant(),
-                    expiresAt.toInstant()));
+            return toRefreshTokenClaims(parseClaims(token));
         } catch (JwtException | IllegalArgumentException exception) {
             log.debug("Refresh JWT validation failed: {}", exception.getMessage());
             return Optional.empty();
         }
+    }
+
+    /**
+     * Parse refresh identity for rotation and replay handling.
+     *
+     * An expired token cannot authorize a refresh, but its signature-verified
+     * identity is still needed to load the persisted row and detect reuse of a
+     * token that was previously rotated. Expired claims are accepted only by
+     * this rotation-specific method; normal token validation remains strict.
+     */
+    public Optional<RefreshTokenClaims> parseRefreshTokenForRotation(String token) {
+        if (!StringUtils.hasText(token)) {
+            return Optional.empty();
+        }
+
+        try {
+            return toRefreshTokenClaims(parseClaims(token));
+        } catch (ExpiredJwtException exception) {
+            return toRefreshTokenClaims(exception.getClaims());
+        } catch (JwtException | IllegalArgumentException exception) {
+            log.debug("Refresh JWT rotation parsing failed: {}", exception.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    private Optional<RefreshTokenClaims> toRefreshTokenClaims(Claims claims) {
+        String type = claims.get("type", String.class);
+        String username = claims.getSubject();
+        String tokenId = claims.getId();
+        String familyId = claims.get(REFRESH_FAMILY_CLAIM, String.class);
+        Date issuedAt = claims.getIssuedAt();
+        Date expiresAt = claims.getExpiration();
+
+        if (!REFRESH_TYPE.equals(type)
+                || !StringUtils.hasText(username)
+                || !StringUtils.hasText(tokenId)
+                || !StringUtils.hasText(familyId)
+                || issuedAt == null
+                || expiresAt == null) {
+            return Optional.empty();
+        }
+
+        return Optional.of(new RefreshTokenClaims(
+                username,
+                tokenId,
+                familyId,
+                issuedAt.toInstant(),
+                expiresAt.toInstant()));
     }
 
     /** Extract username from any valid signed token. */
@@ -171,7 +196,7 @@ public class JwtTokenProvider {
         return validateTokenType(token, ACCESS_TYPE);
     }
 
-    /** Validate a signed refresh token with all rotation claims present. */
+    /** Validate a non-expired signed refresh token with all rotation claims present. */
     public boolean validateRefreshToken(String token) {
         return parseRefreshToken(token).isPresent();
     }
