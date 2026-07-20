@@ -5,6 +5,8 @@ import { NextRequest, NextResponse } from 'next/server';
 export const ACCESS_COOKIE = 'terraneuron_access_token';
 export const REFRESH_COOKIE = 'terraneuron_refresh_token';
 
+const AUTH_COOKIE_PATH = '/api';
+const ALLOWED_OPS_ROOTS = new Set(['actions', 'crops', 'farms']);
 const OPS_BASE = (process.env.TERRA_OPS_INTERNAL_URL ?? 'http://terra-ops:8080/api').replace(/\/+$/, '');
 
 export interface SessionUser {
@@ -74,9 +76,9 @@ export function setSessionCookies(
 ): void {
   const common = {
     httpOnly: true,
-    secure: externalProtocol(request) === 'https',
+    secure: publicOrigin(request).startsWith('https://'),
     sameSite: 'strict' as const,
-    path: '/',
+    path: AUTH_COOKIE_PATH,
   };
 
   response.cookies.set(ACCESS_COOKIE, tokens.access_token, {
@@ -93,26 +95,20 @@ export function clearSessionCookies(response: NextResponse): void {
   response.cookies.set(ACCESS_COOKIE, '', {
     httpOnly: true,
     sameSite: 'strict',
-    path: '/',
+    path: AUTH_COOKIE_PATH,
     maxAge: 0,
   });
   response.cookies.set(REFRESH_COOKIE, '', {
     httpOnly: true,
     sameSite: 'strict',
-    path: '/',
+    path: AUTH_COOKIE_PATH,
     maxAge: 0,
   });
 }
 
 export function isSameOrigin(request: NextRequest): boolean {
   const origin = request.headers.get('origin');
-  if (!origin) return true;
-
-  const forwardedHost = request.headers.get('x-forwarded-host')?.split(',')[0]?.trim();
-  const host = forwardedHost || request.headers.get('host');
-  if (!host) return false;
-
-  return origin === `${externalProtocol(request)}://${host}`;
+  return !origin || origin === publicOrigin(request);
 }
 
 export async function copyUpstreamResponse(upstream: Response): Promise<NextResponse> {
@@ -128,8 +124,7 @@ export async function copyUpstreamResponse(upstream: Response): Promise<NextResp
 }
 
 export function isAllowedOpsPath(path: string[]): boolean {
-  if (path.length === 0) return false;
-  if (!new Set(['actions', 'crops', 'farms']).has(path[0])) return false;
+  if (path.length === 0 || !ALLOWED_OPS_ROOTS.has(path[0])) return false;
   return path.every((segment) => /^[A-Za-z0-9._~-]+$/.test(segment) && segment !== '..');
 }
 
@@ -158,9 +153,13 @@ function positiveSeconds(value: number): number {
   return Math.max(1, Math.floor(value));
 }
 
-function externalProtocol(request: NextRequest): 'http' | 'https' {
-  const forwarded = request.headers.get('x-forwarded-proto')?.split(',')[0]?.trim();
-  if (forwarded === 'https') return 'https';
-  if (forwarded === 'http') return 'http';
-  return request.nextUrl.protocol === 'https:' ? 'https' : 'http';
+function publicOrigin(request: NextRequest): string {
+  const configured = process.env.DASHBOARD_PUBLIC_ORIGIN?.trim();
+  if (!configured) return request.nextUrl.origin;
+
+  try {
+    return new URL(configured).origin;
+  } catch {
+    throw new Error('DASHBOARD_PUBLIC_ORIGIN must be an absolute HTTP(S) origin');
+  }
 }
