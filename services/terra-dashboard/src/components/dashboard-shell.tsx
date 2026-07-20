@@ -26,6 +26,10 @@ function ShellContent({ children }: { children: React.ReactNode }) {
     router.refresh();
   }
 
+  let page = children;
+  if (protectedRoute && loading) page = <SessionLoading />;
+  if (protectedRoute && !loading && !user) page = <LoginRequired />;
+
   return (
     <div className="min-h-screen flex flex-col">
       <header className="sticky top-0 z-50 bg-terra-800 text-white shadow-lg">
@@ -63,13 +67,21 @@ function ShellContent({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      <main className="flex-1 max-w-7xl mx-auto w-full px-4 py-6">
-        {protectedRoute && !loading && !user ? <LoginRequired /> : children}
-      </main>
+      <main className="flex-1 max-w-7xl mx-auto w-full px-4 py-6">{page}</main>
 
       <footer className="border-t border-gray-200 py-4 text-center text-xs text-gray-400">
         TerraNeuron v2.0 — Hybrid AI Smart Farm Platform
       </footer>
+    </div>
+  );
+}
+
+function SessionLoading() {
+  return (
+    <div className="max-w-lg mx-auto mt-16 card card-body text-center space-y-3" aria-live="polite">
+      <div className="text-3xl animate-pulse">🔐</div>
+      <h1 className="text-lg font-semibold text-gray-900">세션을 확인하고 있습니다</h1>
+      <p className="text-sm text-gray-500">인증 확인이 끝날 때까지 보호된 화면과 API 요청을 시작하지 않습니다.</p>
     </div>
   );
 }
