@@ -54,7 +54,7 @@ public class RefreshTokenService {
      */
     @Transactional
     public Optional<RotationResult> rotate(String rawToken) {
-        Optional<RefreshTokenClaims> parsed = tokenProvider.parseRefreshToken(rawToken);
+        Optional<RefreshTokenClaims> parsed = tokenProvider.parseRefreshTokenForRotation(rawToken);
         if (parsed.isEmpty()) {
             return Optional.empty();
         }
@@ -73,6 +73,8 @@ public class RefreshTokenService {
             return Optional.empty();
         }
 
+        // Reuse detection precedes expiry handling. A known token that was
+        // rotated remains replay evidence even after its own JWT expiry.
         if (current.getRevokedAt() != null) {
             if (REASON_ROTATED.equals(current.getRevokeReason())) {
                 revokeFamily(current.getFamilyId(), now, REASON_REUSE_DETECTED);
