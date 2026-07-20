@@ -1,474 +1,196 @@
-# 🚀 TerraNeuron 배포 가이드
+# TerraNeuron Deployment Guide
 
-> **📅 Last Updated:** 2026-02-27  
-> **📖 관련 문서:** [PROJECT_STATUS.md](PROJECT_STATUS.md) | [DEVELOPMENT_GUIDE.md](DEVELOPMENT_GUIDE.md) | [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
+> **Last updated:** 2026-07-20  
+> **Validated target:** local Docker Compose integration stack  
+> **Production status:** not production-ready
 
-프로덕션 환경에 TerraNeuron을 배포하는 완전한 가이드입니다.
+This document describes the repository-supported local deployment path and the controls required before a real production rollout. It does not claim that the included Compose topology, credentials or example infrastructure are suitable for unattended physical control.
 
-> ⚠️ **주의:** 현재 Spring Security RBAC가 비활성 상태이고, JWT Secret이 하드코딩되어 있습니다.
-> 프로덕션 배포 전 반드시 [PROJECT_STATUS.md](PROJECT_STATUS.md)의 "Critical 이슈" 항목을 해결하세요.
+Current implementation status and known gaps are maintained in [`../STATUS.md`](../STATUS.md).
 
-## 📋 목차
+## 1. Local integration deployment
 
-- [사전 요구사항](#사전-요구사항)
-- [로컬 배포](#로컬-배포)
-- [클라우드 배포](#클라우드-배포)
-- [Kubernetes 배포](#kubernetes-배포)
-- [환경 변수 설정](#환경-변수-설정)
-- [보안 설정](#보안-설정)
-- [모니터링 설정](#모니터링-설정)
+### Requirements
 
-## ✅ 사전 요구사항
-
-### 최소 시스템 요구사항
-
-- **CPU**: 4 cores
-- **RAM**: 8GB
-- **Disk**: 50GB
-- **OS**: Linux (Ubuntu 20.04+), macOS, Windows with WSL2
-
-### 필수 소프트웨어
-
-- Docker 24.0+
-- Docker Compose 2.0+
+- Docker Engine 24+
+- Docker Compose v2
 - Git
+- approximately 8 GB RAM for the full stack
 
-## 🏠 로컬 배포
-
-### 1. 저장소 클론
+### Clone and configure
 
 ```bash
 git clone https://github.com/joeylife94/terraneuron-smartfarm-platform.git
 cd terraneuron-smartfarm-platform
+cp .env.example .env
 ```
 
-### 2. 환경 변수 설정
+Replace all local placeholders before starting a shared environment:
+
+```dotenv
+JWT_SECRET=<random-user-jwt-secret-at-least-32-bytes>
+SERVICE_AUTH_JWT_SECRET=<independent-cortex-ops-secret-at-least-32-bytes>
+DEVICE_SAFETY_JWT_SECRET=<independent-ops-sense-secret-at-least-32-bytes>
+REDIS_PASSWORD=<random-redis-password>
+```
+
+Do not reuse one key for multiple trust boundaries.
+
+The default Compose load includes `docker-compose.yml` and `docker-compose.override.yml`. The override wires:
+
+- Redis-backed command and device-state registries;
+- Device Safety freshness and TTL settings;
+- Cortex → Ops service authentication;
+- Ops → Sense Device Safety authentication;
+- Cortex transactional and deduplication settings.
+
+### Start and inspect
 
 ```bash
-# .env 파일 생성
-cat > .env << EOF
-# Kafka
-KAFKA_BOOTSTRAP_SERVERS=kafka:29092
-
-# MySQL
-MYSQL_ROOT_PASSWORD=terra2025
-MYSQL_DATABASE=terra_ops
-MYSQL_USER=terra
-MYSQL_PASSWORD=terra2025
-
-# InfluxDB
-INFLUXDB_ADMIN_USER=admin
-INFLUXDB_ADMIN_PASSWORD=terra2025
-INFLUXDB_ADMIN_TOKEN=terra-token-2025
-
-# Grafana
-GF_SECURITY_ADMIN_PASSWORD=terra2025
-EOF
+docker compose up -d
+docker compose ps
+docker compose logs --tail=200
 ```
 
-### 3. 시스템 실행
+Stop the stack with:
 
 ```bash
-# 전체 스택 실행
-docker-compose up -d
-
-# 로그 확인
-docker-compose logs -f
-
-# 서비스 상태 확인
-docker-compose ps
+docker compose down
 ```
 
-### 4. 헬스체크
+Use `docker compose down -v` only when intentionally deleting local state.
 
-```bash
-# Terra-Sense
-curl http://localhost:8081/api/v1/ingest/health
+## 2. Service endpoints
 
-# Terra-Cortex
-curl http://localhost:8082/health
+| Component | URL | Purpose |
+|---|---|---|
+| Terra-Gateway | `http://localhost:8000` | gateway and rate limiting |
+| Terra-Sense | `http://localhost:8081` | ingestion, device status and command dispatch |
+| Terra-Cortex | `http://localhost:8082` | analysis API and health |
+| Terra-Ops | `http://localhost:8080` | authentication and action-plan APIs |
+| Terra-Dashboard | `http://localhost:3001` | operator interface |
+| Grafana | `http://localhost:3000` | provisioned dashboards |
+| Prometheus | `http://localhost:9090` | metrics and alert rules |
+| InfluxDB | `http://localhost:8086` | time-series storage |
 
-# Terra-Ops
-curl http://localhost:8080/api/v1/health
+Swagger/OpenAPI exposure depends on the active service profile. Prefer service health endpoints and the repository E2E flow for deployment validation rather than treating an open port as proof of readiness.
 
-# Grafana
-open http://localhost:3000
+## 3. Device Safety configuration
+
+Default local values:
+
+```dotenv
+DEVICE_STATE_FRESHNESS_SECONDS=120
+DEVICE_STATE_TTL_SECONDS=600
 ```
 
-## ☁️ 클라우드 배포
+Requirements:
 
-### AWS EC2 배포
+- TTL must be greater than the freshness window.
+- Freshness must be tuned to actual heartbeat cadence and network behavior.
+- Redis unavailability intentionally blocks physical device commands.
+- The exact non-actuating `alert` / `alert_only` path does not require Redis device state.
 
-#### 1. EC2 인스턴스 생성
+See [`DEVICE_SAFETY_GATE.md`](DEVICE_SAFETY_GATE.md).
 
-- **Instance Type**: t3.medium (2 vCPU, 4GB RAM) 이상
-- **OS**: Ubuntu 22.04 LTS
-- **Security Group**: 포트 개방
-  - 8000 (terra-gateway)
-  - 8081 (terra-sense)
-  - 8082 (terra-cortex)
-  - 8083 (terra-ops)
-  - 3000 (Grafana)
-  - 9090 (Prometheus)
-  - 22 (SSH)
+## 4. Authentication boundaries
 
-#### 2. Docker 설치
+TerraNeuron currently uses three independent JWT boundaries:
 
-```bash
-# SSH 접속
-ssh -i your-key.pem ubuntu@your-ec2-ip
+| Boundary | Secret | Purpose |
+|---|---|---|
+| interactive user → Terra-Ops | `JWT_SECRET` | access/refresh tokens and RBAC |
+| Terra-Cortex → Terra-Ops | `SERVICE_AUTH_JWT_SECRET` | internal crop-read service calls |
+| Terra-Ops → Terra-Sense | `DEVICE_SAFETY_JWT_SECRET` | internal Device Safety evaluation |
 
-# Docker 설치
-curl -fsSL https://get.docker.com -o get-docker.sh
-sudo sh get-docker.sh
+Production deployments must provide secrets externally. Repository-local placeholders are for development only.
 
-# Docker Compose 설치
-sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-sudo chmod +x /usr/local/bin/docker-compose
+Refresh tokens are currently stateless: they are not persisted, rotated or individually revoked. This is a known production gap, not a deployment feature.
 
-# 현재 사용자를 docker 그룹에 추가
-sudo usermod -aG docker $USER
-newgrp docker
+## 5. Container images
+
+The main workflow publishes both repository-scoped and legacy-compatible GHCR tags for Java services:
+
+```text
+ghcr.io/joeylife94/terraneuron-smartfarm-platform/terra-sense:<tag>
+ghcr.io/joeylife94/terraneuron-smartfarm-platform/terra-ops:<tag>
+
+ghcr.io/joeylife94/terraneuron-terra-sense:<tag>
+ghcr.io/joeylife94/terraneuron-terra-ops:<tag>
 ```
 
-#### 3. 애플리케이션 배포
-
-```bash
-# 저장소 클론
-git clone https://github.com/joeylife94/terraneuron-smartfarm-platform.git
-cd terraneuron-smartfarm-platform
-
-# 환경 변수 설정 (위의 .env 파일 내용 참고)
-nano .env
-
-# 실행
-docker-compose up -d
-```
-
-#### 4. 보안 강화 (선택사항)
-
-```bash
-# 방화벽 설정
-sudo ufw allow 22/tcp
-sudo ufw allow 8000:8083/tcp
-sudo ufw allow 3000/tcp
-sudo ufw enable
-
-# SSL/TLS 인증서 설정 (Let's Encrypt)
-sudo apt-get install certbot
-sudo certbot certonly --standalone -d yourdomain.com
-
-# Nginx 리버스 프록시 설정 (Optional)
-sudo apt-get install nginx
-# nginx.conf 편집하여 SSL 터미네이션 설정
-```
-
-### Azure Container Instances 배포
-
-```bash
-# Azure CLI 설치
-curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
-
-# 로그인
-az login
-
-# 리소스 그룹 생성
-az group create --name terraneuron-rg --location koreacentral
-
-# Container Registry 생성
-az acr create --resource-group terraneuron-rg --name terraneuronregistry --sku Basic
-
-# Docker 이미지 빌드 & 푸시
-az acr build --registry terraneuronregistry --image terra-sense:latest ./services/terra-sense
-az acr build --registry terraneuronregistry --image terra-cortex:latest ./services/terra-cortex
-az acr build --registry terraneuronregistry --image terra-ops:latest ./services/terra-ops
-
-# Container Instances 배포 (예시)
-az container create \
-  --resource-group terraneuron-rg \
-  --name terra-ops \
-  --image terraneuronregistry.azurecr.io/terra-ops:latest \
-  --cpu 1 --memory 2 \
-  --ports 8080 \
-  --environment-variables \
-    SPRING_KAFKA_BOOTSTRAP_SERVERS=your-kafka-server:9092 \
-    SPRING_DATASOURCE_URL=jdbc:mysql://your-mysql:3306/terra_ops
-```
-
-## ⚓ Kubernetes 배포
-
-### 1. 네임스페이스 생성
-
-```bash
-kubectl create namespace terraneuron
-```
-
-### 2. ConfigMap 생성
-
-```yaml
-# k8s/configmap.yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: terraneuron-config
-  namespace: terraneuron
-data:
-  KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
-  MYSQL_DATABASE: "terra_ops"
-```
-
-### 3. Secret 생성
-
-```bash
-kubectl create secret generic terraneuron-secrets \
-  --from-literal=mysql-password=terra2025 \
-  --from-literal=influxdb-token=terra-token-2025 \
-  -n terraneuron
-```
-
-### 4. 서비스 배포
-
-```yaml
-# k8s/terra-ops-deployment.yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: terra-ops
-  namespace: terraneuron
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: terra-ops
-  template:
-    metadata:
-      labels:
-        app: terra-ops
-    spec:
-      containers:
-      - name: terra-ops
-        image: ghcr.io/joeylife94/terraneuron-terra-ops:latest
-        ports:
-        - containerPort: 8080
-        envFrom:
-        - configMapRef:
-            name: terraneuron-config
-        env:
-        - name: SPRING_DATASOURCE_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: terraneuron-secrets
-              key: mysql-password
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: terra-ops
-  namespace: terraneuron
-spec:
-  type: LoadBalancer
-  ports:
-  - port: 80
-    targetPort: 8080
-  selector:
-    app: terra-ops
-```
-
-```bash
-# 배포
-kubectl apply -f k8s/
-```
-
-## 🔐 보안 설정
-
-### 1. 프로덕션 비밀번호 변경
-
-```bash
-# .env 파일의 모든 비밀번호를 강력한 것으로 변경
-MYSQL_ROOT_PASSWORD=<strong-random-password>
-MYSQL_PASSWORD=<strong-random-password>
-INFLUXDB_ADMIN_PASSWORD=<strong-random-password>
-GF_SECURITY_ADMIN_PASSWORD=<strong-random-password>
-```
-
-### 2. HTTPS 설정 (Nginx Reverse Proxy)
-
-```nginx
-# nginx.conf
-server {
-    listen 443 ssl http2;
-    server_name your-domain.com;
-
-    ssl_certificate /etc/letsencrypt/live/your-domain.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/your-domain.com/privkey.pem;
-
-    location / {
-        proxy_pass http://localhost:8080;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-}
-```
-
-### 3. 방화벽 설정
-
-```bash
-# UFW (Ubuntu)
-sudo ufw allow 22/tcp    # SSH
-sudo ufw allow 443/tcp   # HTTPS
-sudo ufw enable
-```
-
-## 📊 모니터링 설정
-
-### Grafana 대시보드 접근
-
-```
-URL: http://your-server:3000
-Username: admin
-Password: terra2025 (변경 권장)
-```
-
-### Prometheus 메트릭 확인
-
-```
-URL: http://your-server:9090
-```
-
-### 알림 설정 (Slack)
-
-```yaml
-# infra/grafana/provisioning/notifiers/slack.yaml
-notifiers:
-  - name: Slack
-    type: slack
-    uid: slack_notifier
-    settings:
-      url: https://hooks.slack.com/services/YOUR/WEBHOOK/URL
-      recipient: '#terraneuron-alerts'
-```
-
-## 🔄 업데이트 및 롤백
-
-### 업데이트
-
-```bash
-# 최신 코드 가져오기
-git pull origin main
-
-# 재배포
-docker-compose pull
-docker-compose up -d
-```
-
-### 롤백
-
-```bash
-# 특정 버전으로 롤백
-git checkout v1.0.0
-docker-compose up -d
-```
-
-## 🧹 유지보수
-
-### 로그 정리
-
-```bash
-# Docker 로그 크기 제한 (docker-compose.yml에 추가)
-logging:
-  driver: "json-file"
-  options:
-    max-size: "10m"
-    max-file: "3"
-```
-
-### 백업
-
-```bash
-# MySQL 백업
-docker exec terraneuron-mysql mysqldump -u terra -pterra2025 terra_db > backup_$(date +%Y%m%d).sql
-
-# InfluxDB 백업
-docker exec terraneuron-influxdb influx backup /tmp/backup
-docker cp terraneuron-influxdb:/tmp/backup ./influxdb_backup_$(date +%Y%m%d)
-
-# 전체 볼륨 백업
-docker run --rm -v terraneuron-mysql-data:/data -v $(pwd):/backup alpine tar czf /backup/mysql_backup_$(date +%Y%m%d).tar.gz /data
-```
-
-### 복구
-
-```bash
-# MySQL 복구
-docker exec -i terraneuron-mysql mysql -u terra -pterra2025 terra_db < backup_20251209.sql
-
-# InfluxDB 복구
-docker cp ./influxdb_backup_20251209 terraneuron-influxdb:/tmp/backup
-docker exec terraneuron-influxdb influx restore /tmp/backup
-```
-
-## 🌐 추가 클라우드 배포 옵션
-
-### Google Cloud Platform (GCP)
-
-```bash
-# GKE 클러스터 생성
-gcloud container clusters create terraneuron-cluster \
-  --zone asia-northeast3-a \
-  --num-nodes 3
-
-# kubectl 설정
-gcloud container clusters get-credentials terraneuron-cluster
-
-# 배포
-kubectl apply -f k8s/
-```
-
-### DigitalOcean Kubernetes
-
-```bash
-# doctl 설치 및 로그인
-snap install doctl
-doctl auth init
-
-# Kubernetes 클러스터 생성
-doctl kubernetes cluster create terraneuron-cluster \
-  --region sgp1 \
-  --node-pool "name=worker;size=s-2vcpu-4gb;count=3"
-
-# 배포
-kubectl apply -f k8s/
-```
-
-## 📚 추가 참고 자료
-
-- [Docker Compose 문서](https://docs.docker.com/compose/)
-- [Kubernetes 공식 가이드](https://kubernetes.io/docs/)
-- [TerraNeuron 트러블슈팅](TROUBLESHOOTING.md)
-- [프로젝트 README](../README.md)
-
----
-
-**배포 성공을 기원합니다! 🚀**
-# MySQL 백업
-docker exec terraneuron-mysql mysqldump -u terra -pterra2025 terra_ops > backup.sql
-
-# InfluxDB 백업
-docker exec terraneuron-influxdb influx backup /backup
-
-# 데이터 볼륨 백업
-docker run --rm --volumes-from terraneuron-mysql -v $(pwd):/backup ubuntu tar cvf /backup/mysql-backup.tar /var/lib/mysql
-```
-
-## 🆘 트러블슈팅
-
-[TROUBLESHOOTING.md](TROUBLESHOOTING.md) 참고
-
-## 📚 추가 리소스
-
-- [프로젝트 현황](PROJECT_STATUS.md)
-- [개발 가이드](DEVELOPMENT_GUIDE.md)
-- [API 레퍼런스](API_REFERENCE.md)
-- [아키텍처 문서](ANDERCORE_FIT_ARCHITECTURE.md)
-- [API 문서 (Swagger)](http://your-server:8083/swagger-ui.html)
-- [모니터링 대시보드](http://your-server:3000)
+Prefer immutable commit-SHA tags for controlled deployments. `latest` is convenient for local evaluation but does not provide a rollback identity.
+
+## 6. Pre-production requirements
+
+The following controls are required before exposing TerraNeuron to real equipment or public networks.
+
+### Network and broker security
+
+- MQTT client certificates or another strong client-identity mechanism;
+- per-device topic authorization;
+- MQTT TLS and certificate rotation;
+- encrypted Kafka, database and Redis connections where traffic crosses trust boundaries;
+- firewall and private-network policies that expose only required entry points.
+
+### Physical safety
+
+- manufacturer/model-specific capability adapters;
+- electrical and controller-level interlocks;
+- emergency stops and safe local fallback behavior;
+- verified heartbeat and clock-skew contracts;
+- tests proving that invalid or forged state cannot authorize physical actuation.
+
+The application Device Safety Gate is defense in depth. It does not replace certified physical controls.
+
+### Identity and secrets
+
+- managed secrets storage and automated rotation;
+- refresh-token persistence, rotation and revocation;
+- account administration, MFA and password reset;
+- auditable operator/device provisioning and removal.
+
+### Availability and recovery
+
+- highly available Kafka, Redis, MySQL, InfluxDB, MQTT and monitoring services;
+- backup and restore procedures tested against actual recovery objectives;
+- rolling-upgrade and schema-migration runbooks;
+- alert routing and on-call ownership;
+- load, soak and fault-injection evidence.
+
+## 7. Deployment verification
+
+A deployment is not considered healthy solely because containers are running. Verify at least:
+
+1. all service readiness/health endpoints;
+2. Prometheus target health and rule loading;
+3. Grafana dashboard provisioning;
+4. authenticated operator login and RBAC behavior;
+5. sensor ingestion through Kafka and persistence;
+6. action-plan creation and human approval;
+7. approval-time Device Safety blocking with no outbox row;
+8. successful safety revalidation after device-state recovery;
+9. pre-dispatch safety failure with zero MQTT publication;
+10. normal MQTT publication, terminal ACK correlation and duplicate suppression;
+11. dependency-security and service test pipelines for the deployed commit.
+
+The repository GitHub Actions pipeline exercises the local Compose integration path. A production environment still requires deployment-specific verification and evidence.
+
+## 8. Rollback policy
+
+Use immutable image tags and forward database migrations.
+
+- Application rollback must remain compatible with the already-applied schema.
+- MySQL DDL may auto-commit; do not assume transactional rollback of migrations.
+- Back up production data before migrations that may rebuild or lock populated tables.
+- Never restore a local Compose volume as a substitute for a tested production recovery procedure.
+
+See [`TERRA_OPS_SCHEMA_MIGRATIONS.md`](TERRA_OPS_SCHEMA_MIGRATIONS.md).
+
+## 9. Related documentation
+
+- [`../STATUS.md`](../STATUS.md) — implementation status and known gaps
+- [`DEVICE_SAFETY_GATE.md`](DEVICE_SAFETY_GATE.md) — safety guarantees and limitations
+- [`SERVICE_AUTH.md`](SERVICE_AUTH.md) — internal service authentication
+- [`TERRA_OPS_SCHEMA_MIGRATIONS.md`](TERRA_OPS_SCHEMA_MIGRATIONS.md) — database migration behavior
+- [`SECURITY_SCANNING.md`](SECURITY_SCANNING.md) — dependency-security enforcement
