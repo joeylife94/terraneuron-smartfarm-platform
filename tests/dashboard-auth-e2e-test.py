@@ -10,11 +10,19 @@ import requests
 
 BASE_URL = os.getenv("DASHBOARD_BASE_URL", "http://localhost:3001")
 TIMEOUT = float(os.getenv("DASHBOARD_AUTH_TIMEOUT_SECONDS", "10"))
+ACCESS_COOKIE = "terraneuron_access_token"
+REFRESH_COOKIE = "terraneuron_refresh_token"
 
 
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise AssertionError(message)
+
+
+def clear_cookie(session: requests.Session, name: str) -> None:
+    matches = [cookie for cookie in session.cookies if cookie.name == name]
+    for cookie in matches:
+        session.cookies.clear(cookie.domain, cookie.path, cookie.name)
 
 
 def main() -> None:
@@ -27,6 +35,14 @@ def main() -> None:
         timeout=TIMEOUT,
     )
     require(rejected.status_code == 403, "cross-origin login must be rejected")
+
+    legacy_bypass = requests.post(
+        f"{BASE_URL}/api/ops/auth/login",
+        json={"username": "operator", "password": "operator123"},
+        headers={"Origin": BASE_URL},
+        timeout=TIMEOUT,
+    )
+    require(legacy_bypass.status_code == 404, "legacy /api/ops rewrite must not expose Terra-Ops login")
 
     login = session.post(
         f"{BASE_URL}/api/dashboard-auth/login",
@@ -44,8 +60,8 @@ def main() -> None:
     require("HttpOnly" in set_cookie, "session cookies must be HttpOnly")
     require("SameSite=strict" in set_cookie or "SameSite=Strict" in set_cookie, "session cookies must use SameSite=Strict")
     require("Path=/api" in set_cookie, "session cookies must be scoped to Dashboard API handlers")
-    require("terraneuron_access_token" in session.cookies, "access cookie was not issued")
-    require("terraneuron_refresh_token" in session.cookies, "refresh cookie was not issued")
+    require(ACCESS_COOKIE in session.cookies, "access cookie was not issued")
+    require(REFRESH_COOKIE in session.cookies, "refresh cookie was not issued")
 
     current = session.get(f"{BASE_URL}/api/dashboard-auth/session", timeout=TIMEOUT)
     require(current.status_code == 200, f"session validation failed: {current.status_code} {current.text}")
@@ -57,6 +73,21 @@ def main() -> None:
 
     blocked_route = session.get(f"{BASE_URL}/api/dashboard-ops/auth/validate", timeout=TIMEOUT)
     require(blocked_route.status_code == 404, "BFF must not expose arbitrary Terra-Ops auth paths")
+
+    # The protected proxy does not rotate independently. Browser code receives
+    # one 401, restores the session through the serialized endpoint, then retries.
+    clear_cookie(session, ACCESS_COOKIE)
+    needs_refresh = session.get(f"{BASE_URL}/api/dashboard-ops/actions/statistics", timeout=TIMEOUT)
+    require(needs_refresh.status_code == 401, "protected proxy must delegate refresh to the session route")
+    require(REFRESH_COOKIE in session.cookies, "401 response must retain the refresh cookie")
+
+    rotated = session.get(f"{BASE_URL}/api/dashboard-auth/session", timeout=TIMEOUT)
+    require(rotated.status_code == 200, f"serialized session rotation failed: {rotated.status_code} {rotated.text}")
+    require(ACCESS_COOKIE in session.cookies, "session rotation must replace the access cookie")
+    require(REFRESH_COOKIE in session.cookies, "session rotation must replace the refresh cookie")
+
+    retried = session.get(f"{BASE_URL}/api/dashboard-ops/actions/statistics", timeout=TIMEOUT)
+    require(retried.status_code == 200, f"protected request retry failed: {retried.status_code} {retried.text}")
 
     logout = session.post(
         f"{BASE_URL}/api/dashboard-auth/logout",
