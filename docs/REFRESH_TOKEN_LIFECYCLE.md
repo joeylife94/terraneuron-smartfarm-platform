@@ -13,6 +13,22 @@ Terra-Ops persists refresh-token sessions in MySQL and treats every refresh toke
 
 The raw refresh JWT is returned to the client once and is never stored in MySQL. Terra-Ops stores only a SHA-256 digest together with the token ID, family ID, username, issue time and expiry time.
 
+## V6 rollout and legacy tokens
+
+Refresh JWTs issued before this lifecycle was introduced are stateless and do not contain the required `jti` and rotation-family claims. They also have no server-side session row that can be locked, rotated or revoked safely.
+
+**Deploying Flyway V6 intentionally invalidates every pre-V6 refresh token.** A client presenting one receives `401 Unauthorized` and must complete login again. Access JWTs issued before deployment remain valid until their normal expiry.
+
+There is no legacy-token grace path. Accepting an untracked token and converting it on first use would preserve an unknown bearer credential without server-side replay history and would weaken the new single-use guarantee.
+
+Deployment communication must therefore treat V6 as a refresh-session cutover:
+
+1. announce that active users may be required to sign in again;
+2. deploy V6 and the matching Terra-Ops application together;
+3. verify that new logins create `refresh_token_sessions` rows;
+4. verify that a pre-V6 refresh token is rejected;
+5. do not roll the application back without also reviewing the database and session-security implications.
+
 ## Rotation
 
 `POST /api/auth/refresh` consumes the presented refresh token and returns both a new access token and a new refresh token.
@@ -67,6 +83,7 @@ Expired and revoked rows are retained as security history. A future retention jo
 - Reuse of a rotated token invalidates the remaining family.
 - Logout revocation is individual and idempotent.
 - Current account state and roles are reloaded before issuing replacement tokens.
+- Pre-V6 stateless refresh tokens are rejected rather than silently adopted.
 
 ## Limits
 
