@@ -53,7 +53,7 @@ class RefreshTokenServiceTest {
                 Instant.now().plusSeconds(600));
         AuthenticatedUser user = new AuthenticatedUser("admin", List.of("ROLE_ADMIN"));
 
-        when(tokenProvider.parseRefreshToken(rawToken)).thenReturn(Optional.of(claims));
+        when(tokenProvider.parseRefreshTokenForRotation(rawToken)).thenReturn(Optional.of(claims));
         when(sessionRepository.findByTokenIdForUpdate("token-1")).thenReturn(Optional.of(current));
         when(authenticationService.findEnabledByUsername("admin")).thenReturn(Optional.of(user));
         when(tokenProvider.generateRefreshTokenSession("admin", "family-1")).thenReturn(replacement);
@@ -79,7 +79,29 @@ class RefreshTokenServiceTest {
         RefreshTokenSession current = activeSession(rawToken, claims);
         current.revoke(Instant.now().minusSeconds(5), RefreshTokenService.REASON_ROTATED, "token-2");
 
-        when(tokenProvider.parseRefreshToken(rawToken)).thenReturn(Optional.of(claims));
+        when(tokenProvider.parseRefreshTokenForRotation(rawToken)).thenReturn(Optional.of(claims));
+        when(sessionRepository.findByTokenIdForUpdate("token-1")).thenReturn(Optional.of(current));
+
+        assertThat(service.rotate(rawToken)).isEmpty();
+
+        verify(sessionRepository).revokeActiveFamily(
+                eq("family-1"),
+                any(Instant.class),
+                eq(RefreshTokenService.REASON_REUSE_DETECTED));
+        verify(authenticationService, never()).findEnabledByUsername(any());
+    }
+
+    @Test
+    void reuseOfExpiredRotatedTokenStillRevokesTheRemainingFamily() {
+        String rawToken = "expired-already-used-token";
+        Instant issuedAt = Instant.now().minusSeconds(1_200);
+        Instant expiresAt = Instant.now().minusSeconds(600);
+        RefreshTokenClaims claims = new RefreshTokenClaims(
+                "admin", "token-1", "family-1", issuedAt, expiresAt);
+        RefreshTokenSession current = activeSession(rawToken, claims);
+        current.revoke(Instant.now().minusSeconds(900), RefreshTokenService.REASON_ROTATED, "token-2");
+
+        when(tokenProvider.parseRefreshTokenForRotation(rawToken)).thenReturn(Optional.of(claims));
         when(sessionRepository.findByTokenIdForUpdate("token-1")).thenReturn(Optional.of(current));
 
         assertThat(service.rotate(rawToken)).isEmpty();
@@ -100,7 +122,7 @@ class RefreshTokenServiceTest {
                 "disabled", "token-1", "family-1", issuedAt, expiresAt);
         RefreshTokenSession current = activeSession(rawToken, claims);
 
-        when(tokenProvider.parseRefreshToken(rawToken)).thenReturn(Optional.of(claims));
+        when(tokenProvider.parseRefreshTokenForRotation(rawToken)).thenReturn(Optional.of(claims));
         when(sessionRepository.findByTokenIdForUpdate("token-1")).thenReturn(Optional.of(current));
         when(authenticationService.findEnabledByUsername("disabled")).thenReturn(Optional.empty());
 
@@ -142,7 +164,7 @@ class RefreshTokenServiceTest {
                 "admin", "token-1", "family-1", issuedAt, expiresAt);
         RefreshTokenSession current = activeSession("different-token", claims);
 
-        when(tokenProvider.parseRefreshToken(rawToken)).thenReturn(Optional.of(claims));
+        when(tokenProvider.parseRefreshTokenForRotation(rawToken)).thenReturn(Optional.of(claims));
         when(sessionRepository.findByTokenIdForUpdate("token-1")).thenReturn(Optional.of(current));
 
         assertThat(service.rotate(rawToken)).isEmpty();
