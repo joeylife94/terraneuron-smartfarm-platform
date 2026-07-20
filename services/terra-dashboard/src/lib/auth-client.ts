@@ -35,7 +35,7 @@ async function withBrowserLock<T>(operation: () => Promise<T>): Promise<T> {
 }
 
 async function fetchSession(): Promise<DashboardUser | null> {
-  const response = await fetch('/api/dashboard-auth/session', {
+  const response = await fetch('/api/dashboard/auth/session', {
     cache: 'no-store',
     credentials: 'same-origin',
   });
