@@ -37,11 +37,10 @@ jobs:
       - name: Validate Docker Compose
         run: docker compose config --quiet
 
-      - name: Start Dashboard Authentication Stack
+      - name: Start Terra-Ops Authentication Stack
         run: |
-          docker compose up -d \
-            redis zookeeper kafka mysql influxdb mosquitto \
-            terra-sense terra-cortex terra-ops terra-dashboard
+          docker compose up -d zookeeper kafka mysql terra-ops
+          docker compose up -d --no-deps terra-dashboard
 
       - name: Wait for Terra-Ops and Dashboard
         shell: bash
