@@ -13,7 +13,7 @@
 
 > **Repository status — 2026-07-20**
 >
-> TerraNeuron은 로컬 Docker Compose 환경에서 서비스 빌드, 계약 검증, Kafka 처리, MySQL/InfluxDB 저장, 인간 승인, 명령 전송, 디바이스 피드백, 모니터링을 검증합니다. 보안·신뢰성 패턴은 코드와 CI에서 강제되지만, 실제 운영 배포와 물리 장비 안전을 완료한 제품은 아닙니다.
+> TerraNeuron은 로컬 Docker Compose에서 핵심 neural-flow 통합 경로를 검증하고, 집중 서비스 테스트에서 인간 승인, 명령 전송, 디바이스 피드백과 안전 차단 동작을 검증합니다. 보안·신뢰성 패턴은 코드와 CI에서 강제되지만, 실제 운영 배포와 물리 장비 안전을 완료한 제품은 아닙니다.
 
 현재 구현 상태의 단일 기준 문서는 [`STATUS.md`](STATUS.md)입니다.
 
@@ -51,7 +51,7 @@ flowchart LR
 | `terra-sense` | HTTP/MQTT ingestion, device-state registry, command dispatch and ACK forwarding | 8081 |
 | `terra-cortex` | rule-based and optional LLM/RAG analysis | 8082 |
 | `terra-ops` | authentication, action-plan lifecycle, approval, outbox and audit API | 8080 |
-| `terra-dashboard` | operator dashboard, including safety-blocked revalidation | 3001 |
+| `terra-dashboard` | operator dashboard shell; protected Ops API authentication propagation is not yet complete | 3001 |
 | `terra-data-collector` | optional external data collector profile | 8083 |
 
 Infrastructure includes Kafka/Zookeeper, MySQL, InfluxDB, Redis, Mosquitto, Prometheus and Grafana.
@@ -126,14 +126,15 @@ The active GitHub Actions pipeline verifies:
 - Terra-Dashboard production build;
 - dependency vulnerability policy;
 - Prometheus configuration and rule tests;
-- Docker Compose integration and command lifecycle behavior.
+- Docker Compose startup and neural-flow integration.
 
-Local focused checks are documented in the relevant service and feature documents.
+Command lifecycle, safety revalidation, MQTT dispatch and ACK behavior are covered by focused service tests rather than the current Compose E2E script.
 
 ## Operational boundaries
 
 TerraNeuron is not yet a production deployment. Remaining boundaries include:
 
+- dashboard propagation of interactive authentication to protected Terra-Ops APIs;
 - MQTT client authentication, authorization and TLS;
 - physical interlocks, emergency stops and local controller limits;
 - manufacturer/model-specific capability adapters;
