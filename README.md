@@ -71,9 +71,14 @@ Infrastructure includes Kafka/Zookeeper, MySQL, InfluxDB, Redis, Mosquitto, Prom
 
 - MySQL-backed interactive users with BCrypt password verification.
 - JWT access/refresh token type separation and RBAC-protected APIs.
+- MySQL-persisted, single-use refresh-token sessions; raw refresh JWTs are not stored.
+- Atomic refresh-token rotation, rotated-token reuse detection and token-family revocation.
+- Idempotent individual refresh-token revocation through `POST /api/auth/logout`.
 - Separate service JWT boundaries for Cortex → Ops and Ops → Sense.
 - Explicit CORS origin configuration and Redis-backed gateway rate limiting.
 - Trivy SARIF reporting plus CI failure for fixable HIGH/CRITICAL dependency vulnerabilities.
+
+See [`docs/REFRESH_TOKEN_LIFECYCLE.md`](docs/REFRESH_TOKEN_LIFECYCLE.md).
 
 ### Device Safety Gate
 
@@ -135,11 +140,12 @@ Command lifecycle, safety revalidation, MQTT dispatch and ACK behavior are cover
 TerraNeuron is not yet a production deployment. Remaining boundaries include:
 
 - dashboard propagation of interactive authentication to protected Terra-Ops APIs;
+- access-token revocation before JWT expiry and global account logout;
+- refresh-session retention and expired-row cleanup policy;
+- account administration, MFA and password-reset workflows;
 - MQTT client authentication, authorization and TLS;
 - physical interlocks, emergency stops and local controller limits;
 - manufacturer/model-specific capability adapters;
-- refresh-token persistence, rotation and individual revocation;
-- account administration, MFA and password-reset workflows;
 - production secrets management and key rotation;
 - highly available Kafka, Redis, MySQL, InfluxDB and monitoring infrastructure;
 - production deployment manifests, load testing and fault-injection evidence.
@@ -149,6 +155,7 @@ Device-reported state is an application signal, not proof of physical equipment 
 ## Documentation
 
 - [`STATUS.md`](STATUS.md) — verified implementation status and remaining gaps
+- [`docs/REFRESH_TOKEN_LIFECYCLE.md`](docs/REFRESH_TOKEN_LIFECYCLE.md) — persisted refresh-token rotation and revocation
 - [`docs/DEVICE_SAFETY_GATE.md`](docs/DEVICE_SAFETY_GATE.md) — two-stage device safety policy
 - [`docs/ACTION_PROTOCOL.md`](docs/ACTION_PROTOCOL.md) — action and command protocol
 - [`docs/TERRA_OPS_SCHEMA_MIGRATIONS.md`](docs/TERRA_OPS_SCHEMA_MIGRATIONS.md) — database ownership and rollout
