@@ -85,14 +85,21 @@ See [`docs/DEVICE_SAFETY_GATE.md`](docs/DEVICE_SAFETY_GATE.md).
 
 ### Authentication and authorization
 
-- Interactive users are loaded from MySQL.
-- Passwords are verified using BCrypt.
+- Interactive users are loaded from MySQL and passwords are verified using BCrypt.
 - Disabled accounts and invalid roles fail closed.
 - Access and refresh JWTs carry distinct token types and cannot be substituted for each other.
-- Account state and roles are reloaded during refresh and explicit validation.
+- Refresh JWTs carry unique token IDs and server-generated rotation-family IDs.
+- Refresh sessions are persisted in MySQL; only SHA-256 token digests are stored, never raw refresh JWTs.
+- Every successful refresh atomically revokes the presented token and returns a replacement token in the same family.
+- A pessimistic row lock prevents two concurrent requests from successfully rotating the same token.
+- Reuse of an already-rotated token revokes all remaining active sessions in that token family.
+- `POST /api/auth/logout` idempotently revokes one presented refresh-token session.
+- Current enabled account state and roles are reloaded before a replacement access/refresh pair is issued.
 - Terra-Ops endpoints enforce authenticated access and role-based approval/rejection permissions.
 - Cortex → Ops and Ops → Sense use separate service-JWT boundaries with explicit subject, audience, scope and expiry checks.
 - CORS origins are explicit; wildcard configuration is not the intended deployment path.
+
+See [`docs/REFRESH_TOKEN_LIFECYCLE.md`](docs/REFRESH_TOKEN_LIFECYCLE.md).
 
 ### Database ownership
 
@@ -101,6 +108,7 @@ See [`docs/DEVICE_SAFETY_GATE.md`](docs/DEVICE_SAFETY_GATE.md).
 - Empty databases install from canonical migrations.
 - Compatible pre-Flyway databases are baselined and forward-reconciled.
 - Legacy native ENUM columns, action-plan command references and duplicate outbox rows are normalized through versioned migrations.
+- Flyway V6 creates the refresh-token session table and its unique identity/hash indexes.
 - Compose-only seed users and sample data are isolated from production migrations.
 
 ### CI, security and observability
@@ -147,8 +155,9 @@ Prometheus metrics and alerts use bounded labels and avoid raw farm IDs, asset I
 
 ### Identity and account lifecycle
 
-- Refresh tokens are stateless and are not persisted, rotated or individually revoked.
-- Already issued access tokens remain usable until expiry unless an external revocation/session boundary is added.
+- Already issued access tokens remain usable until expiry; refresh-token revocation does not immediately revoke an access JWT.
+- Global logout, active-session administration and account-wide token revocation are not implemented.
+- Expired and revoked refresh-session retention and cleanup require an operational policy.
 - Account administration, MFA, password reset and external identity-provider integration are not implemented.
 
 ### Infrastructure and operations
@@ -161,6 +170,7 @@ Prometheus metrics and alerts use bounded labels and avoid raw farm IDs, asset I
 ## Documentation authority
 
 - [`README.md`](README.md) — repository overview and local execution
+- [`docs/REFRESH_TOKEN_LIFECYCLE.md`](docs/REFRESH_TOKEN_LIFECYCLE.md) — persisted refresh-token rotation and revocation
 - [`docs/DEVICE_SAFETY_GATE.md`](docs/DEVICE_SAFETY_GATE.md) — enforced device-safety flow, guarantees and limits
 - [`docs/ACTION_PROTOCOL.md`](docs/ACTION_PROTOCOL.md) — action/event contracts
 - [`docs/TERRA_OPS_SCHEMA_MIGRATIONS.md`](docs/TERRA_OPS_SCHEMA_MIGRATIONS.md) — schema ownership and upgrade behavior
@@ -169,7 +179,7 @@ Prometheus metrics and alerts use bounded labels and avoid raw farm IDs, asset I
 
 ## Recommended next PRs
 
-1. Persist, rotate and individually revoke refresh tokens.
+1. Propagate interactive authentication through the dashboard to protected Terra-Ops APIs.
 2. Add MQTT client identity, topic authorization and TLS deployment contracts.
 3. Define manufacturer/model capability adapter boundaries and contract tests.
 4. Add production deployment, secrets, high-availability and fault-injection evidence.
