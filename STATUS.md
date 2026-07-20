@@ -95,11 +95,15 @@ See [`docs/DEVICE_SAFETY_GATE.md`](docs/DEVICE_SAFETY_GATE.md).
 - Reuse of an already-rotated token revokes all remaining active sessions in that token family.
 - `POST /api/auth/logout` idempotently revokes one presented refresh-token session.
 - Current enabled account state and roles are reloaded before a replacement access/refresh pair is issued.
+- Terra-Dashboard authenticates through same-origin Next.js BFF routes; browser JavaScript never receives or stores JWT values.
+- Dashboard access and refresh JWTs are held in HttpOnly, SameSite=Strict cookies and protected Terra-Ops calls receive server-injected Bearer authentication.
+- The Dashboard BFF rotates a refresh token at most once after a protected request returns `401`, replaces both cookies and retries once.
+- Protected Dashboard proxy paths are explicitly allowlisted and state-changing requests enforce same-origin checks.
 - Terra-Ops endpoints enforce authenticated access and role-based approval/rejection permissions.
 - Cortex → Ops and Ops → Sense use separate service-JWT boundaries with explicit subject, audience, scope and expiry checks.
 - CORS origins are explicit; wildcard configuration is not the intended deployment path.
 
-See [`docs/REFRESH_TOKEN_LIFECYCLE.md`](docs/REFRESH_TOKEN_LIFECYCLE.md).
+See [`docs/REFRESH_TOKEN_LIFECYCLE.md`](docs/REFRESH_TOKEN_LIFECYCLE.md) and [`docs/DASHBOARD_AUTHENTICATION.md`](docs/DASHBOARD_AUTHENTICATION.md).
 
 ### Database ownership
 
@@ -122,7 +126,9 @@ The active CI/CD workflow verifies:
 - Prometheus configuration and alert-rule tests;
 - Docker Compose startup and the current neural-flow integration script.
 
-Command lifecycle, safety revalidation, MQTT publication and ACK/feedback behavior are verified through focused Terra-Ops and Terra-Sense tests. The current Compose E2E script does not exercise those paths end to end.
+A dedicated Dashboard Authentication workflow verifies same-origin login, HttpOnly cookie issuance, authenticated session restoration, protected Terra-Ops proxy access, route allowlisting, logout and post-logout denial against the Compose stack.
+
+Command lifecycle, safety revalidation, MQTT publication and ACK/feedback behavior are verified through focused Terra-Ops and Terra-Sense tests. The current Compose neural-flow script does not exercise those paths end to end.
 
 The reusable Trivy workflow:
 
@@ -136,7 +142,6 @@ Prometheus metrics and alerts use bounded labels and avoid raw farm IDs, asset I
 
 - **Context validation remains advisory.** The framework is blocking-capable, but current context rules only generate warnings.
 - **Permission validation is lifecycle-oriented.** It validates approval metadata inside the action plan; farm/device ownership policy is not modeled as a domain authorization service.
-- **Dashboard authentication propagation is incomplete.** Safety-blocked list and revalidation client code exists, but the default dashboard path does not yet attach interactive authorization to protected Terra-Ops APIs.
 - **Device ACK feedback durability is incomplete.** Command completion is rolled back when ACK-to-Kafka publication fails, so recovery depends on the physical device repeating the terminal ACK.
 - **Action parameters are persisted as JSON text** on the current action-plan entity rather than a typed/queryable database structure.
 - **Device capability coverage is conservative and generic.** Manufacturer/model-specific adapters must implement explicit capability resolution.
@@ -159,6 +164,7 @@ Prometheus metrics and alerts use bounded labels and avoid raw farm IDs, asset I
 - Global logout, active-session administration and account-wide token revocation are not implemented.
 - Expired and revoked refresh-session retention and cleanup require an operational policy.
 - Account administration, MFA, password reset and external identity-provider integration are not implemented.
+- Dashboard cookie security depends on production HTTPS, trusted proxy headers, CSP and secure deployment configuration.
 
 ### Infrastructure and operations
 
@@ -171,6 +177,7 @@ Prometheus metrics and alerts use bounded labels and avoid raw farm IDs, asset I
 
 - [`README.md`](README.md) — repository overview and local execution
 - [`docs/REFRESH_TOKEN_LIFECYCLE.md`](docs/REFRESH_TOKEN_LIFECYCLE.md) — persisted refresh-token rotation and revocation
+- [`docs/DASHBOARD_AUTHENTICATION.md`](docs/DASHBOARD_AUTHENTICATION.md) — Dashboard BFF authentication, cookie and proxy behavior
 - [`docs/DEVICE_SAFETY_GATE.md`](docs/DEVICE_SAFETY_GATE.md) — enforced device-safety flow, guarantees and limits
 - [`docs/ACTION_PROTOCOL.md`](docs/ACTION_PROTOCOL.md) — action/event contracts
 - [`docs/TERRA_OPS_SCHEMA_MIGRATIONS.md`](docs/TERRA_OPS_SCHEMA_MIGRATIONS.md) — schema ownership and upgrade behavior
@@ -179,7 +186,7 @@ Prometheus metrics and alerts use bounded labels and avoid raw farm IDs, asset I
 
 ## Recommended next PRs
 
-1. Propagate interactive authentication through the dashboard to protected Terra-Ops APIs.
-2. Add MQTT client identity, topic authorization and TLS deployment contracts.
-3. Define manufacturer/model capability adapter boundaries and contract tests.
-4. Add production deployment, secrets, high-availability and fault-injection evidence.
+1. Add MQTT client identity, topic authorization and TLS deployment contracts.
+2. Define manufacturer/model capability adapter boundaries and contract tests.
+3. Add production deployment, secrets, high-availability and fault-injection evidence.
+4. Add global logout, active-session administration and refresh-session retention policy.
