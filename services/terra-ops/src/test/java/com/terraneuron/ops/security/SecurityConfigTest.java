@@ -5,8 +5,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.terraneuron.ops.controller.ActionController;
 import com.terraneuron.ops.controller.AuthController;
 import com.terraneuron.ops.entity.ActionPlan;
+import com.terraneuron.ops.security.JwtTokenProvider.GeneratedRefreshToken;
 import com.terraneuron.ops.service.ActionPlanService;
 import com.terraneuron.ops.service.AuditService;
+import com.terraneuron.ops.service.RefreshTokenService;
+import com.terraneuron.ops.service.RefreshTokenService.IssuedRefreshToken;
+import com.terraneuron.ops.service.RefreshTokenService.RotationResult;
 import com.terraneuron.ops.service.UserAuthenticationService;
 import com.terraneuron.ops.service.UserAuthenticationService.AuthenticatedUser;
 import org.junit.jupiter.api.BeforeEach;
@@ -58,6 +62,9 @@ class SecurityConfigTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private JwtTokenProvider tokenProvider;
+
     @MockBean
     private ActionPlanService actionPlanService;
 
@@ -66,6 +73,9 @@ class SecurityConfigTest {
 
     @MockBean
     private UserAuthenticationService authenticationService;
+
+    @MockBean
+    private RefreshTokenService refreshTokenService;
 
     @BeforeEach
     void configureDatabaseUsers() {
@@ -92,6 +102,25 @@ class SecurityConfigTest {
                 default -> Optional.empty();
             };
         });
+        when(refreshTokenService.issue(anyString())).thenAnswer(invocation -> {
+            String username = invocation.getArgument(0);
+            GeneratedRefreshToken generated = tokenProvider.generateRefreshTokenSession(username);
+            return new IssuedRefreshToken(generated.token(), generated.expiresAt());
+        });
+        when(refreshTokenService.rotate(anyString())).thenAnswer(invocation -> {
+            String rawToken = invocation.getArgument(0);
+            return tokenProvider.parseRefreshToken(rawToken)
+                    .flatMap(claims -> authenticationService.findEnabledByUsername(claims.username())
+                            .map(account -> {
+                                GeneratedRefreshToken replacement = tokenProvider.generateRefreshTokenSession(
+                                        claims.username(),
+                                        claims.familyId());
+                                return new RotationResult(
+                                        account,
+                                        replacement.token(),
+                                        replacement.expiresAt());
+                            }));
+        });
     }
 
     @Test
@@ -113,6 +142,7 @@ class SecurityConfigTest {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.access_token", not(blankOrNullString())))
+                .andExpect(jsonPath("$.refresh_token", not(blankOrNullString())))
                 .andExpect(jsonPath("$.token_type").value("Bearer"));
     }
 
@@ -150,7 +180,8 @@ class SecurityConfigTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("refreshToken", refreshToken))))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.access_token", not(blankOrNullString())));
+                .andExpect(jsonPath("$.access_token", not(blankOrNullString())))
+                .andExpect(jsonPath("$.refresh_token", not(blankOrNullString())));
     }
 
     @Test
