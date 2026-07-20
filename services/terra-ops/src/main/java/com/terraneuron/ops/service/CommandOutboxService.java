@@ -21,7 +21,6 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class CommandOutboxService {
-
     static final String COMMAND_TOPIC = "terra.control.command";
 
     private final ActionPlanRepository actionPlanRepository;
@@ -32,6 +31,9 @@ public class CommandOutboxService {
     public CommandOutboxEvent enqueue(ActionPlan plan) {
         if (plan == null || !plan.canBeDispatched()) {
             throw new IllegalStateException("Only an approved, non-expired plan can be enqueued");
+        }
+        if (plan.getCommandId() != null && !plan.getCommandId().isBlank()) {
+            throw new IllegalStateException("Plan already owns a command and cannot be enqueued again");
         }
 
         String commandId = "cmd-" + UUID.randomUUID();
@@ -73,6 +75,8 @@ public class CommandOutboxService {
         data.put("command_id", commandId);
         data.put("farm_id", plan.getFarmId());
         data.put("target_asset_id", plan.getTargetAssetId());
+        data.put("target_asset_type", plan.getTargetAssetType());
+        data.put("action_category", plan.getActionCategory());
         data.put("action_type", plan.getActionType());
         data.put("parameters", parseParameters(plan.getParameters()));
         data.put("executed_by", plan.getApprovedBy());

@@ -3,29 +3,40 @@ package com.terraneuron.sense.service;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.terraneuron.sense.model.DeviceCommand;
+import com.terraneuron.sense.model.DeviceSafetyDecision;
+import com.terraneuron.sense.model.DeviceSafetyRequest;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
-/** Kafka to MQTT command bridge with durable duplicate suppression. */
+/** Kafka to MQTT command bridge with durable duplicate suppression and a final safety recheck. */
 @Slf4j
 @Service
 public class DeviceCommandConsumer {
 
     private static final String FEEDBACK_TOPIC = "terra.control.feedback";
+    private static final String SAFETY_BLOCK_PREFIX = "DEVICE_SAFETY_BLOCKED:";
+    private static final String MQTT_PUBLISH_FAILURE_PREFIX = "MQTT_PUBLISH_FAILED:";
 
     private final MqttGatewayService mqttGateway;
     private final ObjectMapper objectMapper;
     private final KafkaTemplate<String, Object> kafkaTemplate;
     private final ContractSchemaValidator contractSchemaValidator;
     private final CommandRegistry commandRegistry;
+    private final DeviceSafetyPolicy deviceSafetyPolicy;
+    private final MeterRegistry meterRegistry;
+    private final Clock clock;
     private final long feedbackTimeoutSeconds;
 
     public DeviceCommandConsumer(
@@ -34,12 +45,18 @@ public class DeviceCommandConsumer {
             KafkaTemplate<String, Object> kafkaTemplate,
             ContractSchemaValidator contractSchemaValidator,
             CommandRegistry commandRegistry,
+            DeviceSafetyPolicy deviceSafetyPolicy,
+            MeterRegistry meterRegistry,
+            Clock clock,
             @Value("${app.command.feedback-timeout-seconds:10}") long feedbackTimeoutSeconds) {
         this.mqttGateway = mqttGateway;
         this.objectMapper = objectMapper;
         this.kafkaTemplate = kafkaTemplate;
         this.contractSchemaValidator = contractSchemaValidator;
         this.commandRegistry = commandRegistry;
+        this.deviceSafetyPolicy = deviceSafetyPolicy;
+        this.meterRegistry = meterRegistry;
+        this.clock = clock;
         this.feedbackTimeoutSeconds = feedbackTimeoutSeconds;
     }
 
@@ -62,12 +79,22 @@ public class DeviceCommandConsumer {
         CommandRegistry.Registration registration = commandRegistry.register(command);
 
         if (registration.isCompletedDuplicate()) {
-            log.info("Ignoring completed duplicate command: {}", command.getCommandId());
+            CommandRegistry.CommandCompletion completion = commandRegistry
+                    .findCompletion(command.getCommandId())
+                    .orElseThrow(() -> new IllegalStateException(
+                            "Completed command is missing terminal feedback state: "
+                                    + command.getCommandId()));
+            sendFeedback(
+                    completion.command(),
+                    completion.terminalStatus(),
+                    completion.error());
+            commandRegistry.finishCompletion(command.getCommandId());
+            log.info("Replayed terminal feedback for completed command: {} status={}",
+                    command.getCommandId(), completion.terminalStatus());
             return;
         }
 
         if (registration.isPublishedDuplicate()) {
-            // MQTT publication was durably recorded. Re-emit only delivery feedback.
             sendFeedback(command, "DELIVERED", null);
             log.info("Replayed delivery feedback for published command: {}",
                     command.getCommandId());
@@ -75,8 +102,6 @@ public class DeviceCommandConsumer {
         }
 
         if (registration.isPublishInProgress()) {
-            // Another listener or the previous process still owns the short publish lease.
-            // Throwing allows Kafka retry after the lease expires without false DELIVERED feedback.
             throw new IllegalStateException(
                     "MQTT publish lease is already held for command " + command.getCommandId());
         }
@@ -86,13 +111,27 @@ public class DeviceCommandConsumer {
                     "Unsupported command registration state: " + registration.state());
         }
 
+        DeviceSafetyDecision safetyDecision = deviceSafetyPolicy.evaluate(new DeviceSafetyRequest(
+                command.getFarmId(),
+                command.getTargetAssetId(),
+                command.getActionCategory(),
+                command.getActionType(),
+                command.getParameters()));
+        if (!safetyDecision.allowed()) {
+            handleSafetyBlock(command, safetyDecision);
+            return;
+        }
+
         try {
             mqttGateway.publishCommand(command);
         } catch (Exception publishError) {
             commandRegistry.releasePending(command.getCommandId());
-            sendFeedback(command, "FAILED", rootCauseMessage(publishError));
+            sendFeedback(
+                    command,
+                    "FAILED",
+                    MQTT_PUBLISH_FAILURE_PREFIX + rootCauseMessage(publishError));
             log.error("MQTT command delivery failed: command={} error={}",
-                    command.getCommandId(), publishError.getMessage(), publishError);
+                    command.getCommandId(), publishError.getClass().getSimpleName(), publishError);
             return;
         }
 
@@ -107,6 +146,36 @@ public class DeviceCommandConsumer {
                 command.getCommandId(), command.getTargetAssetId(), command.getActionType());
     }
 
+    private void handleSafetyBlock(DeviceCommand command, DeviceSafetyDecision decision) {
+        String reason = decision.reasonCode().name();
+        Counter.builder("terra_device_safety_predispatch_blocks_total")
+                .description("Commands blocked by the final device safety recheck")
+                .tag("reason", reason.toLowerCase(Locale.ROOT))
+                .register(meterRegistry)
+                .increment();
+
+        if (!commandRegistry.claimCompletion(
+                command.getCommandId(), "FAILED", SAFETY_BLOCK_PREFIX + reason)) {
+            log.info("Ignoring duplicate pre-dispatch safety block: command={}", command.getCommandId());
+            return;
+        }
+
+        try {
+            sendFeedback(command, "FAILED", SAFETY_BLOCK_PREFIX + reason);
+            commandRegistry.finishCompletion(command.getCommandId());
+            log.warn("Command blocked before MQTT dispatch: command={} reason={}",
+                    command.getCommandId(), reason);
+        } catch (RuntimeException feedbackError) {
+            // Keep the durable terminal completion marker and pending command payload.
+            // Kafka redelivery must replay the same FAILED feedback instead of
+            // re-evaluating a recovered device and publishing the previously blocked
+            // command to MQTT.
+            log.warn("Safety-block feedback was not acknowledged; preserving terminal state for replay: command={}",
+                    command.getCommandId());
+            throw feedbackError;
+        }
+    }
+
     private DeviceCommand toDeviceCommand(
             Map<String, Object> data, Map<String, Object> normalizedEvent) {
         String farmId = (String) data.getOrDefault(
@@ -117,11 +186,13 @@ public class DeviceCommandConsumer {
                 .traceId((String) data.get("trace_id"))
                 .planId((String) data.get("plan_id"))
                 .targetAssetId((String) data.get("target_asset_id"))
+                .targetAssetType((String) data.get("target_asset_type"))
+                .actionCategory((String) data.get("action_category"))
                 .actionType((String) data.get("action_type"))
                 .parameters(parseParameters(data.get("parameters")))
                 .executedBy((String) data.get("executed_by"))
                 .farmId(farmId)
-                .issuedAt(Instant.now())
+                .issuedAt(clock.instant())
                 .build();
     }
 
@@ -150,12 +221,13 @@ public class DeviceCommandConsumer {
     }
 
     private void sendFeedback(DeviceCommand command, String status, String error) {
+        Instant now = clock.instant();
         Map<String, Object> feedback = Map.of(
                 "specversion", "1.0",
                 "type", "terra.sense.command.feedback",
                 "source", "//terraneuron/terra-sense",
                 "id", java.util.UUID.randomUUID().toString(),
-                "time", Instant.now().toString(),
+                "time", now.toString(),
                 "datacontenttype", "application/json",
                 "data", Map.of(
                         "trace_id", safe(command.getTraceId()),
@@ -165,7 +237,7 @@ public class DeviceCommandConsumer {
                         "target_asset_id", safe(command.getTargetAssetId()),
                         "status", status,
                         "error", error != null ? error : "",
-                        "timestamp", Instant.now().toString()
+                        "timestamp", now.toString()
                 )
         );
 
@@ -191,8 +263,7 @@ public class DeviceCommandConsumer {
                 return objectMapper.readValue((String) params,
                         new TypeReference<Map<String, Object>>() {});
             } catch (Exception e) {
-                log.warn("Failed to parse legacy string parameters; preserving raw value: {}",
-                        e.getMessage());
+                log.warn("Failed to parse legacy string parameters; preserving raw value");
                 return Map.of("raw", params);
             }
         }

@@ -15,11 +15,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Audit Logging Service
- * Records all significant events for compliance, debugging, and analytics.
- * FarmOS Compatible: Maps to Log entity (type: activity)
- */
+/** Records significant lifecycle events using bounded, non-sensitive safety metadata. */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -36,38 +32,28 @@ public class AuditService {
         details.put("target_asset", plan.getTargetAssetId());
         details.put("priority", plan.getPriority().name());
         details.put("requires_approval", plan.getRequiresApproval());
-
-        return createLog(
-                plan.getTraceId(),
-                AuditLog.EventType.PLAN_CREATED,
-                "plan",
-                plan.getPlanId(),
-                "system",
+        return createLog(plan.getTraceId(), AuditLog.EventType.PLAN_CREATED,
+                "plan", plan.getPlanId(), "system",
                 "AI generated action plan: " + plan.getActionCategory() + " - " + plan.getActionType(),
-                details,
-                true,
-                null
-        );
+                details, true, null);
     }
 
     @Transactional
-    public AuditLog logPlanValidated(ActionPlan plan, boolean passed, String failedLayer, List<String> errors) {
+    public AuditLog logPlanValidated(
+            ActionPlan plan,
+            boolean passed,
+            String failedLayer,
+            List<String> errors) {
         Map<String, Object> details = new HashMap<>();
         details.put("validation_passed", passed);
         details.put("failed_layer", failedLayer);
-        details.put("errors", errors);
-
-        return createLog(
-                plan.getTraceId(),
-                AuditLog.EventType.PLAN_VALIDATED,
-                "plan",
-                plan.getPlanId(),
-                "system",
-                passed ? "Safety validation passed all 4 layers" : "Safety validation failed at layer: " + failedLayer,
-                details,
-                passed,
-                passed ? null : String.join("; ", errors)
-        );
+        details.put("reason_codes", errors == null ? List.of() : errors);
+        return createLog(plan.getTraceId(), AuditLog.EventType.PLAN_VALIDATED,
+                "plan", plan.getPlanId(), "system",
+                passed ? "Safety validation passed all layers"
+                        : "Safety validation failed at layer: " + failedLayer,
+                details, passed,
+                passed || errors == null ? null : String.join(";", errors));
     }
 
     @Transactional
@@ -76,18 +62,30 @@ public class AuditService {
         details.put("approved_by", approvedBy);
         details.put("approval_notes", notes);
         details.put("previous_status", "PENDING");
+        return createLog(plan.getTraceId(), AuditLog.EventType.PLAN_APPROVED,
+                "plan", plan.getPlanId(), approvedBy,
+                "Plan approved by " + approvedBy, details, true, null);
+    }
 
-        return createLog(
-                plan.getTraceId(),
-                AuditLog.EventType.PLAN_APPROVED,
-                "plan",
-                plan.getPlanId(),
-                approvedBy,
-                "Plan approved by " + approvedBy,
-                details,
-                true,
-                null
-        );
+    @Transactional
+    public AuditLog logPlanSafetyBlocked(ActionPlan plan, String reasonCode) {
+        Map<String, Object> details = new HashMap<>();
+        details.put("layer", "DEVICE_STATE");
+        details.put("reason_code", reasonCode);
+        details.put("retryable", true);
+        return createLog(plan.getTraceId(), AuditLog.EventType.PLAN_SAFETY_BLOCKED,
+                "plan", plan.getPlanId(), "system",
+                "Approved plan blocked by device safety policy", details, false, reasonCode);
+    }
+
+    @Transactional
+    public AuditLog logPlanSafetyCleared(ActionPlan plan, String reasonCode) {
+        Map<String, Object> details = new HashMap<>();
+        details.put("previous_reason_code", reasonCode);
+        details.put("outbox_enqueued", true);
+        return createLog(plan.getTraceId(), AuditLog.EventType.PLAN_SAFETY_CLEARED,
+                "plan", plan.getPlanId(), "system",
+                "Device safety block cleared after revalidation", details, true, null);
     }
 
     @Transactional
@@ -96,18 +94,9 @@ public class AuditService {
         details.put("rejected_by", rejectedBy);
         details.put("rejection_reason", reason);
         details.put("previous_status", plan.getStatus().name());
-
-        return createLog(
-                plan.getTraceId(),
-                AuditLog.EventType.PLAN_REJECTED,
-                "plan",
-                plan.getPlanId(),
-                rejectedBy,
-                "Plan rejected: " + reason,
-                details,
-                true,
-                null
-        );
+        return createLog(plan.getTraceId(), AuditLog.EventType.PLAN_REJECTED,
+                "plan", plan.getPlanId(), rejectedBy,
+                "Plan rejected: " + reason, details, true, null);
     }
 
     @Transactional
@@ -118,18 +107,11 @@ public class AuditService {
         details.put("action_type", plan.getActionType());
         details.put("execution_result", result);
         details.put("executed_by", plan.getApprovedBy());
-
-        return createLog(
-                plan.getTraceId(),
+        return createLog(plan.getTraceId(),
                 success ? AuditLog.EventType.COMMAND_EXECUTED : AuditLog.EventType.COMMAND_FAILED,
-                "command",
-                plan.getCommandId() != null ? plan.getCommandId() : plan.getPlanId(),
-                "system",
-                success ? "Command executed successfully" : "Command execution failed",
-                details,
-                success,
-                error
-        );
+                "command", plan.getCommandId() != null ? plan.getCommandId() : plan.getPlanId(),
+                "system", success ? "Command executed successfully" : "Command execution failed",
+                details, success, error);
     }
 
     @Transactional
@@ -140,58 +122,44 @@ public class AuditService {
         details.put("farm_id", plan.getFarmId());
         details.put("target_asset", plan.getTargetAssetId());
         details.put("ack_deadline_at", plan.getAckDeadlineAt());
-
-        return createLog(
-                plan.getTraceId(),
-                AuditLog.EventType.COMMAND_TIMEOUT,
-                "command",
-                plan.getCommandId() != null ? plan.getCommandId() : plan.getPlanId(),
-                "system",
-                "Device acknowledgement timeout for asset " + plan.getTargetAssetId(),
-                details,
-                false,
-                plan.getExecutionError()
-        );
+        return createLog(plan.getTraceId(), AuditLog.EventType.COMMAND_TIMEOUT,
+                "command", plan.getCommandId() != null ? plan.getCommandId() : plan.getPlanId(),
+                "system", "Device acknowledgement timeout for asset " + plan.getTargetAssetId(),
+                details, false, plan.getExecutionError());
     }
 
     @Transactional
-    public AuditLog logAlertTriggered(String traceId, String alertId, String farmId, String severity, String message) {
+    public AuditLog logAlertTriggered(
+            String traceId,
+            String alertId,
+            String farmId,
+            String severity,
+            String message) {
         Map<String, Object> details = new HashMap<>();
         details.put("farm_id", farmId);
         details.put("severity", severity);
         details.put("alert_message", message);
-
-        return createLog(
-                traceId,
-                AuditLog.EventType.ALERT_TRIGGERED,
-                "alert",
-                alertId,
-                "system",
+        return createLog(traceId, AuditLog.EventType.ALERT_TRIGGERED,
+                "alert", alertId, "system",
                 "Alert triggered: " + severity + " - " + message,
-                details,
-                true,
-                null
-        );
+                details, true, null);
     }
 
     @Transactional
-    public AuditLog logInsightDetected(String traceId, String insightId, String farmId, String status, String message) {
+    public AuditLog logInsightDetected(
+            String traceId,
+            String insightId,
+            String farmId,
+            String status,
+            String message) {
         Map<String, Object> details = new HashMap<>();
         details.put("farm_id", farmId);
         details.put("status", status);
         details.put("insight_message", message);
-
-        return createLog(
-                traceId,
-                AuditLog.EventType.INSIGHT_DETECTED,
-                "insight",
-                insightId,
-                "system",
+        return createLog(traceId, AuditLog.EventType.INSIGHT_DETECTED,
+                "insight", insightId, "system",
                 "Insight detected: " + status + " - " + message,
-                details,
-                true,
-                null
-        );
+                details, true, null);
     }
 
     public List<AuditLog> getAuditTrail(String traceId) {
@@ -206,10 +174,33 @@ public class AuditService {
         return auditLogRepository.findPlanHistory(planId);
     }
 
+    @Transactional
+    public AuditLog logCommandFeedback(
+            String traceId,
+            String commandId,
+            String planId,
+            String farmId,
+            String assetId,
+            String status,
+            String error) {
+        Map<String, Object> details = new HashMap<>();
+        details.put("command_id", commandId);
+        details.put("plan_id", planId);
+        details.put("farm_id", farmId);
+        details.put("target_asset", assetId);
+        details.put("feedback_status", status);
+        if (error != null && !error.isEmpty()) details.put("error", error);
+        boolean success = "EXECUTED".equals(status);
+        return createLog(
+                traceId != null && !traceId.isEmpty() ? traceId : "feedback-" + commandId,
+                success ? AuditLog.EventType.COMMAND_EXECUTED : AuditLog.EventType.COMMAND_FAILED,
+                "command", commandId != null ? commandId : planId, "terra-sense",
+                "Device feedback: " + status + " for asset " + assetId,
+                details, success, success ? null : error);
+    }
+
     private String tracePrefix(String traceId) {
-        if (traceId == null || traceId.isBlank()) {
-            return "no-trace";
-        }
+        if (traceId == null || traceId.isBlank()) return "no-trace";
         return traceId.length() <= 20 ? traceId : traceId.substring(0, 20);
     }
 
@@ -223,14 +214,12 @@ public class AuditService {
             Map<String, Object> details,
             boolean success,
             String errorMessage) {
-
         String detailsJson = null;
         try {
             detailsJson = objectMapper.writeValueAsString(details);
         } catch (JsonProcessingException e) {
             log.warn("Failed to serialize audit log details: {}", e.getMessage());
         }
-
         AuditLog auditLog = AuditLog.builder()
                 .traceId(traceId)
                 .eventType(eventType)
@@ -243,39 +232,8 @@ public class AuditService {
                 .success(success)
                 .errorMessage(errorMessage)
                 .build();
-
         AuditLog saved = auditLogRepository.save(auditLog);
-        log.info("📝 Audit: [{}] {} - {} - {}", tracePrefix(traceId), eventType, entityType, action);
+        log.info("Audit: [{}] {} - {} - {}", tracePrefix(traceId), eventType, entityType, action);
         return saved;
-    }
-
-    /**
-     * Log terminal command feedback from the device path.
-     */
-    @Transactional
-    public AuditLog logCommandFeedback(String traceId, String commandId, String planId,
-                                       String farmId, String assetId, String status, String error) {
-        Map<String, Object> details = new HashMap<>();
-        details.put("command_id", commandId);
-        details.put("plan_id", planId);
-        details.put("farm_id", farmId);
-        details.put("target_asset", assetId);
-        details.put("feedback_status", status);
-        if (error != null && !error.isEmpty()) {
-            details.put("error", error);
-        }
-
-        boolean success = "EXECUTED".equals(status);
-        return createLog(
-                traceId != null && !traceId.isEmpty() ? traceId : "feedback-" + commandId,
-                success ? AuditLog.EventType.COMMAND_EXECUTED : AuditLog.EventType.COMMAND_FAILED,
-                "command",
-                commandId != null ? commandId : planId,
-                "terra-sense",
-                "Device feedback: " + status + " for asset " + assetId,
-                details,
-                success,
-                success ? null : error
-        );
     }
 }

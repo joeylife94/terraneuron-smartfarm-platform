@@ -3,6 +3,7 @@ package com.terraneuron.sense.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.terraneuron.sense.model.DeviceCommand;
+import com.terraneuron.sense.model.DeviceStateRecord;
 import com.terraneuron.sense.model.DeviceStatus;
 import lombok.extern.slf4j.Slf4j;
 import org.eclipse.paho.client.mqttv3.*;
@@ -12,10 +13,11 @@ import org.springframework.stereotype.Service;
 
 import jakarta.annotation.PostConstruct;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -31,6 +33,8 @@ public class MqttGatewayService implements MqttCallback {
     private final KafkaProducerService kafkaProducer;
     private final KafkaTemplate<String, Object> kafkaTemplate;
     private final CommandRegistry commandRegistry;
+    private final DeviceStateRegistry deviceStateRegistry;
+    private final Clock clock;
     private final long feedbackTimeoutSeconds;
 
     @Value("${mqtt.topic.device-status:terra/devices/+/+/status}")
@@ -45,8 +49,6 @@ public class MqttGatewayService implements MqttCallback {
     @Value("${mqtt.sensor-ingest.enabled:true}")
     private boolean sensorIngestEnabled;
 
-    private final ConcurrentHashMap<String, DeviceStatus> deviceStates = new ConcurrentHashMap<>();
-
     private final AtomicLong commandsSent = new AtomicLong();
     private final AtomicLong statusReceived = new AtomicLong();
     private final AtomicLong sensorMsgReceived = new AtomicLong();
@@ -58,12 +60,16 @@ public class MqttGatewayService implements MqttCallback {
             KafkaProducerService kafkaProducer,
             KafkaTemplate<String, Object> kafkaTemplate,
             CommandRegistry commandRegistry,
+            DeviceStateRegistry deviceStateRegistry,
+            Clock clock,
             @Value("${app.command.feedback-timeout-seconds:10}") long feedbackTimeoutSeconds) {
         this.mqttClient = mqttClient;
         this.objectMapper = objectMapper;
         this.kafkaProducer = kafkaProducer;
         this.kafkaTemplate = kafkaTemplate;
         this.commandRegistry = commandRegistry;
+        this.deviceStateRegistry = deviceStateRegistry;
+        this.clock = clock;
         this.feedbackTimeoutSeconds = feedbackTimeoutSeconds;
     }
 
@@ -108,23 +114,33 @@ public class MqttGatewayService implements MqttCallback {
     }
 
     public DeviceStatus getDeviceStatus(String farmId, String assetId) {
-        return deviceStates.get(farmId + "/" + assetId);
+        return deviceStateRegistry.find(farmId, assetId)
+                .map(this::toDeviceStatus)
+                .orElse(null);
     }
 
     public Map<String, DeviceStatus> getAllDeviceStates() {
-        return Map.copyOf(deviceStates);
+        Map<String, DeviceStatus> states = new LinkedHashMap<>();
+        deviceStateRegistry.findAll().forEach((key, value) -> states.put(key, toDeviceStatus(value)));
+        return Map.copyOf(states);
     }
 
     public Map<String, Object> getStats() {
-        return Map.of(
-                "commands_sent", commandsSent.get(),
-                "pending_command_acks", commandRegistry.pendingCount(),
-                "status_received", statusReceived.get(),
-                "sensor_messages", sensorMsgReceived.get(),
-                "error_count", errorCount.get(),
-                "tracked_devices", deviceStates.size(),
-                "mqtt_connected", mqttClient.isConnected()
-        );
+        DeviceStateRegistry.RegistryStatus registryStatus = deviceStateRegistry.status();
+        Map<String, Object> stats = new LinkedHashMap<>();
+        stats.put("commands_sent", commandsSent.get());
+        stats.put("pending_command_acks", commandRegistry.pendingCount());
+        stats.put("status_received", statusReceived.get());
+        stats.put("sensor_messages", sensorMsgReceived.get());
+        stats.put("error_count", errorCount.get());
+        stats.put("tracked_devices", registryStatus.trackedDevices());
+        stats.put("mqtt_connected", mqttClient.isConnected());
+        stats.put("device_state_registry_backend", registryStatus.backend());
+        stats.put("device_state_registry_available", registryStatus.available());
+        if (registryStatus.lastSuccessfulReadAt() != null) {
+            stats.put("device_state_registry_last_success_at", registryStatus.lastSuccessfulReadAt().toString());
+        }
+        return Map.copyOf(stats);
     }
 
     @Override
@@ -147,7 +163,7 @@ public class MqttGatewayService implements MqttCallback {
         } catch (Exception e) {
             errorCount.incrementAndGet();
             log.error("MQTT message processing failed: topic={} error={}",
-                    topic, e.getMessage(), e);
+                    topic, e.getClass().getSimpleName(), e);
         }
     }
 
@@ -171,30 +187,68 @@ public class MqttGatewayService implements MqttCallback {
     }
 
     private void handleDeviceStatus(String topic, String payload) {
+        String[] parts = topic.split("/");
+        if (parts.length < 5) {
+            throw new IllegalArgumentException("Invalid device status topic");
+        }
+
+        String topicFarmId = parts[2];
+        String topicAssetId = parts[3];
         try {
             DeviceStatus status = objectMapper.readValue(payload, DeviceStatus.class);
-
-            String[] parts = topic.split("/");
-            if (parts.length >= 4) {
-                if (status.getFarmId() == null) status.setFarmId(parts[2]);
-                if (status.getAssetId() == null) status.setAssetId(parts[3]);
+            if (status.getFarmId() != null && !topicFarmId.equals(status.getFarmId())) {
+                invalidateTopicDeviceState(topicFarmId, topicAssetId, "farm identity mismatch");
+                throw new IllegalArgumentException("Device status farm identity mismatch");
             }
-            if (status.getReportedAt() == null) status.setReportedAt(Instant.now());
+            if (status.getAssetId() != null && !topicAssetId.equals(status.getAssetId())) {
+                invalidateTopicDeviceState(topicFarmId, topicAssetId, "asset identity mismatch");
+                throw new IllegalArgumentException("Device status asset identity mismatch");
+            }
 
-            String key = status.getFarmId() + "/" + status.getAssetId();
-            deviceStates.put(key, status);
+            Instant observedAt = clock.instant();
+            status.setFarmId(topicFarmId);
+            status.setAssetId(topicAssetId);
+            boolean terminalAcknowledgement = status.hasTerminalCommandAcknowledgement();
+
+            // Never synthesize reportedAt from broker observation time. The safety policy
+            // must be able to distinguish a device timestamp from Terra-Sense receipt time.
+            // A shared-state write failure remains fail-closed for future command dispatch,
+            // but it must not suppress an already-received terminal device acknowledgement.
+            try {
+                deviceStateRegistry.save(DeviceStateRecord.from(status, observedAt));
+            } catch (DeviceStateRegistryUnavailableException stateWriteError) {
+                invalidateTopicDeviceState(topicFarmId, topicAssetId, "state write failure");
+                if (!terminalAcknowledgement) {
+                    throw stateWriteError;
+                }
+                errorCount.incrementAndGet();
+                log.warn(
+                        "Device state was not persisted; continuing terminal ACK forwarding: command={}",
+                        status.getLastCommandId());
+            }
             statusReceived.incrementAndGet();
 
-            log.info("Device status: {} → {} ({})", key, status.getState(),
-                    status.getLastCommandId() != null
-                            ? "command:" + status.getLastCommandId() : "idle");
+            log.info("Device status accepted: state={} ack_present={}",
+                    status.getState(), status.getLastCommandId() != null);
 
-            if (status.hasTerminalCommandAcknowledgement()) {
+            if (terminalAcknowledgement) {
                 publishDeviceAcknowledgement(status);
             }
         } catch (JsonProcessingException e) {
+            invalidateTopicDeviceState(topicFarmId, topicAssetId, "status payload parse failure");
             errorCount.incrementAndGet();
             log.warn("Device status parsing failed: topic={}", topic);
+        }
+    }
+
+    private void invalidateTopicDeviceState(String farmId, String assetId, String reason) {
+        try {
+            deviceStateRegistry.invalidate(farmId, assetId);
+        } catch (DeviceStateRegistryUnavailableException invalidationError) {
+            log.warn(
+                    "Shared device state cleanup failed; local quarantine remains active: asset={} reason={}",
+                    assetId,
+                    reason);
         }
     }
 
@@ -230,12 +284,18 @@ public class MqttGatewayService implements MqttCallback {
             return;
         }
 
+        // Feedback transport still needs a timestamp even when the device omitted
+        // reportedAt. This fallback does not alter the stored state used by safety checks.
+        Instant acknowledgedAt = status.getReportedAt() != null
+                ? status.getReportedAt()
+                : clock.instant();
+
         Map<String, Object> feedback = Map.of(
                 "specversion", "1.0",
                 "type", "terra.sense.command.feedback",
                 "source", "//terraneuron/terra-sense",
                 "id", java.util.UUID.randomUUID().toString(),
-                "time", status.getReportedAt().toString(),
+                "time", acknowledgedAt.toString(),
                 "datacontenttype", "application/json",
                 "data", Map.of(
                         "trace_id", safe(command.getTraceId()),
@@ -245,7 +305,7 @@ public class MqttGatewayService implements MqttCallback {
                         "target_asset_id", command.getTargetAssetId(),
                         "status", feedbackStatus,
                         "error", error,
-                        "timestamp", status.getReportedAt().toString()
+                        "timestamp", acknowledgedAt.toString()
                 )
         );
 
@@ -275,7 +335,7 @@ public class MqttGatewayService implements MqttCallback {
                 if (data.getFarmId() == null) data.setFarmId(parts[2]);
                 if (data.getSensorId() == null) data.setSensorId(parts[3]);
             }
-            if (data.getTimestamp() == null) data.setTimestamp(Instant.now());
+            if (data.getTimestamp() == null) data.setTimestamp(clock.instant());
 
             kafkaProducer.sendSensorData(data);
             sensorMsgReceived.incrementAndGet();
@@ -286,6 +346,22 @@ public class MqttGatewayService implements MqttCallback {
             errorCount.incrementAndGet();
             log.warn("MQTT sensor data parsing failed: topic={}", topic);
         }
+    }
+
+    private DeviceStatus toDeviceStatus(DeviceStateRecord state) {
+        return DeviceStatus.builder()
+                .farmId(state.getFarmId())
+                .assetId(state.getAssetId())
+                .deviceType(state.getDeviceType())
+                .state(state.getState())
+                .maintenanceMode(state.isMaintenanceMode())
+                .capabilities(state.getCapabilities())
+                .lastCommandId(state.getLastCommandId())
+                .lastCommandStatus(state.getLastCommandStatus())
+                .lastCommandError(state.getLastCommandError())
+                .attributes(state.getAttributes())
+                .reportedAt(state.getReportedAt())
+                .build();
     }
 
     private String safe(String value) {

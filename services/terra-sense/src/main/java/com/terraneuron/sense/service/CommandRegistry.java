@@ -20,6 +20,9 @@ public interface CommandRegistry {
 
     Optional<DeviceCommand> findPending(String commandId);
 
+    /** Load a durable terminal result so Kafka redelivery can replay feedback. */
+    Optional<CommandCompletion> findCompletion(String commandId);
+
     /**
      * Atomically claim a terminal device acknowledgement.
      *

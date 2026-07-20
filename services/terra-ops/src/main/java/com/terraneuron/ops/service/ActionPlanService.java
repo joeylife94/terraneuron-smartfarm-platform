@@ -18,10 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-/**
- * Action Plan Service
- * Manages the complete lifecycle of action plans with safety validation.
- */
+/** Manages action-plan approval, safety gating, outbox dispatch, and terminal lifecycle. */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -35,18 +32,11 @@ public class ActionPlanService {
     private final ContractSchemaValidator contractSchemaValidator;
     private final CommandOutboxService commandOutboxService;
 
-    /**
-     * Kafka consumer for action-plans topic
-     * Receives plans from terra-cortex and stores them for approval
-     */
     @KafkaListener(topics = "action-plans", groupId = "${spring.kafka.consumer.group-id}")
     @Transactional
     public void consumeActionPlan(Map<String, Object> planEvent) {
         try {
-            log.info("📥 Received action plan event from terra-cortex");
-
-            contractSchemaValidator.validate(
-                    ContractSchemaValidator.ACTION_PLAN_SCHEMA, planEvent);
+            contractSchemaValidator.validate(ContractSchemaValidator.ACTION_PLAN_SCHEMA, planEvent);
             Optional<Map<String, Object>> validatedData = eventValidator.validate(planEvent);
             if (validatedData.isEmpty()) {
                 throw new IllegalArgumentException("Invalid action plan event payload");
@@ -55,29 +45,16 @@ public class ActionPlanService {
             Map<String, Object> data = validatedData.get();
             String traceId = (String) data.get("trace_id");
             String planId = (String) data.get("plan_id");
-
             if (actionPlanRepository.findByPlanId(planId).isPresent()) {
-                log.warn("⚠️ Plan already exists: {}", planId);
+                log.warn("Plan already exists: {}", planId);
                 return;
             }
 
-            String parametersJson = null;
-            Object params = data.get("parameters");
-            if (params != null) {
-                parametersJson = objectMapper.writeValueAsString(params);
-            }
-
-            String safetyConditionsJson = null;
-            Object safetyConditions = data.get("safety_conditions");
-            if (safetyConditions != null) {
-                safetyConditionsJson = objectMapper.writeValueAsString(safetyConditions);
-            }
-
+            String parametersJson = data.get("parameters") == null
+                    ? null : objectMapper.writeValueAsString(data.get("parameters"));
+            String safetyConditionsJson = data.get("safety_conditions") == null
+                    ? null : objectMapper.writeValueAsString(data.get("safety_conditions"));
             String priorityStr = (String) data.getOrDefault("priority", "medium");
-            ActionPlan.ActionPriority priority = ActionPlan.ActionPriority.valueOf(priorityStr.toUpperCase());
-
-            Instant generatedAt = parseInstant(data.get("generated_at"));
-            Instant expiresAt = parseInstant(data.get("expires_at"));
 
             ActionPlan plan = ActionPlan.builder()
                     .planId(planId)
@@ -91,26 +68,29 @@ public class ActionPlanService {
                     .parameters(parametersJson)
                     .reasoning((String) data.get("reasoning"))
                     .status(ActionPlan.PlanStatus.PENDING)
-                    .priority(priority)
+                    .priority(ActionPlan.ActionPriority.valueOf(priorityStr.toUpperCase()))
                     .estimatedImpact((String) data.get("estimated_impact"))
                     .safetyConditions(safetyConditionsJson)
                     .requiresApproval((Boolean) data.getOrDefault("requires_approval", true))
-                    .generatedAt(generatedAt != null ? generatedAt : Instant.now())
-                    .expiresAt(expiresAt)
+                    .generatedAt(defaultInstant(parseInstant(data.get("generated_at"))))
+                    .expiresAt(parseInstant(data.get("expires_at")))
                     .build();
 
             actionPlanRepository.save(plan);
-            log.info("✅ Action plan saved: {} ({})", planId, plan.getActionCategory());
             auditService.logPlanCreated(plan);
-
         } catch (Exception e) {
-            log.error("❌ Failed to process action plan: {}", e.getMessage(), e);
+            log.error("Failed to process action plan: {}", e.getClass().getSimpleName(), e);
             throw new IllegalStateException("Failed to process action plan event", e);
         }
     }
 
     public List<ActionPlan> getPendingPlans() {
         return actionPlanRepository.findByStatusOrderByPriorityDescCreatedAtDesc(ActionPlan.PlanStatus.PENDING);
+    }
+
+    public List<ActionPlan> getSafetyBlockedPlans() {
+        return actionPlanRepository.findByStatusOrderByPriorityDescCreatedAtDesc(
+                ActionPlan.PlanStatus.SAFETY_BLOCKED);
     }
 
     public List<ActionPlan> getPendingPlansByFarm(String farmId) {
@@ -127,77 +107,129 @@ public class ActionPlanService {
 
     @Transactional
     public ActionPlan approvePlan(String planId, String approvedBy, String notes) {
-        ActionPlan plan = actionPlanRepository.findByPlanId(planId)
-                .orElseThrow(() -> new IllegalArgumentException("Plan not found: " + planId));
-
+        ActionPlan plan = lockedPlan(planId);
         if (!plan.canBeApproved()) {
-            throw new IllegalStateException("Plan cannot be approved: status=" + plan.getStatus() + ", expired=" + plan.isExpired());
+            throw new IllegalStateException(
+                    "Plan cannot be approved: status=" + plan.getStatus() + ", expired=" + plan.isExpired());
         }
 
         plan.setStatus(ActionPlan.PlanStatus.APPROVED);
         plan.setApprovedBy(approvedBy);
         plan.setApprovedAt(Instant.now());
+        plan.setRejectionReason(null);
+        actionPlanRepository.save(plan);
+        auditService.logPlanApproved(plan, approvedBy, notes);
 
-        SafetyValidator.ValidationResult validationResult = safetyValidator.validate(plan);
-        auditService.logPlanValidated(plan, validationResult.isOverallPassed(),
-                validationResult.getFailedLayer(), validationResult.getAllErrors());
+        SafetyValidator.ValidationResult validation = validateAndAudit(plan);
+        if (!validation.isOverallPassed()) {
+            return applyValidationFailure(plan, validation);
+        }
 
-        if (!validationResult.isOverallPassed()) {
-            log.warn("⚠️ Safety validation failed for plan {}. Defaulting to ALERT_ONLY.", planId);
-            plan.setStatus(ActionPlan.PlanStatus.REJECTED);
-            plan.setRejectionReason("Safety validation failed at layer: " + validationResult.getFailedLayer() +
-                    ". Errors: " + String.join("; ", validationResult.getAllErrors()));
+        commandOutboxService.enqueue(plan);
+        log.info("Plan approved and queued: {}", planId);
+        return plan;
+    }
+
+    @Transactional
+    public ActionPlan revalidateSafety(String planId) {
+        ActionPlan plan = lockedPlan(planId);
+        if (!plan.canBeSafetyRevalidated()) {
+            throw new IllegalStateException(
+                    "Plan cannot be safety-revalidated: status=" + plan.getStatus()
+                            + ", expired=" + plan.isExpired()
+                            + ", commandPresent=" + (plan.getCommandId() != null));
+        }
+
+        String previousReason = plan.getSafetyBlockReasonCode();
+        plan.setStatus(ActionPlan.PlanStatus.APPROVED);
+        SafetyValidator.ValidationResult validation = validateAndAudit(plan);
+        if (!validation.isOverallPassed()) {
+            return applyValidationFailure(plan, validation);
+        }
+
+        plan.setSafetyBlockReasonCode(null);
+        plan.setSafetyBlockedAt(null);
+        plan.setExecutionResult(null);
+        plan.setExecutionError(null);
+        actionPlanRepository.save(plan);
+        commandOutboxService.enqueue(plan);
+        auditService.logPlanSafetyCleared(plan, previousReason);
+        log.info("Safety block cleared and command queued: plan={}", planId);
+        return plan;
+    }
+
+    private ActionPlan lockedPlan(String planId) {
+        return actionPlanRepository.findByPlanIdForUpdate(planId)
+                .orElseThrow(() -> new IllegalArgumentException("Plan not found: " + planId));
+    }
+
+    private SafetyValidator.ValidationResult validateAndAudit(ActionPlan plan) {
+        SafetyValidator.ValidationResult validation = safetyValidator.validate(plan);
+        List<String> reasonCodes = validation.isOverallPassed()
+                ? List.of()
+                : List.of(defaultReason(validation.getFailureReasonCode()));
+        auditService.logPlanValidated(
+                plan,
+                validation.isOverallPassed(),
+                validation.getFailedLayer(),
+                reasonCodes);
+        return validation;
+    }
+
+    private ActionPlan applyValidationFailure(
+            ActionPlan plan,
+            SafetyValidator.ValidationResult validation) {
+        String reasonCode = defaultReason(validation.getFailureReasonCode());
+        if ("DEVICE_STATE".equals(validation.getFailedLayer())) {
+            plan.setStatus(ActionPlan.PlanStatus.SAFETY_BLOCKED);
+            plan.setSafetyBlockReasonCode(reasonCode);
+            plan.setSafetyBlockedAt(Instant.now());
+            plan.setExecutionResult("DEVICE_SAFETY_BLOCKED");
+            plan.setExecutionError(null);
+            plan.setRejectionReason(null);
             actionPlanRepository.save(plan);
-
-            auditService.logPlanRejected(plan, "system", plan.getRejectionReason());
-            triggerSafetyAlert(plan, validationResult);
+            auditService.logPlanSafetyBlocked(plan, reasonCode);
+            triggerSafetyAlert(plan, validation);
             return plan;
         }
 
+        plan.setStatus(ActionPlan.PlanStatus.REJECTED);
+        plan.setRejectionReason("Safety validation failed: " + reasonCode);
         actionPlanRepository.save(plan);
-        log.info("✅ Plan approved: {} by {}", planId, approvedBy);
-        auditService.logPlanApproved(plan, approvedBy, notes);
-
-        // The plan transition and command event are committed atomically in MySQL.
-        // Kafka publication is performed asynchronously by CommandOutboxPublisher.
-        commandOutboxService.enqueue(plan);
+        auditService.logPlanRejected(plan, "system", plan.getRejectionReason());
+        triggerSafetyAlert(plan, validation);
         return plan;
     }
 
     @Transactional
     public ActionPlan rejectPlan(String planId, String rejectedBy, String reason) {
-        ActionPlan plan = actionPlanRepository.findByPlanId(planId)
-                .orElseThrow(() -> new IllegalArgumentException("Plan not found: " + planId));
-
-        if (plan.getStatus() != ActionPlan.PlanStatus.PENDING) {
-            throw new IllegalStateException("Only PENDING plans can be rejected");
+        ActionPlan plan = lockedPlan(planId);
+        if (plan.getStatus() != ActionPlan.PlanStatus.PENDING
+                && plan.getStatus() != ActionPlan.PlanStatus.SAFETY_BLOCKED) {
+            throw new IllegalStateException("Only PENDING or SAFETY_BLOCKED plans can be rejected");
         }
-
         plan.setStatus(ActionPlan.PlanStatus.REJECTED);
         plan.setRejectionReason(reason);
         actionPlanRepository.save(plan);
-
-        log.info("❌ Plan rejected: {} by {} - Reason: {}", planId, rejectedBy, reason);
         auditService.logPlanRejected(plan, rejectedBy, reason);
         return plan;
     }
 
-    private void triggerSafetyAlert(ActionPlan plan, SafetyValidator.ValidationResult validationResult) {
+    private void triggerSafetyAlert(
+            ActionPlan plan,
+            SafetyValidator.ValidationResult validation) {
         try {
             String alertId = "alert-" + java.util.UUID.randomUUID().toString().substring(0, 8);
-
             auditService.logAlertTriggered(
                     plan.getTraceId(),
                     alertId,
                     plan.getFarmId(),
                     "warning",
-                    "Safety validation failed for action plan. Manual intervention required. " +
-                            "Failed layer: " + validationResult.getFailedLayer()
-            );
-
-            log.info("🚨 Safety alert triggered for plan: {}", plan.getPlanId());
+                    "Safety validation blocked action plan. layer="
+                            + validation.getFailedLayer()
+                            + " reason=" + defaultReason(validation.getFailureReasonCode()));
         } catch (Exception e) {
-            log.error("Failed to trigger safety alert: {}", e.getMessage());
+            log.error("Failed to trigger safety alert: {}", e.getClass().getSimpleName());
         }
     }
 
@@ -205,39 +237,31 @@ public class ActionPlanService {
     @Transactional
     public void expireOldPlans() {
         Instant now = Instant.now();
+        expire(actionPlanRepository.findExpiredPendingPlans(now));
+        expire(actionPlanRepository.findExpiredApprovedPlans(now));
+        expire(actionPlanRepository.findExpiredSafetyBlockedPlans(now));
+    }
 
-        List<ActionPlan> expiredPending = actionPlanRepository.findExpiredPendingPlans(now);
-        for (ActionPlan plan : expiredPending) {
+    private void expire(List<ActionPlan> plans) {
+        for (ActionPlan plan : plans) {
             plan.setStatus(ActionPlan.PlanStatus.EXPIRED);
             actionPlanRepository.save(plan);
-            log.info("⏰ Plan expired: {}", plan.getPlanId());
-        }
-
-        List<ActionPlan> expiredApproved = actionPlanRepository.findExpiredApprovedPlans(now);
-        for (ActionPlan plan : expiredApproved) {
-            plan.setStatus(ActionPlan.PlanStatus.EXPIRED);
-            actionPlanRepository.save(plan);
-            log.info("⏰ Approved plan expired without dispatch: {}", plan.getPlanId());
+            log.info("Plan expired before dispatch: {}", plan.getPlanId());
         }
     }
 
-    /**
-     * Mark MQTT-delivered commands as timed out when no device acknowledgement arrives.
-     */
     @Scheduled(fixedRateString = "${app.command.ack-timeout-scan-ms:30000}")
     @Transactional
     public void timeoutMissingDeviceAcknowledgements() {
         Instant now = Instant.now();
         List<ActionPlan> timedOut = actionPlanRepository.findByStatusAndAckDeadlineAtBefore(
                 ActionPlan.PlanStatus.DELIVERED, now);
-
         for (ActionPlan plan : timedOut) {
             plan.setStatus(ActionPlan.PlanStatus.ACK_TIMEOUT);
             plan.setExecutionResult("DEVICE_ACK_TIMEOUT");
             plan.setExecutionError("No device acknowledgement received before " + plan.getAckDeadlineAt());
             actionPlanRepository.save(plan);
             auditService.logCommandTimeout(plan);
-            log.warn("⏰ Device ACK timeout: plan={} command={}", plan.getPlanId(), plan.getCommandId());
         }
     }
 
@@ -250,25 +274,28 @@ public class ActionPlanService {
                 + actionPlanRepository.countByStatus(ActionPlan.PlanStatus.EXECUTION_FAILED)
                 + actionPlanRepository.countByStatus(ActionPlan.PlanStatus.ACK_TIMEOUT)
                 + actionPlanRepository.countByStatus(ActionPlan.PlanStatus.FAILED);
-
         return Map.of(
                 "pending", actionPlanRepository.countByStatus(ActionPlan.PlanStatus.PENDING),
                 "approved", actionPlanRepository.countByStatus(ActionPlan.PlanStatus.APPROVED),
+                "safety_blocked", actionPlanRepository.countByStatus(ActionPlan.PlanStatus.SAFETY_BLOCKED),
                 "in_flight", inFlight,
                 "rejected", actionPlanRepository.countByStatus(ActionPlan.PlanStatus.REJECTED),
                 "executed", actionPlanRepository.countByStatus(ActionPlan.PlanStatus.EXECUTED),
                 "failed", failed,
                 "expired", actionPlanRepository.countByStatus(ActionPlan.PlanStatus.EXPIRED),
                 "pending_critical", actionPlanRepository.countPendingByPriority(ActionPlan.ActionPriority.CRITICAL),
-                "pending_high", actionPlanRepository.countPendingByPriority(ActionPlan.ActionPriority.HIGH)
-        );
+                "pending_high", actionPlanRepository.countPendingByPriority(ActionPlan.ActionPriority.HIGH));
     }
 
     private Instant parseInstant(Object value) {
-        if (value == null) return null;
-        if (value instanceof String) {
-            return Instant.parse((String) value);
-        }
-        return null;
+        return value instanceof String text ? Instant.parse(text) : null;
+    }
+
+    private Instant defaultInstant(Instant value) {
+        return value != null ? value : Instant.now();
+    }
+
+    private String defaultReason(String reason) {
+        return reason == null || reason.isBlank() ? "SAFETY_VALIDATION_FAILED" : reason;
     }
 }

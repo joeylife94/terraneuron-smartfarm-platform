@@ -8,6 +8,7 @@ import lombok.NoArgsConstructor;
 
 import java.time.Instant;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Device status reported over MQTT.
@@ -28,11 +29,18 @@ public class DeviceStatus {
     /** Farm ID */
     private String farmId;
 
-    /** Device type (fan, heater, humidifier, dehumidifier, vent, led) */
+    /** Explicit device type used by capability policy; asset IDs are never inspected. */
     private String deviceType;
 
-    /** Current device state (online, offline, running, idle, error) */
+    /** Current device state (online, offline, running, idle, error, unknown) */
     private String state;
+
+    /** Device-reported maintenance mode. */
+    @Builder.Default
+    private Boolean maintenanceMode = false;
+
+    /** Optional adapter-specific capability identifiers. */
+    private Set<String> capabilities;
 
     /** Last command ID handled by the physical device */
     private String lastCommandId;
@@ -50,7 +58,9 @@ public class DeviceStatus {
     private Instant reportedAt;
 
     public boolean isOnline() {
-        return "online".equals(state) || "running".equals(state) || "idle".equals(state);
+        return "online".equalsIgnoreCase(state)
+                || "running".equalsIgnoreCase(state)
+                || "idle".equalsIgnoreCase(state);
     }
 
     public boolean hasTerminalCommandAcknowledgement() {

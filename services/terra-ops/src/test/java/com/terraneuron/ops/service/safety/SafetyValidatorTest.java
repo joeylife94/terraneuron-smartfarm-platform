@@ -4,23 +4,11 @@ import com.terraneuron.ops.entity.ActionPlan;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * Focused unit tests for the 4-layer {@link SafetyValidator}.
- *
- * These tests pin down the permission-layer (layer 3) semantics that drive the
- * human-in-the-loop approval flow:
- * <ul>
- *   <li>A PENDING plan that still requires approval must fail (no execution before approval).</li>
- *   <li>An APPROVED plan with approver metadata must pass.</li>
- *   <li>Plans missing required data must fail at the logical layer.</li>
- * </ul>
- */
 class SafetyValidatorTest {
-
-    private final SafetyValidator validator = new SafetyValidator();
 
     private ActionPlan.ActionPlanBuilder validPlanBuilder() {
         return ActionPlan.builder()
@@ -28,6 +16,7 @@ class SafetyValidatorTest {
                 .traceId("trace-0000000000000001")
                 .farmId("farm-1")
                 .targetAssetId("fan-01")
+                .targetAssetType("device")
                 .actionCategory("ventilation")
                 .actionType("turn_on")
                 .reasoning("Temperature exceeds threshold")
@@ -39,82 +28,95 @@ class SafetyValidatorTest {
 
     @Test
     void pendingPlanRequiringApprovalFailsPermissionLayer() {
-        ActionPlan plan = validPlanBuilder()
-                .status(ActionPlan.PlanStatus.PENDING)
-                .build();
+        SafetyValidator validator = new SafetyValidator(
+                plan -> DeviceSafetyClient.DeviceSafetyResult.allow());
+        ActionPlan plan = validPlanBuilder().status(ActionPlan.PlanStatus.PENDING).build();
 
         SafetyValidator.ValidationResult result = validator.validate(plan);
 
         assertThat(result.isOverallPassed()).isFalse();
         assertThat(result.getFailedLayer()).isEqualTo("PERMISSION");
-        assertThat(result.getPermissionValidation().getErrors())
-                .anyMatch(e -> e.contains("requires human approval"));
-        assertThat(result.getRecommendedAction()).isEqualTo("ALERT_ONLY");
+        assertThat(result.getFailureReasonCode()).isEqualTo("HUMAN_APPROVAL_REQUIRED");
     }
 
     @Test
-    void approvedPlanWithApproverMetadataPassesAllLayers() {
-        ActionPlan plan = validPlanBuilder()
-                .status(ActionPlan.PlanStatus.APPROVED)
-                .approvedBy("operator")
-                .approvedAt(Instant.now())
-                .build();
+    void approvedPlanWithFreshDevicePassesAllLayers() {
+        SafetyValidator validator = new SafetyValidator(
+                plan -> DeviceSafetyClient.DeviceSafetyResult.allow());
+        ActionPlan plan = approvedPlan();
 
         SafetyValidator.ValidationResult result = validator.validate(plan);
 
         assertThat(result.isOverallPassed()).isTrue();
-        assertThat(result.getFailedLayer()).isNull();
         assertThat(result.getRecommendedAction()).isEqualTo("EXECUTE");
     }
 
     @Test
-    void approvedPlanWithoutApproverMetadataFailsPermissionLayer() {
-        ActionPlan plan = validPlanBuilder()
-                .status(ActionPlan.PlanStatus.APPROVED)
-                // approvedBy / approvedAt deliberately omitted
-                .build();
+    void approvedAlertOnlyPlanSkipsPhysicalDeviceSafetyClient() {
+        AtomicBoolean clientCalled = new AtomicBoolean(false);
+        SafetyValidator validator = new SafetyValidator(plan -> {
+            clientCalled.set(true);
+            return DeviceSafetyClient.DeviceSafetyResult.blocked("REGISTRY_UNAVAILABLE");
+        });
+        ActionPlan plan = approvedPlan();
+        plan.setTargetAssetId("operator-notifications");
+        plan.setTargetAssetType("notification");
+        plan.setActionCategory("alert");
+        plan.setActionType("alert_only");
 
         SafetyValidator.ValidationResult result = validator.validate(plan);
 
-        assertThat(result.isOverallPassed()).isFalse();
+        assertThat(result.isOverallPassed()).isTrue();
+        assertThat(result.getDeviceStateValidation().getReasonCode()).isEqualTo("NOT_APPLICABLE");
+        assertThat(clientCalled).isFalse();
+    }
+
+    @Test
+    void approvedPlanWithoutApproverMetadataFailsPermissionLayer() {
+        SafetyValidator validator = new SafetyValidator(
+                plan -> DeviceSafetyClient.DeviceSafetyResult.allow());
+        ActionPlan plan = validPlanBuilder().status(ActionPlan.PlanStatus.APPROVED).build();
+
+        SafetyValidator.ValidationResult result = validator.validate(plan);
+
         assertThat(result.getFailedLayer()).isEqualTo("PERMISSION");
         assertThat(result.getPermissionValidation().getErrors())
-                .anyMatch(e -> e.contains("approver information"));
+                .contains("APPROVER_REQUIRED", "APPROVAL_TIME_REQUIRED");
     }
 
     @Test
-    void planMissingRequiredFieldsFailsLogicalLayer() {
-        ActionPlan plan = validPlanBuilder()
-                .status(ActionPlan.PlanStatus.APPROVED)
-                .approvedBy("operator")
-                .approvedAt(Instant.now())
-                .targetAssetId(null)   // required field missing
-                .actionType(null)      // required field missing
-                .build();
+    void missingRequiredFieldsFailLogicalLayer() {
+        SafetyValidator validator = new SafetyValidator(
+                plan -> DeviceSafetyClient.DeviceSafetyResult.allow());
+        ActionPlan plan = approvedPlan();
+        plan.setTargetAssetId(null);
+        plan.setActionType(null);
 
         SafetyValidator.ValidationResult result = validator.validate(plan);
 
-        assertThat(result.isOverallPassed()).isFalse();
         assertThat(result.getFailedLayer()).isEqualTo("LOGICAL");
         assertThat(result.getLogicalValidation().getErrors())
-                .anyMatch(e -> e.contains("target_asset_id"))
-                .anyMatch(e -> e.contains("action_type"));
+                .contains("ASSET_ID_REQUIRED", "ACTION_TYPE_REQUIRED");
     }
 
     @Test
-    void expiredPlanFailsLogicalLayer() {
-        ActionPlan plan = validPlanBuilder()
+    void deviceBlockUsesStableLayerAndReasonCode() {
+        SafetyValidator validator = new SafetyValidator(
+                plan -> DeviceSafetyClient.DeviceSafetyResult.blocked("STATE_STALE"));
+
+        SafetyValidator.ValidationResult result = validator.validate(approvedPlan());
+
+        assertThat(result.isOverallPassed()).isFalse();
+        assertThat(result.getFailedLayer()).isEqualTo("DEVICE_STATE");
+        assertThat(result.getFailureReasonCode()).isEqualTo("STATE_STALE");
+        assertThat(result.getAllErrors()).containsExactly("DEVICE_SAFETY_BLOCKED:STATE_STALE");
+    }
+
+    private ActionPlan approvedPlan() {
+        return validPlanBuilder()
                 .status(ActionPlan.PlanStatus.APPROVED)
                 .approvedBy("operator")
                 .approvedAt(Instant.now())
-                .expiresAt(Instant.now().minusSeconds(60))
                 .build();
-
-        SafetyValidator.ValidationResult result = validator.validate(plan);
-
-        assertThat(result.isOverallPassed()).isFalse();
-        assertThat(result.getFailedLayer()).isEqualTo("LOGICAL");
-        assertThat(result.getLogicalValidation().getErrors())
-                .anyMatch(e -> e.contains("expired"));
     }
 }

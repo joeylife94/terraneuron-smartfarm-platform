@@ -39,9 +39,14 @@ CREATE TABLE action_plans (
 INSERT INTO action_plans (
     plan_id, trace_id, farm_id, target_asset_id, action_category, action_type,
     status, priority, generated_at
-) VALUES (
+) VALUES
+(
     'legacy-plan-preserved', 'trace-legacy', 'farm-legacy', 'fan-legacy',
     'ventilation', 'turn_on', 'APPROVED', 'HIGH', CURRENT_TIMESTAMP
+),
+(
+    'legacy-dead-plan', 'trace-dead', 'farm-legacy', 'pump-legacy',
+    'irrigation', 'turn_on', 'DISPATCH_FAILED', 'MEDIUM', CURRENT_TIMESTAMP
 );
 
 CREATE TABLE audit_logs (
@@ -107,10 +112,13 @@ CREATE TABLE command_outbox (
     INDEX idx_outbox_locked_at (locked_at)
 );
 
+-- The pre-safety schema allowed multiple commands for one plan. V4 must
+-- preserve terminal lifecycle truth and archive the other rows.
 INSERT INTO command_outbox (
     event_id, plan_id, command_id, topic, message_key, payload, status,
     attempts, next_attempt_at, created_at, updated_at
-) VALUES (
+) VALUES
+(
     '00000000-0000-0000-0000-000000000001',
     'legacy-plan-preserved',
     'legacy-command-preserved',
@@ -119,6 +127,58 @@ INSERT INTO command_outbox (
     '{}',
     'PUBLISHED',
     1,
+    CURRENT_TIMESTAMP(6),
+    CURRENT_TIMESTAMP(6),
+    CURRENT_TIMESTAMP(6)
+),
+(
+    '00000000-0000-0000-0000-000000000002',
+    'legacy-plan-preserved',
+    'legacy-command-processing',
+    'terra.control.command',
+    'legacy-command-processing',
+    '{}',
+    'PROCESSING',
+    1,
+    CURRENT_TIMESTAMP(6),
+    CURRENT_TIMESTAMP(6),
+    CURRENT_TIMESTAMP(6)
+),
+(
+    '00000000-0000-0000-0000-000000000003',
+    'legacy-plan-preserved',
+    'legacy-command-pending',
+    'terra.control.command',
+    'legacy-command-pending',
+    '{}',
+    'PENDING',
+    0,
+    CURRENT_TIMESTAMP(6),
+    CURRENT_TIMESTAMP(6),
+    CURRENT_TIMESTAMP(6)
+),
+(
+    '00000000-0000-0000-0000-000000000004',
+    'legacy-dead-plan',
+    'legacy-command-dead',
+    'terra.control.command',
+    'legacy-command-dead',
+    '{}',
+    'DEAD',
+    8,
+    CURRENT_TIMESTAMP(6),
+    CURRENT_TIMESTAMP(6),
+    CURRENT_TIMESTAMP(6)
+),
+(
+    '00000000-0000-0000-0000-000000000005',
+    'legacy-dead-plan',
+    'legacy-command-retry',
+    'terra.control.command',
+    'legacy-command-retry',
+    '{}',
+    'PENDING',
+    2,
     CURRENT_TIMESTAMP(6),
     CURRENT_TIMESTAMP(6),
     CURRENT_TIMESTAMP(6)

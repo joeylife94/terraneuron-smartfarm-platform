@@ -32,9 +32,15 @@ services:
     depends_on:
       - redis
     environment:
-      SPRING_DATA_REDIS_HOST: redis
-      SPRING_DATA_REDIS_PORT: 6379
-      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:-local-dev}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-local-dev}
+      DEVICE_STATE_FRESHNESS_SECONDS: ${DEVICE_STATE_FRESHNESS_SECONDS:-120}
+      DEVICE_STATE_TTL_SECONDS: ${DEVICE_STATE_TTL_SECONDS:-600}
+      DEVICE_SAFETY_JWT_SECRET: ${DEVICE_SAFETY_JWT_SECRET:-local-device-safety-key-change-me-32-bytes}
+      DEVICE_SAFETY_JWT_ISSUER: terraneuron-internal
+      DEVICE_SAFETY_JWT_AUDIENCE: terra-sense
+      DEVICE_SAFETY_JWT_SUBJECT: terra-ops
 
   terra-cortex:
     environment:
@@ -57,11 +63,19 @@ services:
     build:
       context: .
       dockerfile: services/terra-ops/Dockerfile
+    depends_on:
+      - terra-sense
     environment:
       SERVICE_AUTH_JWT_SECRET: ${SERVICE_AUTH_JWT_SECRET:-local-service-auth-key-change-me-32-bytes}
       SERVICE_AUTH_JWT_ISSUER: terraneuron-internal
       SERVICE_AUTH_JWT_AUDIENCE: terra-ops
       SERVICE_AUTH_ALLOWED_SUBJECT: terra-cortex
+      TERRA_SENSE_URL: http://terra-sense:8081
+      DEVICE_SAFETY_JWT_SECRET: ${DEVICE_SAFETY_JWT_SECRET:-local-device-safety-key-change-me-32-bytes}
+      DEVICE_SAFETY_JWT_ISSUER: terraneuron-internal
+      DEVICE_SAFETY_JWT_AUDIENCE: terra-sense
+      DEVICE_SAFETY_JWT_SUBJECT: terra-ops
+      DEVICE_SAFETY_JWT_SCOPE: device:safety:evaluate
 
 volumes:
   redis-data:

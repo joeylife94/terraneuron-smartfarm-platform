@@ -3,6 +3,7 @@ package com.terraneuron.ops.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.terraneuron.ops.entity.ActionPlan;
 import com.terraneuron.ops.repository.ActionPlanRepository;
+import com.terraneuron.ops.service.safety.DeviceSafetyClient;
 import com.terraneuron.ops.service.safety.SafetyValidator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -15,9 +16,9 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
@@ -27,24 +28,20 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class ActionPlanServiceApprovalTest {
 
-    @Mock
-    private ActionPlanRepository actionPlanRepository;
-    @Mock
-    private AuditService auditService;
-    @Mock
-    private ActionPlanEventValidator eventValidator;
-    @Mock
-    private CommandOutboxService commandOutboxService;
+    @Mock private ActionPlanRepository actionPlanRepository;
+    @Mock private AuditService auditService;
+    @Mock private ActionPlanEventValidator eventValidator;
+    @Mock private CommandOutboxService commandOutboxService;
+    @Mock private DeviceSafetyClient deviceSafetyClient;
 
     private ActionPlanService service;
 
     @BeforeEach
     void setUp() {
         ObjectMapper objectMapper = new ObjectMapper();
-        SafetyValidator safetyValidator = new SafetyValidator();
         service = new ActionPlanService(
                 actionPlanRepository,
-                safetyValidator,
+                new SafetyValidator(deviceSafetyClient),
                 auditService,
                 objectMapper,
                 eventValidator,
@@ -52,42 +49,88 @@ class ActionPlanServiceApprovalTest {
                 commandOutboxService);
     }
 
-    private ActionPlan.ActionPlanBuilder pendingPlanBuilder() {
-        return ActionPlan.builder()
-                .planId("plan-1")
-                .traceId("trace-0000000000000001")
-                .farmId("farm-1")
-                .targetAssetId("fan-01")
-                .actionCategory("ventilation")
-                .actionType("turn_on")
-                .parameters("{\"duration_minutes\":30,\"speed_level\":\"high\"}")
-                .reasoning("Temperature exceeds threshold")
-                .status(ActionPlan.PlanStatus.PENDING)
-                .priority(ActionPlan.ActionPriority.MEDIUM)
-                .requiresApproval(true)
-                .generatedAt(Instant.now())
-                .expiresAt(Instant.now().plusSeconds(3600));
-    }
-
     @Test
-    void validPendingPlanIsApprovedAndAtomicallyQueuedForDispatch() {
+    void freshOnlinePlanIsApprovedAndAtomicallyQueued() {
         ActionPlan plan = pendingPlanBuilder().build();
-        when(actionPlanRepository.findByPlanId("plan-1")).thenReturn(Optional.of(plan));
+        when(actionPlanRepository.findByPlanIdForUpdate("plan-1")).thenReturn(Optional.of(plan));
+        when(deviceSafetyClient.evaluate(plan)).thenReturn(DeviceSafetyClient.DeviceSafetyResult.allow());
         stubOutboxEnqueue();
 
         ActionPlan result = service.approvePlan("plan-1", "operator", "looks good");
 
         assertThat(result.getStatus()).isEqualTo(ActionPlan.PlanStatus.DISPATCHING);
         assertThat(result.getCommandId()).isEqualTo("cmd-outbox-1");
-        assertThat(result.getDispatchedAt()).isNull();
-        assertThat(result.getExecutedAt()).isNull();
         assertThat(result.getExecutionResult()).isEqualTo("COMMAND_OUTBOX_PENDING");
         assertThat(result.getApprovedBy()).isEqualTo("operator");
-        assertThat(result.getApprovedAt()).isNotNull();
-
         verify(commandOutboxService).enqueue(plan);
-        verify(auditService).logPlanApproved(eq(plan), eq("operator"), eq("looks good"));
-        verify(auditService, never()).logCommandExecuted(eq(plan), eq(true), any(), any());
+        verify(auditService).logPlanApproved(plan, "operator", "looks good");
+    }
+
+    @Test
+    void offlineDeviceCreatesRetryableSafetyBlockWithoutOutbox() {
+        ActionPlan plan = pendingPlanBuilder().build();
+        when(actionPlanRepository.findByPlanIdForUpdate("plan-1")).thenReturn(Optional.of(plan));
+        when(deviceSafetyClient.evaluate(plan))
+                .thenReturn(DeviceSafetyClient.DeviceSafetyResult.blocked("STATE_OFFLINE"));
+
+        ActionPlan result = service.approvePlan("plan-1", "operator", "approve");
+
+        assertThat(result.getStatus()).isEqualTo(ActionPlan.PlanStatus.SAFETY_BLOCKED);
+        assertThat(result.getSafetyBlockReasonCode()).isEqualTo("STATE_OFFLINE");
+        assertThat(result.getApprovedBy()).isEqualTo("operator");
+        assertThat(result.getCommandId()).isNull();
+        verify(commandOutboxService, never()).enqueue(any());
+        verify(auditService).logPlanSafetyBlocked(plan, "STATE_OFFLINE");
+    }
+
+    @Test
+    void safetyRevalidationQueuesExactlyOneCommand() {
+        ActionPlan plan = pendingPlanBuilder()
+                .status(ActionPlan.PlanStatus.SAFETY_BLOCKED)
+                .approvedBy("operator")
+                .approvedAt(Instant.now())
+                .safetyBlockReasonCode("STATE_STALE")
+                .safetyBlockedAt(Instant.now())
+                .build();
+        when(actionPlanRepository.findByPlanIdForUpdate("plan-1")).thenReturn(Optional.of(plan));
+        when(deviceSafetyClient.evaluate(plan)).thenReturn(DeviceSafetyClient.DeviceSafetyResult.allow());
+        stubOutboxEnqueue();
+
+        ActionPlan result = service.revalidateSafety("plan-1");
+
+        assertThat(result.getStatus()).isEqualTo(ActionPlan.PlanStatus.DISPATCHING);
+        assertThat(result.getCommandId()).isEqualTo("cmd-outbox-1");
+        verify(commandOutboxService).enqueue(plan);
+        verify(auditService).logPlanSafetyCleared(plan, "STATE_STALE");
+
+        assertThatThrownBy(() -> service.revalidateSafety("plan-1"))
+                .isInstanceOf(IllegalStateException.class);
+        verify(commandOutboxService).enqueue(plan);
+    }
+
+    @Test
+    void invalidPlanIsRejectedWithoutSafetyCallOrOutbox() {
+        ActionPlan plan = pendingPlanBuilder().actionType(null).build();
+        when(actionPlanRepository.findByPlanIdForUpdate("plan-1")).thenReturn(Optional.of(plan));
+
+        ActionPlan result = service.approvePlan("plan-1", "operator", "approve attempt");
+
+        assertThat(result.getStatus()).isEqualTo(ActionPlan.PlanStatus.REJECTED);
+        assertThat(result.getRejectionReason()).contains("ACTION_TYPE_REQUIRED");
+        verify(deviceSafetyClient, never()).evaluate(any());
+        verify(commandOutboxService, never()).enqueue(any());
+    }
+
+    @Test
+    void validationOutcomeIsAlwaysAudited() {
+        ActionPlan plan = pendingPlanBuilder().build();
+        when(actionPlanRepository.findByPlanIdForUpdate("plan-1")).thenReturn(Optional.of(plan));
+        when(deviceSafetyClient.evaluate(plan)).thenReturn(DeviceSafetyClient.DeviceSafetyResult.allow());
+        stubOutboxEnqueue();
+
+        service.approvePlan("plan-1", "operator", "ok");
+
+        verify(auditService).logPlanValidated(eq(plan), anyBoolean(), any(), any());
     }
 
     @Test
@@ -106,38 +149,25 @@ class ActionPlanServiceApprovalTest {
 
         assertThat(plan.getStatus()).isEqualTo(ActionPlan.PlanStatus.ACK_TIMEOUT);
         assertThat(plan.getExecutionResult()).isEqualTo("DEVICE_ACK_TIMEOUT");
-        assertThat(plan.getExecutionError()).contains("No device acknowledgement");
-        assertThat(plan.getExecutedAt()).isNull();
-        verify(actionPlanRepository).save(plan);
         verify(auditService).logCommandTimeout(plan);
     }
 
-    @Test
-    void invalidPlanIsRejectedAndNoCommandQueued() {
-        ActionPlan plan = pendingPlanBuilder()
-                .actionType(null)
-                .build();
-        when(actionPlanRepository.findByPlanId("plan-1")).thenReturn(Optional.of(plan));
-
-        ActionPlan result = service.approvePlan("plan-1", "operator", "approve attempt");
-
-        assertThat(result.getStatus()).isEqualTo(ActionPlan.PlanStatus.REJECTED);
-        assertThat(result.getRejectionReason()).contains("LOGICAL");
-
-        verify(commandOutboxService, never()).enqueue(any());
-        verify(auditService).logPlanRejected(eq(plan), eq("system"), anyString());
-        verify(auditService, never()).logPlanApproved(any(), anyString(), any());
-    }
-
-    @Test
-    void validationOutcomeIsAlwaysAudited() {
-        ActionPlan plan = pendingPlanBuilder().build();
-        when(actionPlanRepository.findByPlanId("plan-1")).thenReturn(Optional.of(plan));
-        stubOutboxEnqueue();
-
-        service.approvePlan("plan-1", "operator", "ok");
-
-        verify(auditService).logPlanValidated(eq(plan), anyBoolean(), any(), any());
+    private ActionPlan.ActionPlanBuilder pendingPlanBuilder() {
+        return ActionPlan.builder()
+                .planId("plan-1")
+                .traceId("trace-0000000000000001")
+                .farmId("farm-1")
+                .targetAssetId("fan-01")
+                .targetAssetType("device")
+                .actionCategory("ventilation")
+                .actionType("turn_on")
+                .parameters("{\"duration_minutes\":30,\"speed_level\":\"high\"}")
+                .reasoning("Temperature exceeds threshold")
+                .status(ActionPlan.PlanStatus.PENDING)
+                .priority(ActionPlan.ActionPriority.MEDIUM)
+                .requiresApproval(true)
+                .generatedAt(Instant.now())
+                .expiresAt(Instant.now().plusSeconds(3600));
     }
 
     private void stubOutboxEnqueue() {

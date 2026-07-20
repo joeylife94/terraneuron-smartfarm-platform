@@ -11,13 +11,13 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.util.Map;
 
-/**
- * Consumes transport and device feedback for a dispatched command.
- * A plan reaches EXECUTED only when feedback is correlated to its persisted command ID.
- */
+/** Consumes transport and device feedback correlated by persisted commandId. */
 @Slf4j
 @Service
 public class CommandFeedbackConsumer {
+
+    private static final String SAFETY_BLOCK_PREFIX = "DEVICE_SAFETY_BLOCKED:";
+    private static final String MQTT_PUBLISH_FAILURE_PREFIX = "MQTT_PUBLISH_FAILED:";
 
     private final ActionPlanRepository actionPlanRepository;
     private final AuditService auditService;
@@ -35,16 +35,11 @@ public class CommandFeedbackConsumer {
         this.ackTimeoutSeconds = ackTimeoutSeconds;
     }
 
-    @KafkaListener(
-            topics = "terra.control.feedback",
-            groupId = "${spring.kafka.consumer.group-id}"
-    )
+    @KafkaListener(topics = "terra.control.feedback", groupId = "${spring.kafka.consumer.group-id}")
     @Transactional
     public void onFeedback(Map<String, Object> feedbackEvent) {
         try {
-            contractSchemaValidator.validate(
-                    ContractSchemaValidator.FEEDBACK_SCHEMA, feedbackEvent);
-
+            contractSchemaValidator.validate(ContractSchemaValidator.FEEDBACK_SCHEMA, feedbackEvent);
             @SuppressWarnings("unchecked")
             Map<String, Object> data = (Map<String, Object>) feedbackEvent.get("data");
             if (data == null) {
@@ -59,22 +54,17 @@ public class CommandFeedbackConsumer {
             String farmId = requiredString(data, "farm_id");
             String assetId = requiredString(data, "target_asset_id");
 
-            log.info("📥 Command feedback: plan={} command={} status={}", planId, commandId, status);
-
             ActionPlan plan = actionPlanRepository.findByCommandId(commandId)
                     .orElseThrow(() -> new IllegalArgumentException(
                             "No action plan found for command_id=" + commandId));
-
             validateCorrelation(plan, planId, farmId, assetId);
             boolean changed = updatePlanFromFeedback(plan, status, error);
-
             if (changed && ("EXECUTED".equals(status) || "FAILED".equals(status))) {
                 auditService.logCommandFeedback(
                         traceId, commandId, planId, farmId, assetId, status, error);
             }
-
         } catch (Exception e) {
-            log.error("❌ Failed to process command feedback: {}", e.getMessage(), e);
+            log.error("Failed to process command feedback: {}", e.getClass().getSimpleName(), e);
             throw new IllegalStateException("Failed to process command feedback event", e);
         }
     }
@@ -82,29 +72,31 @@ public class CommandFeedbackConsumer {
     private boolean updatePlanFromFeedback(ActionPlan plan, String status, String error) {
         ActionPlan.PlanStatus current = plan.getStatus();
         Instant now = Instant.now();
-
         switch (status) {
             case "DELIVERED":
-                if (current == ActionPlan.PlanStatus.DISPATCHED) {
+                // Feedback can arrive before the outbox publisher commits DISPATCHED.
+                // CommandOutboxStateService never regresses a later state.
+                if (current == ActionPlan.PlanStatus.DISPATCHING
+                        || current == ActionPlan.PlanStatus.DISPATCHED) {
                     plan.setStatus(ActionPlan.PlanStatus.DELIVERED);
                     plan.setDeliveredAt(now);
                     plan.setAckDeadlineAt(now.plusSeconds(ackTimeoutSeconds));
                     plan.setExecutionResult("MQTT_PUBLISH_CONFIRMED");
                     plan.setExecutionError(null);
                     actionPlanRepository.save(plan);
-                    log.info("   📡 MQTT delivery confirmed: plan={} command={} deadline={}",
-                            plan.getPlanId(), plan.getCommandId(), plan.getAckDeadlineAt());
                     return true;
                 }
-                if (current == ActionPlan.PlanStatus.DELIVERED || current == ActionPlan.PlanStatus.EXECUTED) {
-                    log.info("   ℹ️ Ignoring duplicate or late DELIVERED feedback: plan={} status={}",
-                            plan.getPlanId(), current);
+                if (current == ActionPlan.PlanStatus.DELIVERED
+                        || current == ActionPlan.PlanStatus.EXECUTED
+                        || current == ActionPlan.PlanStatus.EXECUTION_FAILED) {
+                    // A terminal device result is stronger than a later transport acknowledgement.
                     return false;
                 }
                 throw invalidTransition(plan, status);
 
             case "EXECUTED":
-                if (current == ActionPlan.PlanStatus.DISPATCHED
+                if (current == ActionPlan.PlanStatus.DISPATCHING
+                        || current == ActionPlan.PlanStatus.DISPATCHED
                         || current == ActionPlan.PlanStatus.DELIVERED
                         || current == ActionPlan.PlanStatus.ACK_TIMEOUT) {
                     boolean late = current == ActionPlan.PlanStatus.ACK_TIMEOUT;
@@ -114,20 +106,33 @@ public class CommandFeedbackConsumer {
                     plan.setExecutionResult(late ? "DEVICE_CONFIRMED_LATE" : "DEVICE_CONFIRMED");
                     plan.setExecutionError(null);
                     actionPlanRepository.save(plan);
-                    log.info("   ✅ Device execution confirmed: plan={} command={} late={}",
-                            plan.getPlanId(), plan.getCommandId(), late);
                     return true;
                 }
-                if (current == ActionPlan.PlanStatus.EXECUTED) {
-                    log.info("   ℹ️ Ignoring duplicate EXECUTED feedback: plan={}", plan.getPlanId());
-                    return false;
-                }
+                if (current == ActionPlan.PlanStatus.EXECUTED) return false;
                 throw invalidTransition(plan, status);
 
             case "FAILED":
-                if (current == ActionPlan.PlanStatus.DISPATCHED) {
-                    plan.setStatus(ActionPlan.PlanStatus.DELIVERY_FAILED);
-                    plan.setExecutionResult("MQTT_DELIVERY_FAILED");
+                boolean safetyBlocked = error != null && error.startsWith(SAFETY_BLOCK_PREFIX);
+                boolean mqttPublishFailed = error != null
+                        && error.startsWith(MQTT_PUBLISH_FAILURE_PREFIX);
+
+                if (current == ActionPlan.PlanStatus.DISPATCHING
+                        || current == ActionPlan.PlanStatus.DISPATCHED) {
+                    if (safetyBlocked || mqttPublishFailed) {
+                        plan.setStatus(ActionPlan.PlanStatus.DELIVERY_FAILED);
+                        plan.setExecutionResult(safetyBlocked
+                                ? "DEVICE_SAFETY_BLOCKED"
+                                : "MQTT_DELIVERY_FAILED");
+                    } else {
+                        // A non-transport terminal failure may race ahead of DELIVERED.
+                        // Record the stronger device truth and ignore a later delivery ACK.
+                        plan.setStatus(ActionPlan.PlanStatus.EXECUTION_FAILED);
+                        if (plan.getDeliveredAt() == null) {
+                            plan.setDeliveredAt(now);
+                        }
+                        plan.setAckDeadlineAt(null);
+                        plan.setExecutionResult("DEVICE_EXECUTION_FAILED");
+                    }
                 } else if (current == ActionPlan.PlanStatus.DELIVERED
                         || current == ActionPlan.PlanStatus.ACK_TIMEOUT) {
                     plan.setStatus(ActionPlan.PlanStatus.EXECUTION_FAILED);
@@ -135,17 +140,12 @@ public class CommandFeedbackConsumer {
                     plan.setAckDeadlineAt(null);
                 } else if (current == ActionPlan.PlanStatus.DELIVERY_FAILED
                         || current == ActionPlan.PlanStatus.EXECUTION_FAILED) {
-                    log.info("   ℹ️ Ignoring duplicate FAILED feedback: plan={} status={}",
-                            plan.getPlanId(), current);
                     return false;
                 } else {
                     throw invalidTransition(plan, status);
                 }
-
                 plan.setExecutionError(error);
                 actionPlanRepository.save(plan);
-                log.warn("   ❌ Command failure: plan={} command={} state={} error={}",
-                        plan.getPlanId(), plan.getCommandId(), plan.getStatus(), error);
                 return true;
 
             default:

@@ -59,6 +59,18 @@ class CommandFeedbackConsumerTest {
     }
 
     @Test
+    void deliveredFeedbackCanRaceOutboxDispatchedCommit() {
+        ActionPlan plan = plan(ActionPlan.PlanStatus.DISPATCHING);
+        when(actionPlanRepository.findByCommandId("cmd-1a2b3c4d")).thenReturn(Optional.of(plan));
+
+        consumer.onFeedback(feedback("DELIVERED", "", "plan-123", "farm-001", "fan-01"));
+
+        assertThat(plan.getStatus()).isEqualTo(ActionPlan.PlanStatus.DELIVERED);
+        assertThat(plan.getExecutionResult()).isEqualTo("MQTT_PUBLISH_CONFIRMED");
+        assertThat(plan.getAckDeadlineAt()).isNotNull();
+    }
+
+    @Test
     void executedFeedbackMarksOnlyTheCorrelatedCommandComplete() {
         ActionPlan plan = plan(ActionPlan.PlanStatus.DELIVERED);
         plan.setAckDeadlineAt(Instant.now().plusSeconds(120));
@@ -91,20 +103,59 @@ class CommandFeedbackConsumerTest {
     }
 
     @Test
-    void failedBridgeFeedbackBecomesDeliveryFailure() {
+    void taggedMqttPublishFailureBecomesDeliveryFailure() {
         ActionPlan plan = plan(ActionPlan.PlanStatus.DISPATCHED);
         when(actionPlanRepository.findByCommandId("cmd-1a2b3c4d")).thenReturn(Optional.of(plan));
+        String error = "MQTT_PUBLISH_FAILED:broker unavailable";
 
         consumer.onFeedback(feedback(
-                "FAILED", "broker unavailable", "plan-123", "farm-001", "fan-01"));
+                "FAILED", error, "plan-123", "farm-001", "fan-01"));
 
         assertThat(plan.getStatus()).isEqualTo(ActionPlan.PlanStatus.DELIVERY_FAILED);
         assertThat(plan.getExecutedAt()).isNull();
         assertThat(plan.getExecutionResult()).isEqualTo("MQTT_DELIVERY_FAILED");
-        assertThat(plan.getExecutionError()).isEqualTo("broker unavailable");
+        assertThat(plan.getExecutionError()).isEqualTo(error);
         verify(auditService).logCommandFeedback(
                 eq("trace-123"), eq("cmd-1a2b3c4d"), eq("plan-123"),
-                eq("farm-001"), eq("fan-01"), eq("FAILED"), eq("broker unavailable"));
+                eq("farm-001"), eq("fan-01"), eq("FAILED"), eq(error));
+    }
+
+    @Test
+    void predispatchSafetyFailureCanRaceOutboxDispatchedCommit() {
+        ActionPlan plan = plan(ActionPlan.PlanStatus.DISPATCHING);
+        when(actionPlanRepository.findByCommandId("cmd-1a2b3c4d")).thenReturn(Optional.of(plan));
+
+        consumer.onFeedback(feedback(
+                "FAILED",
+                "DEVICE_SAFETY_BLOCKED:STATE_OFFLINE",
+                "plan-123",
+                "farm-001",
+                "fan-01"));
+
+        assertThat(plan.getStatus()).isEqualTo(ActionPlan.PlanStatus.DELIVERY_FAILED);
+        assertThat(plan.getExecutionResult()).isEqualTo("DEVICE_SAFETY_BLOCKED");
+        assertThat(plan.getExecutionError()).isEqualTo("DEVICE_SAFETY_BLOCKED:STATE_OFFLINE");
+    }
+
+    @Test
+    void earlyDeviceFailureWinsOverLaterDeliveredFeedback() {
+        ActionPlan plan = plan(ActionPlan.PlanStatus.DISPATCHING);
+        when(actionPlanRepository.findByCommandId("cmd-1a2b3c4d")).thenReturn(Optional.of(plan));
+
+        consumer.onFeedback(feedback(
+                "FAILED", "motor blocked", "plan-123", "farm-001", "fan-01"));
+
+        assertThat(plan.getStatus()).isEqualTo(ActionPlan.PlanStatus.EXECUTION_FAILED);
+        assertThat(plan.getDeliveredAt()).isNotNull();
+        assertThat(plan.getAckDeadlineAt()).isNull();
+        assertThat(plan.getExecutionResult()).isEqualTo("DEVICE_EXECUTION_FAILED");
+        assertThat(plan.getExecutionError()).isEqualTo("motor blocked");
+
+        consumer.onFeedback(feedback("DELIVERED", "", "plan-123", "farm-001", "fan-01"));
+
+        assertThat(plan.getStatus()).isEqualTo(ActionPlan.PlanStatus.EXECUTION_FAILED);
+        assertThat(plan.getExecutionResult()).isEqualTo("DEVICE_EXECUTION_FAILED");
+        assertThat(plan.getExecutionError()).isEqualTo("motor blocked");
     }
 
     @Test

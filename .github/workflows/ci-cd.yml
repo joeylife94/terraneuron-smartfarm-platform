@@ -29,7 +29,7 @@ jobs:
       fail-fast: false
       matrix:
         service: [terra-sense, terra-ops]
-    
+
     steps:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
@@ -44,27 +44,38 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.5'
-        
+
       - name: 🏗️ Build with Gradle
         working-directory: services/${{ matrix.service }}
-        run: gradle build --no-daemon
-          
+        shell: bash
+        run: |
+          set +e
+          set -o pipefail
+          gradle build --no-daemon --stacktrace 2>&1 | tee gradle-build.log
+          build_status=${PIPESTATUS[0]}
+          set -e
+          exit "${build_status}"
+
       - name: 🧪 Run Tests
         working-directory: services/${{ matrix.service }}
         run: gradle test --no-daemon
-          
-      - name: 📊 Upload Test Results
+
+      - name: 📊 Upload Java Diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-results-${{ matrix.service }}
-          path: services/${{ matrix.service }}/build/test-results/
+          if-no-files-found: warn
+          path: |
+            services/${{ matrix.service }}/gradle-build.log
+            services/${{ matrix.service }}/build/test-results/
+            services/${{ matrix.service }}/build/reports/tests/
 
   # ========== Python 서비스 빌드 & 테스트 ==========
   build-python-service:
     name: Build Python Service (terra-cortex)
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
@@ -80,13 +91,13 @@ jobs:
           cd services/terra-cortex
           pip install -r requirements.txt
           pip install pytest pytest-cov
-          
+
       - name: 🔍 Lint with Flake8
         run: |
           pip install flake8
           cd services/terra-cortex
           flake8 src --count --select=E9,F63,F7,F82 --show-source --statistics
-          
+
       - name: 🧪 Run Tests
         shell: bash
         run: |
@@ -115,6 +126,46 @@ jobs:
             services/terra-cortex/pytest-results.xml
             services/terra-cortex/coverage.xml
 
+  # ========== Dashboard production build ==========
+  build-dashboard:
+    name: Build Dashboard (terra-dashboard)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 🏷️ Validate GHCR Image Tag Compatibility
+        run: python3 tests/image-tag-compatibility-test.py
+
+      - name: 🟢 Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 📦 Install Dashboard Dependencies
+        working-directory: services/terra-dashboard
+        run: npm install --no-audit --no-fund
+
+      - name: 🏗️ Build Dashboard
+        working-directory: services/terra-dashboard
+        shell: bash
+        run: |
+          set +e
+          set -o pipefail
+          npm run build 2>&1 | tee dashboard-build.log
+          build_status=${PIPESTATUS[0]}
+          set -e
+          exit "${build_status}"
+
+      - name: 📊 Upload Dashboard Diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-results-terra-dashboard
+          if-no-files-found: warn
+          path: services/terra-dashboard/dashboard-build.log
+
   # ========== Docker 이미지 빌드 & 푸시 ==========
   build-and-push-images:
     name: Build & Push Docker Images
@@ -134,7 +185,7 @@ jobs:
           - service: terra-ops
             context: .
             dockerfile: ./services/terra-ops/Dockerfile
-    
+
     steps:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
@@ -153,20 +204,22 @@ jobs:
           file: ${{ matrix.dockerfile }}
           push: true
           tags: |
+            ${{ env.DOCKER_REGISTRY }}/${{ github.repository }}/${{ matrix.service }}:latest
+            ${{ env.DOCKER_REGISTRY }}/${{ github.repository }}/${{ matrix.service }}:${{ github.sha }}
             ${{ env.DOCKER_REGISTRY }}/${{ github.repository_owner }}/terraneuron-${{ matrix.service }}:latest
             ${{ env.DOCKER_REGISTRY }}/${{ github.repository_owner }}/terraneuron-${{ matrix.service }}:${{ github.sha }}
 
   # ========== E2E 테스트 ==========
   e2e-test:
     name: E2E Integration Test
-    needs: [build-java-services, build-python-service]
+    needs: [build-java-services, build-python-service, build-dashboard]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
       JWT_SECRET: DEMO_ONLY_E2E_CI_JWT_SECRET_32_CHARS_MIN
       E2E_POLL_TIMEOUT_SECONDS: '90'
       E2E_POLL_INTERVAL_SECONDS: '2'
-    
+
     steps:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
