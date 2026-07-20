@@ -18,6 +18,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -64,8 +65,7 @@ class RefreshTokenServiceTest {
         assertThat(current.getRevokeReason()).isEqualTo(RefreshTokenService.REASON_ROTATED);
         assertThat(current.getReplacedByTokenId()).isEqualTo("token-2");
         assertThat(current.getRevokedAt()).isNotNull();
-        verify(sessionRepository).save(current);
-        verify(sessionRepository).save(any(RefreshTokenSession.class));
+        verify(sessionRepository, times(2)).save(any(RefreshTokenSession.class));
         verify(sessionRepository, never()).revokeActiveFamily(any(), any(), any());
     }
 
