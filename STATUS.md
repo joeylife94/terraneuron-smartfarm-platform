@@ -41,7 +41,8 @@ The repository validates production-grade software patterns in a local integrati
 - MQTT publication success/failure is represented through correlated feedback.
 - Device terminal ACKs are correlated to the original command and action plan.
 - ACK timeout and late-feedback behavior are represented in the action-plan lifecycle.
-- Terminal feedback remains replayable after broker or process failures.
+- Safety-block terminal feedback can be replayed from Redis completion state when the Kafka command is redelivered.
+- Physical device ACK feedback does not have a separate durable outbox; if Kafka publication fails after an ACK, recovery depends on the device sending that ACK again.
 
 ### Four-layer approval validation
 
@@ -128,6 +129,7 @@ Prometheus metrics and alerts use bounded labels and avoid raw farm IDs, asset I
 - **Context validation remains advisory.** The framework is blocking-capable, but current context rules only generate warnings.
 - **Permission validation is lifecycle-oriented.** It validates approval metadata inside the action plan; farm/device ownership policy is not modeled as a domain authorization service.
 - **Dashboard authentication propagation is incomplete.** Safety-blocked list and revalidation client code exists, but the default dashboard path does not yet attach interactive authorization to protected Terra-Ops APIs.
+- **Device ACK feedback durability is incomplete.** Command completion is rolled back when ACK-to-Kafka publication fails, so recovery depends on the physical device repeating the terminal ACK.
 - **Action parameters are persisted as JSON text** on the current action-plan entity rather than a typed/queryable database structure.
 - **Device capability coverage is conservative and generic.** Manufacturer/model-specific adapters must implement explicit capability resolution.
 - **Alert-only delivery is not an acknowledgement system.** The physical safety exemption does not prove that a human received or acted on a notification.
