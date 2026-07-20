@@ -95,8 +95,9 @@ See [`docs/DEVICE_SAFETY_GATE.md`](docs/DEVICE_SAFETY_GATE.md).
 - Reuse of an already-rotated token revokes all remaining active sessions in that token family.
 - `POST /api/auth/logout` idempotently revokes one presented refresh-token session.
 - Current enabled account state and roles are reloaded before a replacement access/refresh pair is issued.
-- Terra-Dashboard authenticates through same-origin Next.js BFF routes; browser JavaScript never receives or stores JWT values.
-- Dashboard access and refresh JWTs are held in HttpOnly, SameSite=Strict cookies scoped to `/api`, and protected Terra-Ops calls receive server-injected Bearer authentication.
+- Terra-Dashboard authenticates through same-origin Next.js BFF routes under the isolated `/api/dashboard` prefix; browser JavaScript never receives or stores JWT values.
+- Dashboard access and refresh JWTs are held in HttpOnly, SameSite=Strict cookies scoped to `/api/dashboard`, and protected Terra-Ops calls receive server-injected Bearer authentication.
+- The cookie path does not match the public Cortex or Sense rewrites, so interactive JWTs are not forwarded to those services.
 - The historical `/api/ops` rewrite is removed so Terra-Ops authentication and internal routes cannot bypass the BFF token boundary.
 - Protected Dashboard proxy paths are explicitly allowlisted, never rotate refresh tokens and enforce same-origin checks for state-changing requests.
 - Access-token recovery is routed through one Dashboard session endpoint; a per-tab Promise, same-origin Web Lock and process-local server in-flight map serialize normal browser rotation before one protected-request retry.
@@ -128,7 +129,7 @@ The active CI/CD workflow verifies:
 - Prometheus configuration and alert-rule tests;
 - Docker Compose startup and the current neural-flow integration script.
 
-A dedicated Dashboard Authentication workflow verifies same-origin login, removal of the legacy direct Ops rewrite, HttpOnly cookie issuance and scope, authenticated session restoration, protected Terra-Ops proxy access, serialized refresh/retry behavior, route allowlisting, logout and post-logout denial against the Compose stack.
+A dedicated Dashboard Authentication workflow verifies same-origin login, removal of the legacy direct Ops rewrite, isolated HttpOnly cookie issuance and scope, authenticated session restoration, protected Terra-Ops proxy access, serialized refresh/retry behavior, route allowlisting, logout and post-logout denial against a minimal Terra-Ops/Dashboard Compose stack.
 
 Command lifecycle, safety revalidation, MQTT publication and ACK/feedback behavior are verified through focused Terra-Ops and Terra-Sense tests. The current Compose neural-flow script does not exercise those paths end to end.
 
