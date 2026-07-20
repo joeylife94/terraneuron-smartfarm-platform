@@ -22,7 +22,7 @@ async function fetchJson<T>(url: string, opts?: RequestInit): Promise<T> {
     headers: { 'Content-Type': 'application/json', ...opts?.headers },
   });
 
-  if (response.status === 401 && typeof window !== 'undefined') {
+  if (response.status === 401 && isDashboardAuthPath(url) && typeof window !== 'undefined') {
     window.dispatchEvent(new Event('terraneuron:auth-required'));
   }
 
@@ -33,6 +33,10 @@ async function fetchJson<T>(url: string, opts?: RequestInit): Promise<T> {
 
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
+}
+
+function isDashboardAuthPath(url: string): boolean {
+  return url.startsWith('/api/dashboard-auth/') || url.startsWith('/api/dashboard-ops/');
 }
 
 /* ── terra-cortex ── */
