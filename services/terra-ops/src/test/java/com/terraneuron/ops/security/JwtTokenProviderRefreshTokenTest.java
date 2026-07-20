@@ -55,6 +55,7 @@ class JwtTokenProviderRefreshTokenTest {
 
         assertThat(tokenProvider.validateAccessToken(accessToken)).isTrue();
         assertThat(tokenProvider.parseRefreshToken(accessToken)).isEmpty();
+        assertThat(tokenProvider.parseRefreshTokenForRotation(accessToken)).isEmpty();
     }
 
     @Test
@@ -70,6 +71,35 @@ class JwtTokenProviderRefreshTokenTest {
 
         assertThat(tokenProvider.validateToken(legacyRefreshToken)).isTrue();
         assertThat(tokenProvider.parseRefreshToken(legacyRefreshToken)).isEmpty();
+        assertThat(tokenProvider.parseRefreshTokenForRotation(legacyRefreshToken)).isEmpty();
         assertThat(tokenProvider.validateRefreshToken(legacyRefreshToken)).isFalse();
+    }
+
+    @Test
+    void exposesVerifiedIdentityOfExpiredRefreshTokenOnlyForReplayHandling() {
+        Date issuedAt = new Date(System.currentTimeMillis() - 1_200_000L);
+        Date expiresAt = new Date(System.currentTimeMillis() - 600_000L);
+        String expiredRefreshToken = Jwts.builder()
+                .id("11111111-1111-1111-1111-111111111111")
+                .subject("admin")
+                .claim("type", "refresh")
+                .claim("family", "22222222-2222-2222-2222-222222222222")
+                .issuedAt(issuedAt)
+                .expiration(expiresAt)
+                .signWith(Keys.hmacShaKeyFor(TEST_SECRET.getBytes(StandardCharsets.UTF_8)))
+                .compact();
+
+        assertThat(tokenProvider.parseRefreshToken(expiredRefreshToken)).isEmpty();
+        assertThat(tokenProvider.validateRefreshToken(expiredRefreshToken)).isFalse();
+
+        RefreshTokenClaims replayClaims = tokenProvider
+                .parseRefreshTokenForRotation(expiredRefreshToken)
+                .orElseThrow();
+        assertThat(replayClaims.username()).isEqualTo("admin");
+        assertThat(replayClaims.tokenId())
+                .isEqualTo("11111111-1111-1111-1111-111111111111");
+        assertThat(replayClaims.familyId())
+                .isEqualTo("22222222-2222-2222-2222-222222222222");
+        assertThat(replayClaims.expiresAt()).isBefore(java.time.Instant.now());
     }
 }
