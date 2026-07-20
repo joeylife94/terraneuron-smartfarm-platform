@@ -1,11 +1,7 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-
-export interface DashboardUser {
-  username: string;
-  roles: string[];
-}
+import { DashboardUser, restoreDashboardSession } from '@/lib/auth-client';
 
 interface AuthContextValue {
   user: DashboardUser | null;
@@ -24,16 +20,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const refreshSession = useCallback(async () => {
     try {
-      const response = await fetch('/api/dashboard-auth/session', {
-        cache: 'no-store',
-        credentials: 'same-origin',
-      });
-      if (!response.ok) {
-        setUser(null);
-        return;
-      }
-      const payload = await response.json() as { user?: DashboardUser };
-      setUser(payload.user ?? null);
+      setUser(await restoreDashboardSession());
     } finally {
       setLoading(false);
     }
