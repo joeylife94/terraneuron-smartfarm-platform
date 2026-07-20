@@ -5,6 +5,8 @@
  * calls use the dashboard BFF so browser JavaScript never handles JWT values.
  */
 
+import { restoreDashboardSession } from '@/lib/auth-client';
+
 const BASE = process.env.NEXT_PUBLIC_API_BASE ?? '';
 
 export class ApiError extends Error {
@@ -15,15 +17,14 @@ export class ApiError extends Error {
 }
 
 async function fetchJson<T>(url: string, opts?: RequestInit): Promise<T> {
-  const response = await fetch(`${BASE}${url}`, {
-    ...opts,
-    cache: 'no-store',
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json', ...opts?.headers },
-  });
+  let response = await performFetch(url, opts);
 
   if (response.status === 401 && isDashboardAuthPath(url) && typeof window !== 'undefined') {
-    window.dispatchEvent(new Event('terraneuron:auth-required'));
+    const restored = await restoreDashboardSession();
+    if (restored) response = await performFetch(url, opts);
+    if (response.status === 401) {
+      window.dispatchEvent(new Event('terraneuron:auth-required'));
+    }
   }
 
   if (!response.ok) {
@@ -33,6 +34,15 @@ async function fetchJson<T>(url: string, opts?: RequestInit): Promise<T> {
 
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
+}
+
+function performFetch(url: string, opts?: RequestInit): Promise<Response> {
+  return fetch(`${BASE}${url}`, {
+    ...opts,
+    cache: 'no-store',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json', ...opts?.headers },
+  });
 }
 
 function isDashboardAuthPath(url: string): boolean {
