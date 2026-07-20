@@ -34,7 +34,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [refreshSession]);
 
   const login = useCallback(async (username: string, password: string) => {
-    const response = await fetch('/api/dashboard-auth/login', {
+    const response = await fetch('/api/dashboard/auth/login', {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
@@ -48,7 +48,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
-    await fetch('/api/dashboard-auth/logout', {
+    await fetch('/api/dashboard/auth/logout', {
       method: 'POST',
       credentials: 'same-origin',
     }).catch(() => null);
