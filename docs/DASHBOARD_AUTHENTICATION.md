@@ -13,6 +13,8 @@ The browser calls same-origin Dashboard endpoints:
 
 Next.js route handlers call Terra-Ops through the server-only `TERRA_OPS_INTERNAL_URL`. The default Compose value is `http://terra-ops:8080/api`. This value must not use a `NEXT_PUBLIC_` prefix.
 
+`DASHBOARD_PUBLIC_ORIGIN` may define the single externally visible Dashboard origin, for example `https://dashboard.example.com`. When it is absent, the BFF uses the request URL origin. The configured value must be an absolute HTTP(S) origin and must remain server-only.
+
 ## Login
 
 1. The browser submits username and password to the same-origin Dashboard login route.
@@ -22,9 +24,9 @@ Next.js route handlers call Terra-Ops through the server-only `TERRA_OPS_INTERNA
 5. The tokens are stored as separate cookies with:
    - `HttpOnly`;
    - `SameSite=Strict`;
-   - `Path=/`;
+   - `Path=/api`, limiting delivery to Dashboard API handlers;
    - expiry derived from the Terra-Ops token response;
-   - `Secure` when the externally observed request protocol is HTTPS.
+   - `Secure` when the public Dashboard origin uses HTTPS.
 6. The browser receives only the authenticated username and roles.
 
 Passwords and raw tokens are not logged by the Dashboard implementation.
@@ -64,9 +66,9 @@ Already issued access JWTs remain stateless at Terra-Ops, but clearing the HttpO
 
 ## Cross-site request controls
 
-- Authentication cookies use `SameSite=Strict`.
-- Login, logout and protected mutation requests reject a present `Origin` that does not match the externally observed Dashboard origin.
-- Production ingress must preserve trustworthy `Host`, `X-Forwarded-Host`, and `X-Forwarded-Proto` values and must not allow clients to bypass or spoof the trusted proxy boundary.
+- Authentication cookies use `SameSite=Strict` and are scoped to `/api`.
+- Login, logout and protected mutation requests reject a present `Origin` that does not equal the configured `DASHBOARD_PUBLIC_ORIGIN` or, when unset, the request URL origin.
+- The application does not derive the public origin directly from arbitrary `X-Forwarded-*` headers. Production ingress should set `DASHBOARD_PUBLIC_ORIGIN` explicitly and prevent direct access that bypasses the trusted proxy.
 - All authentication and protected API responses set `Cache-Control: no-store`.
 
 ## Validation
@@ -76,7 +78,7 @@ Already issued access JWTs remain stateless at Terra-Ops, but clearing the HttpO
 - cross-origin login rejection;
 - successful login using the Compose-only operator account;
 - absence of token values from browser-visible JSON;
-- HttpOnly and SameSite cookie attributes;
+- HttpOnly, SameSite and `/api` cookie scope attributes;
 - authenticated session validation;
 - protected Terra-Ops access through the BFF;
 - rejection of non-allowlisted proxy routes;
@@ -88,5 +90,5 @@ The dedicated `Dashboard Authentication` GitHub Actions workflow builds the Comp
 
 - This is not access-token revocation. A copied access JWT remains valid directly against Terra-Ops until expiry.
 - Cookies reduce accidental token exposure but cannot protect a compromised Dashboard server or a browser with arbitrary script execution.
-- Production HTTPS, CSP, trusted reverse-proxy configuration, secret management and key rotation remain deployment responsibilities.
+- Production HTTPS, CSP, trusted ingress isolation, secret management and key rotation remain deployment responsibilities.
 - Global logout, active-session administration, MFA, password reset and external identity providers remain separate work.
