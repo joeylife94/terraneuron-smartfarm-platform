@@ -43,6 +43,7 @@ def main() -> None:
     set_cookie = login.headers.get("Set-Cookie", "")
     require("HttpOnly" in set_cookie, "session cookies must be HttpOnly")
     require("SameSite=strict" in set_cookie or "SameSite=Strict" in set_cookie, "session cookies must use SameSite=Strict")
+    require("Path=/api" in set_cookie, "session cookies must be scoped to Dashboard API handlers")
     require("terraneuron_access_token" in session.cookies, "access cookie was not issued")
     require("terraneuron_refresh_token" in session.cookies, "refresh cookie was not issued")
 
