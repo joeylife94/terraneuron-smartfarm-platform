@@ -24,7 +24,7 @@ httpx==0.27.2                    # Required by OpenAI client; pinned for compati
 langchain==0.3.30                # RAG orchestration; fixes CVE-2026-45134
 langchain-community==0.3.27      # Integrations; fixes known pickle, SSRF, and XML issues
 chromadb==0.4.22                 # Local vector DB for document embeddings
-pypdf==3.17.4                    # PDF parsing for document ingestion
+pypdf==6.14.2                    # PDF parsing; fixes CVE-2026-59935 and CVE-2026-59936
 sentence-transformers==2.2.2     # Embedding model loader (MiniLM, MPNet, etc.)
 huggingface-hub==0.25.2          # Pinned for compatibility; avoids cached_download removal
 cryptography>=3.4                # Required for AES-encrypted PDF parsing (pypdf decryption)
