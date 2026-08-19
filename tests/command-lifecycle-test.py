@@ -357,7 +357,7 @@ def main() -> int:
 
     print("[7/7] Verify ACK feedback reaches Terra-Ops terminal lifecycle")
     terminal = wait_for_terminal_plan(plan_id, token, command_id)
-    if terminal.get("executionResult") != "EXECUTED":
+    if terminal.get("executionResult") != "DEVICE_CONFIRMED":
         raise CommandLifecycleFailure(
             f"terminal plan executionResult mismatch: {terminal.get('executionResult')}"
         )
