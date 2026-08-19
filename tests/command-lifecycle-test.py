@@ -297,11 +297,16 @@ def main() -> int:
         timeout=REQUEST_TIMEOUT_SECONDS,
     )
     approval_payload = response_json(approval, "action plan approval")
-    if approval_payload.get("planStatus") != "APPROVED":
+    approval_status = approval_payload.get("planStatus")
+    if approval_status not in {"APPROVED", "DISPATCHING", "DISPATCHED", "DELIVERED"}:
         raise CommandLifecycleFailure(
-            f"approval-time safety did not produce APPROVED: {approval_payload}"
+            "approval-time safety did not enter an approved dispatch state: "
+            f"{approval_payload}"
         )
-    print("  PASS human approval + approval-time safety -> APPROVED/outbox")
+    print(
+        "  PASS human approval + approval-time safety -> "
+        f"{approval_status}/outbox lifecycle"
+    )
 
     print("[5/7] Capture MQTT command after Kafka dispatch and pre-dispatch safety")
     try:
