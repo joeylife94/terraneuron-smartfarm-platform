@@ -1,196 +1,220 @@
 # TerraNeuron — Implementation Status
 
-> **Last updated:** 2026-07-20  
-> **Status:** production-oriented architecture prototype; not a production deployment  
-> **Authority:** this document is the single source of truth for repository implementation status.
+> **Last updated:** 2026-08-19  
+> **Status:** production-oriented architecture prototype; bounded Wishket / freelance Proof validation in progress  
+> **Authority:** this document is the authoritative implementation status / execution contract for the repository.  
+> **Evidence baseline main SHA:** `638546303a61357478c15931dd89ee88215a0d32`
 
-Historical status and audit documents may describe older repository states. When they conflict with this file or the current code, this file and the current code take precedence.
+When documents disagree, use this order:
 
-## Current system boundary
+`current main code / executable evidence → STATUS.md → README.md / historical audits / PR descriptions / previous agent reports`
 
-TerraNeuron demonstrates an event-driven smart-farm control platform with:
+This repository is not claiming production deployment, physical equipment certification, unattended autonomous control, full high availability, or production infrastructure completeness.
 
-- Java/Spring Boot ingestion and operations services;
-- Python/FastAPI analysis and RAG service;
-- Kafka event transport;
-- MySQL and InfluxDB persistence;
-- Redis command/device-state coordination;
-- MQTT device messaging;
-- a human approval and audit workflow;
-- Prometheus/Grafana observability;
-- GitHub Actions build, test, integration and dependency-security gates.
+## Current proof objective
 
-The repository validates production-grade software patterns in a local integration stack. It does not claim production infrastructure, physical equipment certification or unattended autonomous control.
+The active Delivery & Proof objective is deliberately bounded:
 
-## Implemented and enforced
+`Existing Asset → Verification → Small Gap Closure → Proof Packaging → Human Review → FREEZE`
 
-### Event contracts and processing
+The goal is to make the existing architecture prototype usable, demonstrable and evidence-backed as Wishket / freelance Proof. Production expansion is not the default next step.
 
-- Canonical CloudEvents are runtime-validated against packaged JSON Schemas before domain processing.
-- Terra-Ops listeners use bounded retries and publish exhausted records to source-specific dead-letter topics.
-- Terra-Cortex uses stable event identifiers, a durable semantic deduplication ledger and Kafka transactional publication.
-- Critical Cortex task failures terminate the process rather than allowing partial processing against stale state.
-- Terra-Ops creates device commands through a transactional outbox.
-- A unique plan-to-outbox constraint prevents duplicate command creation.
-- Legacy command payloads and previously persisted outbox rows are reconciled without silently replaying terminal command truth.
+## Evidence checkpoint — 2026-08-19
 
-### Command delivery and feedback
+### Changed
 
-- Terra-Sense claims command IDs through Redis before dispatch.
-- Duplicate Kafka delivery does not produce duplicate MQTT commands.
-- MQTT publication success/failure is represented through correlated feedback.
-- Device terminal ACKs are correlated to the original command and action plan.
-- ACK timeout and late-feedback behavior are represented in the action-plan lifecycle.
-- Safety-block terminal feedback can be replayed from Redis completion state when the Kafka command is redelivered.
-- Physical device ACK feedback does not have a separate durable outbox; if Kafka publication fails after an ACK, recovery depends on the device sending that ACK again.
+- Reconciled this status ledger against current `main`, recent merged PRs, PR-visible exact-head GitHub Actions evidence and the current Compose E2E test.
+- Reclassified the previous `Recommended next PRs` as production-expansion candidates rather than an automatic roadmap.
+- Identified the smallest missing Proof acceptance gap as an executable command-lifecycle Golden Path using existing services and contracts.
 
-### Four-layer approval validation
+No product feature was added in this reconciliation.
 
-Terra-Ops evaluates four layers before creating an outbox command:
+### Actually Executed / inspected evidence
 
-1. **Logical — blocking:** required identity, action and lifecycle checks.
-2. **Context — advisory:** currently records contextual warnings such as a critical plan reduced to `alert_only`; it does not yet contain domain rules that block execution.
-3. **Permission — blocking:** requires the expected approval lifecycle and approver metadata. HTTP RBAC is separately enforced by Spring Security.
-4. **Device state — blocking for physical actions:** calls the Terra-Sense Device Safety Gate and fails closed.
+The current repository state was compared against:
 
-The exact non-actuating pair `action_category=alert` and `action_type=alert_only` treats physical device state as not applicable. All other identity, contract, approval, outbox and delivery rules still apply.
+- `main` at `638546303a61357478c15931dd89ee88215a0d32` before this documentation-only reconciliation;
+- current `STATUS.md` and current code-visible test assets;
+- recent merged PRs through PR #47;
+- PR #47 exact head `eab38fb5527ba5e78f7080aaaaa5b08887e19edb`;
+- GitHub Actions runs attached to that exact PR head:
+  - `CI/CD Pipeline` run `29748880231` — `success`;
+  - `Dashboard Authentication` run `29748880134` — `success`;
+- current `tests/neural-flow-test.py`, the authoritative HTTP → Kafka → Cortex → MySQL/observability Compose E2E script.
 
-### Device Safety Gate
+The CI/CD exact-head run successfully executed:
 
-Device safety is enforced twice:
-
-- **Approval time:** Terra-Ops calls `POST /internal/device-safety/evaluate` using a short-lived service JWT.
-- **Pre-dispatch:** Terra-Sense evaluates the same policy after the Redis command claim and immediately before MQTT publication.
-
-The policy uses shared Redis state keyed by exact `(farmId, assetId)` identity and blocks physical actions when state is:
-
-- missing or stale;
-- offline, error, unknown or unrecognized;
-- in maintenance mode;
-- associated with an unknown or mismatched device type;
-- incompatible with the action category or action type;
-- missing a supported adjustment parameter.
-
-Approval-time safety failures create the retryable `SAFETY_BLOCKED` state:
-
-- approval identity and time are retained;
-- no command ID or outbox row is created;
-- the original expiration deadline remains authoritative;
-- explicit safety revalidation is required after state recovery;
-- a successful revalidation creates exactly one command/outbox pair in the same MySQL transaction.
-
-Pre-dispatch safety failures never call MQTT. Terra-Sense emits bounded, correlated terminal feedback and preserves command idempotency across redelivery.
-
-See [`docs/DEVICE_SAFETY_GATE.md`](docs/DEVICE_SAFETY_GATE.md).
-
-### Authentication and authorization
-
-- Interactive users are loaded from MySQL and passwords are verified using BCrypt.
-- Disabled accounts and invalid roles fail closed.
-- Access and refresh JWTs carry distinct token types and cannot be substituted for each other.
-- Refresh JWTs carry unique token IDs and server-generated rotation-family IDs.
-- Refresh sessions are persisted in MySQL; only SHA-256 token digests are stored, never raw refresh JWTs.
-- Every successful refresh atomically revokes the presented token and returns a replacement token in the same family.
-- A pessimistic row lock prevents two concurrent requests from successfully rotating the same token.
-- Reuse of an already-rotated token revokes all remaining active sessions in that token family.
-- `POST /api/auth/logout` idempotently revokes one presented refresh-token session.
-- Current enabled account state and roles are reloaded before a replacement access/refresh pair is issued.
-- Terra-Dashboard authenticates through same-origin Next.js BFF routes under the isolated `/api/dashboard` prefix; browser JavaScript never receives or stores JWT values.
-- Dashboard access and refresh JWTs are held in HttpOnly, SameSite=Strict cookies scoped to `/api/dashboard`, and protected Terra-Ops calls receive server-injected Bearer authentication.
-- The cookie path does not match the public Cortex or Sense rewrites, so interactive JWTs are not forwarded to those services.
-- The historical `/api/ops` rewrite is removed so Terra-Ops authentication and internal routes cannot bypass the BFF token boundary.
-- Protected Dashboard proxy paths are explicitly allowlisted, never rotate refresh tokens and enforce same-origin checks for state-changing requests.
-- Access-token recovery is routed through one Dashboard session endpoint; a per-tab Promise, same-origin Web Lock and process-local server in-flight map serialize normal browser rotation before one protected-request retry.
-- Public Cortex or Sense failures do not clear the interactive Dashboard session.
-- Terra-Ops endpoints enforce authenticated access and role-based approval/rejection permissions.
-- Cortex → Ops and Ops → Sense use separate service-JWT boundaries with explicit subject, audience, scope and expiry checks.
-- CORS origins are explicit; wildcard configuration is not the intended deployment path.
-
-See [`docs/REFRESH_TOKEN_LIFECYCLE.md`](docs/REFRESH_TOKEN_LIFECYCLE.md) and [`docs/DASHBOARD_AUTHENTICATION.md`](docs/DASHBOARD_AUTHENTICATION.md).
-
-### Database ownership
-
-- Flyway is the sole Terra-Ops production schema owner.
-- Hibernate uses `ddl-auto=validate` rather than mutating production schema.
-- Empty databases install from canonical migrations.
-- Compatible pre-Flyway databases are baselined and forward-reconciled.
-- Legacy native ENUM columns, action-plan command references and duplicate outbox rows are normalized through versioned migrations.
-- Flyway V6 creates the refresh-token session table and its unique identity/hash indexes.
-- Compose-only seed users and sample data are isolated from production migrations.
-
-### CI, security and observability
-
-The active CI/CD workflow verifies:
-
-- Terra-Sense and Terra-Ops Gradle builds and tests;
-- Terra-Cortex dependency installation, lint and tests;
+- Terra-Sense Gradle build and tests;
+- Terra-Ops Gradle build and tests;
+- Terra-Cortex dependency install, lint and tests;
 - Terra-Dashboard production build;
-- JSON/YAML and contract consistency checks;
-- Prometheus configuration and alert-rule tests;
-- Docker Compose startup and the current neural-flow integration script.
+- dependency-security policy validation, Trivy SARIF generation/upload, and the fixable HIGH/CRITICAL gate;
+- Docker Compose configuration / startup and the E2E integration test.
 
-A dedicated Dashboard Authentication workflow verifies same-origin login, removal of the legacy direct Ops rewrite, isolated HttpOnly cookie issuance and scope, authenticated session restoration, protected Terra-Ops proxy access, serialized refresh/retry behavior, route allowlisting, logout and post-logout denial against a minimal Terra-Ops/Dashboard Compose stack.
+The dedicated Dashboard Authentication exact-head run successfully executed its Compose E2E path, including login/session/protected-proxy/logout behavior.
 
-Command lifecycle, safety revalidation, MQTT publication and ACK/feedback behavior are verified through focused Terra-Ops and Terra-Sense tests. The current Compose neural-flow script does not exercise those paths end to end.
+A PR-triggered workflow was not associated with the post-merge `main` merge commit through the connector. This is not treated as evidence that CI did not run; PR-visible exact-head evidence above is the authoritative CI evidence for the merged change.
 
-The reusable Trivy workflow:
+### VERIFIED
 
-- uploads an all-severity SARIF report;
-- separately fails CI for fixable HIGH or CRITICAL dependency vulnerabilities;
-- runs from the active PR/main pipeline and remains available for scheduled/manual scans.
+The following are VERIFIED only to the limits of the executable evidence above and focused repository tests; they are not production-readiness claims.
 
-Prometheus metrics and alerts use bounded labels and avoid raw farm IDs, asset IDs, event IDs, command IDs, payloads and secrets.
+#### Platform/runtime foundation
 
-## Partially implemented or advisory
+- Java / Spring Boot Terra-Sense and Terra-Ops services build and pass their current test suites.
+- Python / FastAPI Terra-Cortex installs, lints and passes its current test suite.
+- Terra-Dashboard builds successfully.
+- Docker Compose integration starts the required local stack for the current E2E path.
+- Kafka event transport, MySQL-backed Ops state, Cortex processing, Prometheus rule loading/scraping and Grafana provisioning participate in the current Compose E2E evidence.
+- Dependency security policy is active in the primary CI pipeline and the exact-head blocking gate passed.
 
-- **Context validation remains advisory.** The framework is blocking-capable, but current context rules only generate warnings.
-- **Permission validation is lifecycle-oriented.** It validates approval metadata inside the action plan; farm/device ownership policy is not modeled as a domain authorization service.
-- **Device ACK feedback durability is incomplete.** Command completion is rolled back when ACK-to-Kafka publication fails, so recovery depends on the physical device repeating the terminal ACK.
-- **Action parameters are persisted as JSON text** on the current action-plan entity rather than a typed/queryable database structure.
-- **Device capability coverage is conservative and generic.** Manufacturer/model-specific adapters must implement explicit capability resolution.
-- **Alert-only delivery is not an acknowledgement system.** The physical safety exemption does not prove that a human received or acted on a notification.
+#### Current executable neural-flow Golden Path
 
-## Known production gaps
+`tests/neural-flow-test.py` executes a seven-step path that verifies:
+
+1. Terra-Ops database authentication and access/refresh JWT type separation;
+2. HTTP sensor ingestion through Terra-Sense, including duplicate event identity;
+3. unique processed insight persistence;
+4. Cortex semantic duplicate suppression;
+5. Cortex liveness/readiness and bounded non-sensitive metrics;
+6. Prometheus alert-rule loading / scrape and Grafana dashboard provisioning;
+7. authenticated dashboard summary consistency.
+
+This is a real executable local integration path and is suitable as one component of buyer-facing Proof.
+
+#### Command / safety / identity implementation evidence
+
+Current code and focused service tests support the following implemented boundaries:
+
+- Human approval lifecycle and audit flow;
+- four-layer approval validation, with context validation still advisory;
+- approval-time and pre-dispatch Device Safety Gate;
+- Redis-backed device-state safety evaluation;
+- transactional command outbox in Terra-Ops;
+- command ID claim/idempotency before dispatch;
+- MQTT command publication path;
+- correlated command feedback and terminal ACK handling;
+- refresh-token rotation, replay detection and individual logout;
+- JWT / RBAC and service-JWT trust boundaries;
+- Dashboard BFF authentication with scoped HttpOnly cookies and protected Ops proxying.
+
+These items are VERIFIED as implemented/tested software boundaries, not as one continuous end-to-end physical command proof.
+
+### NOT VERIFIED
+
+The following must remain explicit:
+
+- The current Compose neural-flow E2E does **not** execute the full command path:
+
+  `Human Approval → approval-time safety check → transactional outbox → Kafka command → pre-dispatch safety check → MQTT publication → device feedback / terminal ACK`
+
+- Therefore the repository does not yet have one buyer-reproducible executable Golden Path proving the complete command lifecycle across its service boundaries.
+- Real physical device behavior is not verified.
+- MQTT broker identity, per-device authorization and TLS are not production-enforced by this Proof.
+- Manufacturer/model-specific device adapters are not verified.
+- Device ACK publication is not independently durable if Kafka publication fails after a physical ACK; recovery still depends on device ACK repetition.
+- Production HA, production secrets management, backup/restore, disaster recovery, large-scale load/soak testing and production fault-injection are not verified.
+- Immediate revocation of already-issued access JWTs, global logout, account session administration, MFA, password reset and external identity provider integration are not verified.
+- Public portfolio claims, production-readiness claims and physical-safety claims are not approved by this status file.
+
+## Smallest missing Proof acceptance gap
+
+The next Proof-required batch is **not a new production feature**.
+
+The preferred smallest useful gap is a bounded executable command-lifecycle integration proof that reuses the existing implementation and demonstrates, in one reproducible local path where practical:
+
+`approved plan → safety evaluation → outbox creation → command dispatch → pre-dispatch safety gate → MQTT-visible command → correlated feedback / ACK → terminal action-plan state`
+
+The batch should first determine whether existing endpoints, Compose services, seeded identities and tests already make this possible. New implementation is justified only for the minimum missing test/reproduction seam required to execute and observe this flow.
+
+Acceptance for that batch should require evidence of actual execution, not code presence alone.
+
+## Previous Recommended next PRs — Proof classification
+
+The items previously listed as `Recommended next PRs` are **not an automatic roadmap** for the active Proof task.
+
+1. **MQTT client identity, topic authorization and TLS deployment contracts**  
+   **Classification: DEFER — production expansion.** Important before real deployment, but not required to demonstrate the existing architecture prototype as bounded freelance Proof.
+
+2. **Manufacturer/model capability adapter boundaries and contract tests**  
+   **Classification: DEFER — production / hardware integration expansion.** Not required unless the command Golden Path cannot be demonstrated without a minimal simulated capability seam.
+
+3. **Production deployment, secrets, high availability and fault-injection evidence**  
+   **Classification: DEFER — production infrastructure expansion.** Explicitly outside current Proof closure.
+
+4. **Global logout, active-session administration and refresh-session retention policy**  
+   **Classification: DEFER — account-management expansion.** Current authentication Proof already has a bounded executable path; these capabilities are not required for the buyer-facing architecture demonstration.
+
+## Remaining risks
 
 ### Device and physical safety
 
-- MQTT client authentication, topic authorization and TLS are not yet production-enforced.
-- Device-reported status can be forged by an actor with broker access.
-- Application freshness checks do not prove physical equipment state.
-- The final safety check cannot eliminate a state change between evaluation and actuation.
-- Electrical interlocks, emergency stops, local controller limits and certified physical controls remain external requirements.
-- Manufacturer/model capability adapters and real-device integration evidence are incomplete.
+- Device-reported status is software evidence, not physical truth.
+- Broker access could forge status until production MQTT identity / authorization / TLS is enforced.
+- Application freshness checks cannot prove actuator state.
+- A state change can occur between final software safety evaluation and physical actuation.
+- Electrical interlocks, emergency stops, local controller limits and certified controls remain external requirements.
 
-### Identity and account lifecycle
+### Command feedback durability
 
-- Already issued access tokens remain usable until expiry; refresh-token revocation does not immediately revoke an access JWT.
-- Global logout, active-session administration and account-wide token revocation are not implemented.
-- Expired and revoked refresh-session retention and cleanup require an operational policy.
-- Account administration, MFA, password reset and external identity-provider integration are not implemented.
-- Dashboard cookie security depends on production HTTPS, explicit public-origin configuration, CSP and trusted ingress isolation.
-- Browsers without Web Locks lack the cross-tab refresh serialization guarantee; multi-replica BFF deployment should evaluate shared session coordination.
+- Physical device terminal ACK feedback does not have a separate durable outbox.
+- If ACK-to-Kafka publication fails after a physical ACK, recovery depends on the device repeating the ACK.
 
-### Infrastructure and operations
+### Identity / operations
 
-- Production secrets management, automated key rotation and deployment-specific access controls are not implemented in this repository.
-- Kafka, Redis, MySQL, InfluxDB, Mosquitto, Prometheus and Grafana are configured as a local/integration stack rather than a highly available production platform.
-- Production deployment manifests, backup/restore drills, disaster recovery objectives and runbooks require further work.
-- Large-scale load tests, long-duration soak tests and systematic fault-injection evidence are incomplete.
+- Already-issued access JWTs remain valid until expiry.
+- Production HTTPS, CSP, trusted ingress isolation, key/secrets management and multi-replica coordination are deployment responsibilities.
+- Production data retention, backup/restore, DR and operational runbooks remain outside current Proof closure.
 
-## Documentation authority
+## Exact Next Action
 
-- [`README.md`](README.md) — repository overview and local execution
-- [`docs/REFRESH_TOKEN_LIFECYCLE.md`](docs/REFRESH_TOKEN_LIFECYCLE.md) — persisted refresh-token rotation and revocation
-- [`docs/DASHBOARD_AUTHENTICATION.md`](docs/DASHBOARD_AUTHENTICATION.md) — Dashboard BFF authentication, cookie and proxy behavior
-- [`docs/DEVICE_SAFETY_GATE.md`](docs/DEVICE_SAFETY_GATE.md) — enforced device-safety flow, guarantees and limits
-- [`docs/ACTION_PROTOCOL.md`](docs/ACTION_PROTOCOL.md) — action/event contracts
-- [`docs/TERRA_OPS_SCHEMA_MIGRATIONS.md`](docs/TERRA_OPS_SCHEMA_MIGRATIONS.md) — schema ownership and upgrade behavior
-- [`docs/SECURITY_SCANNING.md`](docs/SECURITY_SCANNING.md) — dependency-security policy
-- [`AUDIT_REPORT.md`](AUDIT_REPORT.md) — retired historical audit pointer
+1. Re-read this committed `STATUS.md` before implementation.
+2. Inspect existing command/approval/safety endpoints, Compose wiring, MQTT test seams and focused tests.
+3. Design the smallest executable command-lifecycle Golden Path using existing assets first.
+4. If no code change is required, add only the minimum reproducible proof/test harness and CI wiring needed to execute it.
+5. If code change is required, keep it bounded to the missing Proof seam; do not implement deferred production-expansion items.
+6. Require exact-head GREEN CI / runtime evidence before merge.
+7. Reconcile this file after the batch using `Changed / Actually Executed / Verified / Not Verified / Remaining Risks / Exact Next Action`.
 
-## Recommended next PRs
+## Current implementation boundary reference
 
-1. Add MQTT client identity, topic authorization and TLS deployment contracts.
-2. Define manufacturer/model capability adapter boundaries and contract tests.
-3. Add production deployment, secrets, high-availability and fault-injection evidence.
-4. Add global logout, active-session administration and refresh-session retention policy.
+The repository currently includes the following production-oriented software patterns, subject to the verification limits above:
+
+- canonical CloudEvent contract validation;
+- bounded retries / dead-letter handling;
+- Cortex durable deduplication and transactional Kafka publication;
+- Terra-Ops transactional command outbox and plan/outbox uniqueness;
+- Redis command claim/idempotency and durable terminal completion replay;
+- approval-time and pre-dispatch Device Safety Gate;
+- correlated MQTT publication feedback / terminal ACK lifecycle;
+- MySQL / Flyway schema ownership with Hibernate validation-only behavior;
+- persisted refresh-token rotation / replay detection;
+- JWT / RBAC and service-JWT boundaries;
+- Dashboard BFF authentication;
+- Prometheus / Grafana observability;
+- Docker Compose integration;
+- GitHub Actions build/test/integration/security gates.
+
+Detailed behavior and limitations remain documented in:
+
+- [`README.md`](README.md)
+- [`docs/REFRESH_TOKEN_LIFECYCLE.md`](docs/REFRESH_TOKEN_LIFECYCLE.md)
+- [`docs/DASHBOARD_AUTHENTICATION.md`](docs/DASHBOARD_AUTHENTICATION.md)
+- [`docs/DEVICE_SAFETY_GATE.md`](docs/DEVICE_SAFETY_GATE.md)
+- [`docs/ACTION_PROTOCOL.md`](docs/ACTION_PROTOCOL.md)
+- [`docs/TERRA_OPS_SCHEMA_MIGRATIONS.md`](docs/TERRA_OPS_SCHEMA_MIGRATIONS.md)
+- [`docs/SECURITY_SCANNING.md`](docs/SECURITY_SCANNING.md)
+
+## Closure condition
+
+Automatic development should stop when:
+
+- the required Proof criteria are backed by executable evidence;
+- the buyer-facing reproduction / explanation path is sufficient;
+- remaining gaps are production infrastructure, physical certification or product expansion rather than Proof gaps.
+
+At that point set the repository task state to:
+
+`IMPLEMENTATION / PROOF CANDIDATE READY — HUMAN REVIEW REQUIRED`
+
+Do not automatically declare final Proof CLOSED. Public release eligibility, portfolio claims, physical-safety claims and production-readiness claims require Human Review.
