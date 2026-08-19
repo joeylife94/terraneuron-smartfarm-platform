@@ -283,13 +283,21 @@ jobs:
         run: pip install requests
 
       - name: 🔎 Validate E2E Test Syntax
-        run: python -m py_compile tests/neural-flow-test.py
+        run: |
+          python -m py_compile tests/neural-flow-test.py
+          python -m py_compile tests/command-lifecycle-test.py
 
-      - name: 🧪 Run E2E Tests
+      - name: 🧪 Run Neural Flow E2E
         shell: bash
         run: |
           set -o pipefail
           python tests/neural-flow-test.py 2>&1 | tee e2e-test-output.log
+
+      - name: 🧪 Run Command Lifecycle Golden Path
+        shell: bash
+        run: |
+          set -o pipefail
+          python tests/command-lifecycle-test.py 2>&1 | tee command-lifecycle-output.log
 
       - name: 🧾 Capture E2E Diagnostics
         if: always()
@@ -307,6 +315,7 @@ jobs:
           retention-days: 7
           path: |
             e2e-test-output.log
+            command-lifecycle-output.log
             e2e-compose-ps.txt
             e2e-compose.log
 
