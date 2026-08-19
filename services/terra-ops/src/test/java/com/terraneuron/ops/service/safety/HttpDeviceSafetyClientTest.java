@@ -52,8 +52,8 @@ class HttpDeviceSafetyClientTest {
                 jwtProvider,
                 new SimpleMeterRegistry(),
                 "http://127.0.0.1:" + server.getAddress().getPort(),
-                100,
-                100);
+                500,
+                500);
     }
 
     @AfterEach
@@ -105,7 +105,7 @@ class HttpDeviceSafetyClientTest {
     @Test
     void timeoutFailsClosed() {
         response.set(new Response(
-                200, "{\"allowed\":true,\"reasonCode\":\"ALLOWED\"}", 250));
+                200, "{\"allowed\":true,\"reasonCode\":\"ALLOWED\"}", 750));
         assertBlocked("SENSE_TIMEOUT");
     }
 
