@@ -11,9 +11,9 @@
 
 이벤트 기반 스마트팜 제어 흐름을 검증하는 **production-oriented architecture prototype**입니다.
 
-> **Repository status — 2026-07-20**
+> **Repository status — 2026-08-19**
 >
-> TerraNeuron은 로컬 Docker Compose에서 핵심 neural-flow 통합 경로를 검증하고, 집중 서비스 테스트에서 인간 승인, 명령 전송, 디바이스 피드백과 안전 차단 동작을 검증합니다. 보안·신뢰성 패턴은 코드와 CI에서 강제되지만, 실제 운영 배포와 물리 장비 안전을 완료한 제품은 아닙니다.
+> TerraNeuron은 로컬 Docker Compose에서 neural-flow와 command-lifecycle 두 통합 경로를 검증했고, Dashboard BFF 인증 경계와 주요 보안·신뢰성 패턴을 GitHub-visible CI evidence로 검증했습니다. 이는 bounded software Proof이며, 실제 운영 배포나 물리 장비 안전·인증을 완료한 제품을 의미하지 않습니다.
 
 현재 구현 상태의 단일 기준 문서는 [`STATUS.md`](STATUS.md)입니다.
 
@@ -51,7 +51,7 @@ flowchart LR
 | `terra-sense` | HTTP/MQTT ingestion, device-state registry, command dispatch and ACK forwarding | 8081 |
 | `terra-cortex` | rule-based and optional LLM/RAG analysis | 8082 |
 | `terra-ops` | authentication, action-plan lifecycle, approval, outbox and audit API | 8080 |
-| `terra-dashboard` | operator dashboard shell; protected Ops API authentication propagation is not yet complete | 3001 |
+| `terra-dashboard` | operator dashboard with BFF authentication and protected Ops API proxying verified in the bounded Proof | 3001 |
 | `terra-data-collector` | optional external data collector profile | 8083 |
 
 Infrastructure includes Kafka/Zookeeper, MySQL, InfluxDB, Redis, Mosquitto, Prometheus and Grafana.
@@ -129,17 +129,18 @@ The active GitHub Actions pipeline verifies:
 - Terra-Sense and Terra-Ops Gradle builds and tests;
 - Terra-Cortex dependency installation, lint and tests;
 - Terra-Dashboard production build;
+- Dashboard BFF authentication E2E for the bounded Proof path;
 - dependency vulnerability policy;
 - Prometheus configuration and rule tests;
-- Docker Compose startup and neural-flow integration.
+- Docker Compose startup and neural-flow integration;
+- Docker Compose command-lifecycle integration covering human approval, approval-time safety, transactional outbox dispatch, pre-dispatch safety, MQTT-visible command publication, correlated terminal ACK/feedback, and Terra-Ops terminal execution state.
 
-Command lifecycle, safety revalidation, MQTT dispatch and ACK behavior are covered by focused service tests rather than the current Compose E2E script.
+The current software evidence demonstrates those bounded integration paths; it does not establish real physical actuator behavior or production deployment readiness.
 
 ## Operational boundaries
 
 TerraNeuron is not yet a production deployment. Remaining boundaries include:
 
-- dashboard propagation of interactive authentication to protected Terra-Ops APIs;
 - access-token revocation before JWT expiry and global account logout;
 - refresh-session retention and expired-row cleanup policy;
 - account administration, MFA and password-reset workflows;
