@@ -1,7 +1,7 @@
 # TerraNeuron — Implementation Status
 
-> **Last updated:** 2026-08-19  
-> **Status:** `IMPLEMENTATION / PROOF CANDIDATE READY — HUMAN REVIEW REQUIRED`  
+> **Last updated:** 2026-08-22  
+> **Status:** `PROOF v1.0 FREEZE / HUMAN REVIEW PASSED`  
 > **Authority:** authoritative implementation status / execution contract for this repository  
 > **Proof implementation baseline SHA:** `7ef9315890f1e2c06345bce94fb3334c2cff1c0e`
 
@@ -15,161 +15,88 @@ This status is a bounded software Proof checkpoint. It does **not** claim produc
 
 `Existing Asset → Verification → Small Gap Closure → Proof Packaging → Human Review → FREEZE`
 
-The bounded Wishket / freelance Proof implementation work has reached the Human Review gate. Automatic product expansion should stop unless Human Review identifies a concrete missing Proof acceptance gap.
+## Human Review closure
 
-## Evidence checkpoint — 2026-08-19
+Human Review completed on 2026-08-22.
 
-### Changed
+### Result
 
-- Merged PR #48, `test: prove command lifecycle golden path`, using exact-head guard at `19c754876e606d709ee32a8fecb3f375adfaa41d`.
-- Added `tests/command-lifecycle-test.py` and wired it into the existing CI Compose integration job after the neural-flow E2E.
-- Added retained command-lifecycle diagnostics to CI artifacts.
-- Updated `pypdf` to `6.15.0` to clear the observed CVE-2026-71852 / CVE-2026-71870 security findings.
-- Stabilized the device-safety timeout test boundary without changing the production timeout behavior.
-- Reconciled this status after merge; no new production feature or infrastructure expansion was started.
+`PASS — FREEZE APPROVED`
 
-### Actually Executed
+The final buyer-facing truthfulness gap identified during Human Review was README drift versus this authoritative STATUS. That gap was closed through:
 
-PR #48 exact head `19c754876e606d709ee32a8fecb3f375adfaa41d` had GitHub-visible PR-triggered workflow evidence:
+- Issue #49 — `Proof review: reconcile buyer-facing README with verified STATUS`
+- PR #50 — bounded README-only reconciliation
+- PR #50 merged with expected-head guard
+- Issue #49 closed as completed
 
-- `Dashboard Authentication` run `32248295714` — `success`
-- `CI/CD Pipeline` run `32248296030` — `success`
+The README now reflects the already-verified bounded software Proof state for dashboard authentication and command-lifecycle execution without upgrading any deferred production-readiness claim.
 
-The primary CI pipeline executed the existing build/test/security/integration gates and the new command-lifecycle Golden Path in the Compose stack.
+## Verified proof boundary
 
-The command-lifecycle test exercised the bounded software path:
+The bounded Proof supports the following buyer-facing software claims when stated with the limitations below:
 
-`MQTT device state → Kafka action plan → human approval → approval-time safety → transactional outbox → Kafka command → pre-dispatch safety → MQTT command → correlated terminal device ACK → Kafka feedback → Terra-Ops terminal EXECUTED state`
+- production-oriented event-driven smart-farm architecture prototype;
+- executable neural-flow integration path;
+- executable command-lifecycle path covering human approval → approval-time safety check → transactional outbox → command publication → pre-dispatch safety recheck → MQTT-visible command → correlated terminal ACK/feedback;
+- Dashboard BFF authentication propagation to protected Terra-Ops APIs under the verified test boundary;
+- persisted authentication/session controls, service-JWT boundaries, rate limiting, transactional outbox, retry/DLQ, schema validation, observability, and dependency scanning as documented and verified in repository evidence;
+- software safety-gate behavior that fails closed for missing/stale/offline/error/maintenance/incompatible/unsupported device-state signals under the implemented policy boundary.
 
-The prior neural-flow E2E remains part of the same CI integration job and covers the sensor / analysis / persistence / observability / dashboard path.
+## Verification evidence
 
-### Verified
+The final bounded Proof baseline includes prior exact-head GREEN evidence for:
 
-The following are VERIFIED only within the current executable software evidence and repository test boundary.
+- Dashboard Authentication verification;
+- CI/CD Pipeline verification;
+- Compose neural-flow integration;
+- Compose command-lifecycle Golden Path added and executed through PR #48;
+- focused service/unit/integration verification for security, outbox, safety, dispatch, ACK, retry, and persistence boundaries.
 
-#### Platform / runtime foundation
+The authoritative acceptance decision is based on executable repository evidence, not agent self-report.
 
-- Terra-Sense and Terra-Ops Java / Spring Boot build and test paths.
-- Terra-Cortex Python / FastAPI dependency install, lint and tests.
-- Terra-Dashboard production build.
-- Docker Compose integration for the local Proof stack.
-- Kafka event transport, MySQL-backed Ops state, Redis-backed safety state, MQTT broker integration, Prometheus and Grafana participation in current Proof paths.
-- Primary CI dependency-security policy and blocking security gate on the exact PR head.
-- Dashboard BFF authentication E2E on the exact PR head.
+## Not verified / deferred
 
-#### Executable neural-flow Golden Path
+The following remain explicitly **NOT VERIFIED / DEFERRED** and are outside Proof v1.0:
 
-`tests/neural-flow-test.py` verifies the existing bounded path across authentication, HTTP sensor ingestion, Kafka/Cortex processing, persisted insight state, semantic duplicate suppression, health/readiness/metrics, Prometheus/Grafana provisioning and authenticated dashboard summary consistency.
+- production MQTT client identity, authentication, authorization, and TLS;
+- physical actuator interlocks, emergency-stop behavior, manufacturer controller limits, or physical-equipment certification;
+- manufacturer/model-specific device capability adapters;
+- production secrets management and key rotation;
+- production HA for Kafka, Redis, MySQL, InfluxDB, monitoring, and related infrastructure;
+- backup/restore operations evidence;
+- production deployment manifests and environment hardening;
+- load testing and fault-injection evidence;
+- global account logout, MFA, password reset, full account administration, and other broader identity-product features;
+- proof that device-reported state equals physical equipment state.
 
-#### Executable command-lifecycle Golden Path
+Device-reported state remains an application signal, not proof of physical truth.
 
-`tests/command-lifecycle-test.py` now provides buyer-reproducible software/runtime evidence for:
+## Remaining risks
 
-1. human operator authentication;
-2. MQTT device-state publication and shared state visibility;
-3. Kafka action-plan ingestion and persisted `PENDING` plan state;
-4. human approval with approval-time Device Safety Gate;
-5. transactional outbox / dispatch progression;
-6. pre-dispatch Device Safety Gate and MQTT-visible command publication;
-7. correlated terminal device ACK / feedback and Terra-Ops terminal `EXECUTED` state with the expected execution-result contract.
+- The current Proof demonstrates software control boundaries, not physical safety certification.
+- The local/integration environment is not equivalent to a production deployment topology.
+- MQTT and physical-device trust boundaries remain the largest production-readiness gaps.
+- Operational maturity such as HA, backup/restore, secrets lifecycle, capacity, and fault injection is intentionally outside this bounded Proof.
 
-This closes the previously identified smallest missing Proof acceptance gap.
+## Closure
 
-#### Security / command boundaries
+**Changed**
+- buyer-facing README reconciled to verified implementation evidence via Issue #49 / PR #50;
+- authoritative STATUS reconciled to Human Review PASS and FREEZE.
 
-Current executable and focused test evidence supports:
+**Actually Executed**
+- prior repository exact-head CI/integration/security verification including the two Golden Paths;
+- independent Human Review of README vs STATUS and the available Proof evidence;
+- bounded README reconciliation through merged PR #50.
 
-- JWT / RBAC and service-JWT trust boundaries;
-- refresh-token rotation, replay detection and individual logout;
-- Dashboard BFF authentication with scoped HttpOnly cookies and protected proxying;
-- Human Approval lifecycle and audit flow;
-- approval-time and pre-dispatch Device Safety Gate;
-- transactional command outbox;
-- command ID claim / idempotency before dispatch;
-- MQTT command publication;
-- correlated feedback and terminal ACK handling;
-- dependency security scanning / policy enforcement in CI.
+**Verified**
+- current bounded software Proof is suitable for Wishket / freelance demonstration with the stated non-claims and limitations;
+- README and STATUS are aligned on dashboard authentication, command-lifecycle proof, and production/physical-safety boundaries.
 
-### Not Verified
+**Not Verified**
+- every item listed in `Not verified / deferred` remains unverified and must not be represented as production-ready.
 
-The following remain explicitly outside this Proof closure:
-
-- real physical actuator behavior or physical-safety certification;
-- production MQTT client identity, per-device authorization and TLS enforcement;
-- manufacturer/model-specific device adapters;
-- independent durable outbox for device terminal ACK publication after physical acknowledgement;
-- production HA, secrets platform, backup/restore, disaster recovery, large-scale load/soak testing and production fault injection;
-- immediate revocation of already-issued access JWTs, global logout, active-session administration, MFA, password reset and external IdP integration;
-- production HTTPS / ingress hardening and production operational runbooks;
-- public portfolio wording, physical-safety claims and production-readiness claims.
-
-## Previous Recommended next PRs — Proof classification
-
-These are **not** the next automatic development roadmap.
-
-1. MQTT identity / topic authorization / TLS — **DEFER: production expansion**
-2. Manufacturer/model capability adapters — **DEFER: hardware / product expansion**
-3. Production deployment / secrets / HA / fault injection — **DEFER: production infrastructure expansion**
-4. Global logout / active-session administration — **DEFER: account-management expansion**
-
-None is required to demonstrate the current bounded Wishket / freelance Proof candidate.
-
-## Remaining Risks
-
-### Device / physical safety
-
-- Device-reported state is software evidence, not physical truth.
-- Broker access can forge state until production MQTT identity / authorization / TLS is enforced.
-- Software freshness checks cannot prove actuator state.
-- State may change between software safety evaluation and physical actuation.
-- Electrical interlocks, emergency stops, controller limits and certified controls remain external requirements.
-
-### Command feedback durability
-
-- Device terminal ACK feedback has no separate durable outbox.
-- If ACK-to-Kafka publication fails after a physical ACK, recovery depends on device ACK repetition.
-
-### Identity / operations
-
-- Already-issued access JWTs remain valid until expiry.
-- Production HTTPS, CSP, trusted ingress isolation, secrets/key management and multi-replica coordination remain deployment responsibilities.
-- Production data retention, backup/restore, DR and operational runbooks remain outside Proof closure.
-
-## Exact Next Action
-
-1. **Stop automatic implementation expansion.**
-2. Human Review the buyer-facing Proof claims and reproduction path based on the two executable Golden Paths and exact-head GREEN CI evidence.
-3. Decide what may be publicly shown in Wishket / portfolio materials.
-4. Keep physical-safety and production-readiness claims explicitly excluded unless separately validated.
-5. Only reopen implementation if Human Review identifies a concrete Proof acceptance gap; do not resume the deferred production-expansion list by default.
-
-## Current implementation boundary reference
-
-The repository includes the following production-oriented software patterns, subject to the limits above:
-
-- canonical CloudEvent contract validation;
-- bounded retries / dead-letter handling;
-- Cortex durable deduplication and transactional Kafka publication;
-- Terra-Ops transactional command outbox and plan/outbox uniqueness;
-- Redis command claim/idempotency and durable terminal completion replay;
-- approval-time and pre-dispatch Device Safety Gate;
-- correlated MQTT publication feedback / terminal ACK lifecycle;
-- MySQL / Flyway schema ownership with Hibernate validation-only behavior;
-- persisted refresh-token rotation / replay detection;
-- JWT / RBAC and service-JWT boundaries;
-- Dashboard BFF authentication;
-- Prometheus / Grafana observability;
-- Docker Compose integration;
-- GitHub Actions build/test/integration/security gates.
-
-Detailed behavior remains in `README.md` and the repository docs, including `DEVICE_SAFETY_GATE.md`, `ACTION_PROTOCOL.md`, `DASHBOARD_AUTHENTICATION.md`, `REFRESH_TOKEN_LIFECYCLE.md`, `TERRA_OPS_SCHEMA_MIGRATIONS.md`, and `SECURITY_SCANNING.md`.
-
-## Closure condition
-
-The implementation-side bounded Proof criteria are now backed by executable evidence, the buyer-facing reproduction path has both neural-flow and command-lifecycle integration coverage, and the remaining known gaps are production infrastructure, physical certification or product expansion.
-
-Therefore the repository task state is:
-
-`IMPLEMENTATION / PROOF CANDIDATE READY — HUMAN REVIEW REQUIRED`
-
-Do **not** automatically declare final Proof CLOSED. Public release eligibility, portfolio claims, physical-safety claims and production-readiness claims require Human Review.
+**Exact Next Action**
+- `FREEZE` — no automatic TerraNeuron Proof v1.0 development.
+- Reopen only when a new paid-delivery requirement, explicit buyer objection, or separately approved Proof requirement creates a concrete acceptance gap.
