@@ -4,7 +4,7 @@
 > **Status:** `PROOF v1.0 FREEZE / HUMAN REVIEW PASSED — PROGRESSION ACTIVE`  
 > **Authority:** authoritative implementation status / execution contract for this repository  
 > **Proof v1.0 implementation baseline SHA:** `7ef9315890f1e2c06345bce94fb3334c2cff1c0e`  
-> **Current accepted progression main SHA before this STATUS reconciliation:** `cfb41521639454099287c588a8f983125bd7fcdc`
+> **Current accepted progression main SHA before this STATUS reconciliation:** `a747ae679ea85d23853c924131c9af601d052983`
 
 When documents disagree, use:
 
@@ -24,54 +24,55 @@ The accepted v1.0 buyer-facing boundary remains unchanged: a production-oriented
 
 Issue #51 / PR #52 extended the existing synthetic Compose command-lifecycle Golden Path with bounded executable evidence for duplicate terminal device ACK handling.
 
-### Changed
-
-- reused `tests/command-lifecycle-test.py`; no new product architecture or physical-world capability was added;
-- after the original correlated terminal `EXECUTED` ACK reaches Terra-Ops, the harness replays the same terminal ACK with a unique `reportedAt`;
-- the harness polls Terra-Sense shared device state until that exact replay marker is observed, then verifies command correlation/status and re-queries the terminal plan;
-- the terminal plan must remain `EXECUTED`, retain the original `commandId`, and retain `executionResult=DEVICE_CONFIRMED`.
-
 ### Actually Executed / Verified
 
 - PR #52 exact head `7839bd0b1a902b69c53c097b6ac38bd7045bc49e` passed `CI/CD Pipeline` run #265;
-- replay consumption was made observable through Terra-Sense shared device state before terminal invariants were asserted;
 - PR #52 was squash-merged as `03c3b172784caabd37d0edc54c49a9c0549471fc` and Issue #51 closed completed;
 - within the synthetic software boundary, duplicate terminal ACK processing did not regress `EXECUTED`, change `commandId`, or change `DEVICE_CONFIRMED`.
 
 ## Progression milestone — late terminal ACK recovery after ACK timeout
 
-Issue #53 / PR #54 added one bounded executable software recovery Proof for the existing command lifecycle path:
+Issue #53 / PR #54 added bounded executable software recovery Proof for:
 
 `DELIVERED → ACK_TIMEOUT → delayed correlated EXECUTED ACK → EXECUTED / DEVICE_CONFIRMED_LATE`
 
+### Actually Executed / Verified
+
+- PR #54 exact head `a95357baa59ba0eb862670315be0a00a10412519` passed `Late ACK Recovery Proof` run #6 and `CI/CD Pipeline` run #273;
+- PR #54 was squash-merged with expected-head guard as `cfb41521639454099287c588a8f983125bd7fcdc` and Issue #53 closed completed;
+- within the synthetic Compose boundary, delayed correlated terminal ACK recovery retained the same `commandId`, produced `DEVICE_CONFIRMED_LATE`, and preserved terminal-state idempotency on replay.
+
+## Progression milestone — terminal ACK recovery across Terra-Ops restart
+
+Issue #55 / PR #56 added one bounded synthetic service-restart Proof for a terminal device ACK published while Terra-Ops is temporarily down.
+
 ### Changed
 
-- added `tests/late-ack-recovery-test.py` using the existing command-lifecycle helpers and current product recovery path;
-- added `docker-compose.e2e-recovery.yml` to shorten ACK timeout/scan only inside this synthetic proof environment;
-- added `.github/workflows/late-ack-recovery.yml` to execute the recovery path at exact PR head and capture diagnostics;
-- preserved the standard Compose override in recovery runs so existing Redis, service wiring, safety-secret, build-context, and Terra-Sense URL configuration remain intact;
-- added MySQL accept-readiness gates before application-service startup in both the dedicated recovery workflow and the general CI E2E startup path, removing a reproducibility race where Terra-Ops could start before MySQL accepted connections;
-- recovery polling treats the already-observed `ACK_TIMEOUT` as the expected intermediate state while waiting for the delayed terminal ACK to recover the same plan to `EXECUTED`.
+- reused the existing command-lifecycle helpers and persisted command-plan path;
+- stopped only `terra-ops` after the plan reached `DELIVERED`, while Kafka/MySQL/MQTT and Terra-Sense remained available;
+- published a correlated terminal `EXECUTED` ACK while Terra-Ops was down and required Terra-Sense to consume the exact marker;
+- restarted Terra-Ops, required health readiness, then verified the same persisted plan reconciled to `EXECUTED` with the same `commandId`;
+- replayed the terminal ACK after restart and verified terminal-state idempotency;
+- added a dedicated exact-head `Terra-Ops Restart ACK Recovery Proof` workflow with diagnostics.
 
 ### Actually Executed
 
-- PR #54 exact head: `a95357baa59ba0eb862670315be0a00a10412519`;
-- `Late ACK Recovery Proof` run #6 completed `success` on that exact head;
-- `CI/CD Pipeline` run #273 completed `success` on that same exact head;
-- the previously raised Compose-override review concern was addressed in code, became outdated, and was resolved only after exact-head GREEN evidence;
-- PR #54 was squash-merged with expected-head guard as `cfb41521639454099287c588a8f983125bd7fcdc`;
-- Issue #53 closed as completed.
+- PR #56 exact head: `8616554c9dfb7db44736645daf5b517adf0ab8b6`;
+- `Terra-Ops Restart ACK Recovery Proof` run #1 completed `success` on that exact head;
+- `CI/CD Pipeline` run #276 completed `success` on that same exact head;
+- `Late ACK Recovery Proof` run #9 also completed `success` on that exact head;
+- PR #56 had no submitted review blockers and was squash-merged with expected-head guard as `a747ae679ea85d23853c924131c9af601d052983`;
+- Issue #55 closed as completed.
 
 ### Verified
 
 Within the executed synthetic Compose software boundary:
 
-- the command lifecycle reaches `ACK_TIMEOUT` before the delayed terminal ACK is published;
-- a correlated delayed `EXECUTED` ACK recovers the same plan to terminal `EXECUTED`;
-- recovery retains the same `commandId` and produces `executionResult=DEVICE_CONFIRMED_LATE`;
-- replay of the delayed terminal ACK preserves terminal-state idempotency;
-- the dedicated recovery proof and the existing broader CI/CD pipeline both pass on the exact merge candidate head;
-- CI service startup is more reproducible because MySQL readiness is checked before dependent application services are started.
+- a persisted command plan reached `DELIVERED` before Terra-Ops was stopped;
+- a correlated terminal `EXECUTED` ACK published during the Terra-Ops outage remained recoverable through the running integration path;
+- after Terra-Ops restart and health readiness, the same persisted plan reached terminal `EXECUTED` while retaining its original `commandId`;
+- replay of the terminal ACK after restart preserved terminal-state idempotency;
+- the dedicated restart proof and broader CI/CD pipeline both passed on the exact merge-candidate head.
 
 ## Not Verified / limitations
 
@@ -85,11 +86,11 @@ All v1.0 non-claims remain in force. The accepted baseline and progression miles
 - unattended autonomous control;
 - that device-reported or software state equals physical equipment state.
 
-The late-ACK milestone is synthetic software integration evidence. It demonstrates application recovery semantics under the executed test topology, not physical-equipment behavior or production network guarantees.
+The restart milestone is bounded synthetic software integration evidence. It does not establish production HA/fault-injection maturity, production network guarantees, or physical-equipment behavior.
 
 ## Remaining risks
 
-- MQTT/Kafka reconnect, delayed delivery beyond this bounded ACK case, and service-restart recovery remain broader than the accepted milestones and require separate executable evidence;
+- MQTT/Kafka reconnect and broader broker/network failure handling remain beyond the accepted bounded restart case and require separate executable evidence;
 - operator/audit usability can still be strengthened where concrete delivery value exists;
 - deployment/handoff and production security/availability boundaries remain separate from the accepted bounded software Proof;
 - production and physical-world trust boundaries remain explicitly outside the accepted software Proof.
@@ -97,7 +98,7 @@ The late-ACK milestone is synthetic software integration evidence. It demonstrat
 ## Exact Next Action
 
 - perform a fresh Progression Review against current `main` before selecting another milestone;
-- if justified, prefer exactly one bounded milestone in this order: service-restart command recovery/idempotency, MQTT/Kafka integration reproducibility/failure handling, operator observability/audit usability, synthetic device harness, deployment/handoff reproducibility, then material workflow security boundaries;
+- if justified, prefer exactly one bounded milestone in this order: MQTT/Kafka integration reproducibility/failure handling, operator observability/audit usability, synthetic device harness, deployment/handoff reproducibility, then material workflow security boundaries;
 - require concrete use/show/delivery value, executable acceptance criteria, one-Issue/one-PR scope, and no unresolved product-direction or physical-safety decision;
 - do not automatically select production MQTT TLS/identity, manufacturer adapters, HA/secrets/DR/load/fault-injection, physical certification, or unattended-control work;
 - if no next milestone is justified, remain enabled in lightweight HOLD/no-mutation mode rather than creating state-only churn.
