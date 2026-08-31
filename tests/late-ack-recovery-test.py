@@ -61,7 +61,7 @@ def main() -> int:
     run_id = uuid.uuid4().hex[:10]
     farm_id = f"farm-late-{run_id}"
     asset_id = f"fan-late-{run_id}"
-    plan_id = f"plan-late-{run_id}"
+    plan_id = f"plan-{run_id}"
     trace_id = f"trace-late-{run_id}"
     command_topic = f"terra/devices/{farm_id}/{asset_id}/command"
     status_topic = f"terra/devices/{farm_id}/{asset_id}/status"
