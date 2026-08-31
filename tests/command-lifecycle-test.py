@@ -238,10 +238,10 @@ def main() -> int:
     command_topic = f"terra/devices/{farm_id}/{asset_id}/command"
     status_topic = f"terra/devices/{farm_id}/{asset_id}/status"
 
-    print("[1/7] Authenticate human operator")
+    print("[1/8] Authenticate human operator")
     token = login()
 
-    print("[2/7] Publish fresh physical-device state and verify shared registry")
+    print("[2/8] Publish fresh physical-device state and verify shared registry")
     publish_mqtt(
         status_topic,
         {
@@ -256,7 +256,7 @@ def main() -> int:
     state = wait_for_device_state(farm_id, asset_id)
     print(f"  PASS device state accepted: state={state.get('state')} type={state.get('deviceType')}")
 
-    print("[3/7] Publish action-plan CloudEvent and verify PENDING persistence")
+    print("[3/8] Publish action-plan CloudEvent and verify PENDING persistence")
     event = {
         "specversion": "1.0",
         "type": "terra.cortex.plan.generated",
@@ -287,7 +287,7 @@ def main() -> int:
         raise CommandLifecycleFailure(f"new action plan was not PENDING: {pending}")
     print("  PASS action plan persisted as PENDING")
 
-    print("[4/7] Approve plan; require approval-time safety to pass and command to queue")
+    print("[4/8] Approve plan; require approval-time safety to pass and command to queue")
     command_capture = start_mqtt_command_capture(command_topic)
     time.sleep(0.5)
     approval = requests.post(
@@ -308,7 +308,7 @@ def main() -> int:
         f"{approval_status}/outbox lifecycle"
     )
 
-    print("[5/7] Capture MQTT command after Kafka dispatch and pre-dispatch safety")
+    print("[5/8] Capture MQTT command after Kafka dispatch and pre-dispatch safety")
     try:
         stdout, stderr = command_capture.communicate(timeout=POLL_TIMEOUT_SECONDS + 10)
     except subprocess.TimeoutExpired as exc:
@@ -340,22 +340,20 @@ def main() -> int:
         )
     print(f"  PASS MQTT command observed: commandId={command_id}")
 
-    print("[6/7] Publish correlated terminal device ACK")
-    publish_mqtt(
-        status_topic,
-        {
-            "farmId": farm_id,
-            "assetId": asset_id,
-            "deviceType": "fan",
-            "state": "running",
-            "maintenanceMode": False,
-            "lastCommandId": command_id,
-            "lastCommandStatus": "EXECUTED",
-            "reportedAt": now_rfc3339(),
-        },
-    )
+    print("[6/8] Publish correlated terminal device ACK")
+    ack = {
+        "farmId": farm_id,
+        "assetId": asset_id,
+        "deviceType": "fan",
+        "state": "running",
+        "maintenanceMode": False,
+        "lastCommandId": command_id,
+        "lastCommandStatus": "EXECUTED",
+        "reportedAt": now_rfc3339(),
+    }
+    publish_mqtt(status_topic, ack)
 
-    print("[7/7] Verify ACK feedback reaches Terra-Ops terminal lifecycle")
+    print("[7/8] Verify ACK feedback reaches Terra-Ops terminal lifecycle")
     terminal = wait_for_terminal_plan(plan_id, token, command_id)
     if terminal.get("executionResult") != "DEVICE_CONFIRMED":
         raise CommandLifecycleFailure(
@@ -364,6 +362,31 @@ def main() -> int:
     print(
         "  PASS complete command lifecycle: "
         f"plan={plan_id} command={command_id} status={terminal.get('status')}"
+    )
+
+    print("[8/8] Replay terminal ACK and verify idempotent terminal state")
+    duplicate_ack = dict(ack)
+    duplicate_ack["reportedAt"] = now_rfc3339()
+    publish_mqtt(status_topic, duplicate_ack)
+    time.sleep(max(2.0, POLL_INTERVAL_SECONDS * 2))
+    replayed = response_json(fetch_plan(plan_id, token), "duplicate ACK plan query")
+    if replayed.get("status") != "EXECUTED":
+        raise CommandLifecycleFailure(
+            f"duplicate terminal ACK regressed plan status: {replayed}"
+        )
+    if replayed.get("commandId") != command_id:
+        raise CommandLifecycleFailure(
+            "duplicate terminal ACK changed commandId: "
+            f"expected={command_id} actual={replayed.get('commandId')}"
+        )
+    if replayed.get("executionResult") != "DEVICE_CONFIRMED":
+        raise CommandLifecycleFailure(
+            "duplicate terminal ACK changed executionResult: "
+            f"{replayed.get('executionResult')}"
+        )
+    print(
+        "  PASS duplicate terminal ACK is idempotent: "
+        f"plan={plan_id} command={command_id} status={replayed.get('status')}"
     )
     print("COMMAND LIFECYCLE GOLDEN PATH PASS")
     return 0
