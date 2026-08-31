@@ -33,10 +33,30 @@ jobs:
       - name: Validate Docker Compose recovery configuration
         run: docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.e2e-recovery.yml config --quiet
 
-      - name: Start required Docker Compose services
+      - name: Start recovery infrastructure
         run: |
           docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.e2e-recovery.yml up -d \
-            zookeeper kafka mysql influxdb mosquitto terra-sense terra-ops
+            zookeeper kafka mysql influxdb mosquitto redis
+
+      - name: Wait for MySQL readiness
+        shell: bash
+        run: |
+          for attempt in {1..60}; do
+            if docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.e2e-recovery.yml \
+              exec -T mysql mysqladmin ping -h 127.0.0.1 -uroot -proot --silent; then
+              echo "mysql is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "mysql did not become ready"
+          docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.e2e-recovery.yml logs --tail=100 mysql
+          exit 1
+
+      - name: Start recovery application services
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.e2e-recovery.yml up -d \
+            terra-sense terra-ops
 
       - name: Wait for services
         shell: bash
