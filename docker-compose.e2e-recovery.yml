@@ -1,0 +1,5 @@
+services:
+  terra-ops:
+    environment:
+      APP_COMMAND_ACK_TIMEOUT_SECONDS: "${E2E_ACK_TIMEOUT_SECONDS:-3}"
+      APP_COMMAND_ACK_TIMEOUT_SCAN_MS: "${E2E_ACK_TIMEOUT_SCAN_MS:-500}"
