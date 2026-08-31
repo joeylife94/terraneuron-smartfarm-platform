@@ -1,0 +1,112 @@
+name: Late ACK Recovery Proof
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  late-ack-recovery:
+    name: Synthetic Late ACK Recovery
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      JWT_SECRET: DEMO_ONLY_E2E_CI_JWT_SECRET_32_CHARS_MIN
+      E2E_POLL_TIMEOUT_SECONDS: '90'
+      E2E_POLL_INTERVAL_SECONDS: '1'
+      E2E_ACK_TIMEOUT_SECONDS: '3'
+      E2E_ACK_TIMEOUT_SCAN_MS: '500'
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Validate recovery test syntax
+        run: |
+          python -m py_compile tests/command-lifecycle-test.py
+          python -m py_compile tests/late-ack-recovery-test.py
+
+      - name: Validate Docker Compose recovery configuration
+        run: docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.e2e-recovery.yml config --quiet
+
+      - name: Start recovery infrastructure
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.e2e-recovery.yml up -d \
+            zookeeper kafka mysql influxdb mosquitto redis
+
+      - name: Wait for MySQL readiness
+        shell: bash
+        run: |
+          for attempt in {1..60}; do
+            if docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.e2e-recovery.yml \
+              exec -T mysql mysqladmin ping -h 127.0.0.1 -uroot -proot --silent; then
+              echo "mysql is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "mysql did not become ready"
+          docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.e2e-recovery.yml logs --tail=100 mysql
+          exit 1
+
+      - name: Start recovery application services
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.e2e-recovery.yml up -d \
+            terra-sense terra-ops
+
+      - name: Wait for services
+        shell: bash
+        run: |
+          wait_for_service() {
+            local service="$1"
+            local url="$2"
+            echo "Waiting for ${service} at ${url}"
+            for attempt in {1..60}; do
+              if curl --fail --silent --show-error --max-time 5 "${url}" > /dev/null; then
+                echo "${service} is ready"
+                return 0
+              fi
+              sleep 5
+            done
+            echo "${service} did not become ready"
+            docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.e2e-recovery.yml logs --tail=100 "${service}"
+            return 1
+          }
+          wait_for_service terra-sense http://localhost:8081/actuator/health
+          wait_for_service terra-ops http://localhost:8080/actuator/health
+
+      - name: Install test dependency
+        run: pip install requests
+
+      - name: Run late ACK recovery proof
+        shell: bash
+        run: |
+          set -o pipefail
+          python tests/late-ack-recovery-test.py 2>&1 | tee late-ack-recovery-output.log
+
+      - name: Capture diagnostics
+        if: always()
+        shell: bash
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.e2e-recovery.yml ps --all > late-ack-compose-ps.txt 2>&1 || true
+          docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.e2e-recovery.yml logs --no-color > late-ack-compose.log 2>&1 || true
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: late-ack-recovery-diagnostics
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            late-ack-recovery-output.log
+            late-ack-compose-ps.txt
+            late-ack-compose.log
+
+      - name: Stop Docker Compose
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.e2e-recovery.yml down -v

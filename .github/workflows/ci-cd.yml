@@ -239,10 +239,28 @@ jobs:
             prom/prometheus:v2.48.0 \
             test rules terra-cortex-alerts.test.yml
 
-      - name: 🐳 Start Required Docker Compose Services
+      - name: 🐳 Start Docker Compose Infrastructure
         run: |
           docker compose up -d \
-            redis zookeeper kafka mysql influxdb mosquitto \
+            redis zookeeper kafka mysql influxdb mosquitto
+
+      - name: ⏳ Wait for MySQL Readiness
+        shell: bash
+        run: |
+          for attempt in {1..60}; do
+            if docker compose exec -T mysql mysqladmin ping -h 127.0.0.1 -uroot -proot --silent; then
+              echo "mysql is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "mysql did not become ready"
+          docker compose logs --tail=100 mysql
+          exit 1
+
+      - name: 🐳 Start Required Application Services
+        run: |
+          docker compose up -d \
             terra-sense terra-cortex terra-ops terra-gateway \
             prometheus grafana
 
