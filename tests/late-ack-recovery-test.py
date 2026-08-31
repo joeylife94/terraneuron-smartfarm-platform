@@ -37,6 +37,38 @@ def wait_for_status(plan_id: str, token: str, expected: str) -> Dict[str, Any]:
     )
 
 
+def wait_for_recovered_terminal(
+    plan_id: str, token: str, command_id: str
+) -> Dict[str, Any]:
+    """Poll through ACK_TIMEOUT until the delayed ACK recovery becomes EXECUTED."""
+    deadline = time.monotonic() + cl.POLL_TIMEOUT_SECONDS
+    latest: Dict[str, Any] = {}
+    while time.monotonic() < deadline:
+        latest = cl.response_json(
+            cl.fetch_plan(plan_id, token), "late recovery action plan query"
+        )
+        status = latest.get("status")
+        if status == "EXECUTED":
+            if latest.get("commandId") != command_id:
+                raise cl.CommandLifecycleFailure(
+                    "recovered plan commandId mismatch: "
+                    f"expected={command_id} actual={latest.get('commandId')}"
+                )
+            return latest
+        if status in {
+            "REJECTED", "SAFETY_BLOCKED", "DISPATCH_FAILED", "DELIVERY_FAILED",
+            "EXECUTION_FAILED", "FAILED", "EXPIRED",
+        }:
+            raise cl.CommandLifecycleFailure(
+                f"late recovery entered terminal failure state: {latest}"
+            )
+        # ACK_TIMEOUT is the expected pre-recovery state for this proof.
+        time.sleep(cl.POLL_INTERVAL_SECONDS)
+    raise cl.CommandLifecycleFailure(
+        f"timed out waiting for late ACK recovery; latest={latest}"
+    )
+
+
 def capture_command(process: subprocess.Popen[str]) -> Dict[str, Any]:
     try:
         stdout, stderr = process.communicate(timeout=cl.POLL_TIMEOUT_SECONDS + 10)
@@ -154,7 +186,7 @@ def main() -> int:
     cl.wait_for_device_reported_at(farm_id, asset_id, late_reported_at)
 
     print("[8/9] Verify ACK_TIMEOUT recovers to EXECUTED / DEVICE_CONFIRMED_LATE")
-    recovered = cl.wait_for_terminal_plan(plan_id, token, command_id)
+    recovered = wait_for_recovered_terminal(plan_id, token, command_id)
     if recovered.get("executionResult") != "DEVICE_CONFIRMED_LATE":
         raise cl.CommandLifecycleFailure(f"late ACK recovery result mismatch: {recovered}")
 
