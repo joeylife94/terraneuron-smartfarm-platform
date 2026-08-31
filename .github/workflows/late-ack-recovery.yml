@@ -31,11 +31,11 @@ jobs:
           python -m py_compile tests/late-ack-recovery-test.py
 
       - name: Validate Docker Compose recovery configuration
-        run: docker compose -f docker-compose.yml -f docker-compose.e2e-recovery.yml config --quiet
+        run: docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.e2e-recovery.yml config --quiet
 
       - name: Start required Docker Compose services
         run: |
-          docker compose -f docker-compose.yml -f docker-compose.e2e-recovery.yml up -d \
+          docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.e2e-recovery.yml up -d \
             zookeeper kafka mysql influxdb mosquitto terra-sense terra-ops
 
       - name: Wait for services
@@ -53,7 +53,7 @@ jobs:
               sleep 5
             done
             echo "${service} did not become ready"
-            docker compose -f docker-compose.yml -f docker-compose.e2e-recovery.yml logs --tail=100 "${service}"
+            docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.e2e-recovery.yml logs --tail=100 "${service}"
             return 1
           }
           wait_for_service terra-sense http://localhost:8081/actuator/health
@@ -72,8 +72,8 @@ jobs:
         if: always()
         shell: bash
         run: |
-          docker compose -f docker-compose.yml -f docker-compose.e2e-recovery.yml ps --all > late-ack-compose-ps.txt 2>&1 || true
-          docker compose -f docker-compose.yml -f docker-compose.e2e-recovery.yml logs --no-color > late-ack-compose.log 2>&1 || true
+          docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.e2e-recovery.yml ps --all > late-ack-compose-ps.txt 2>&1 || true
+          docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.e2e-recovery.yml logs --no-color > late-ack-compose.log 2>&1 || true
 
       - name: Upload diagnostics
         if: always()
@@ -89,4 +89,4 @@ jobs:
 
       - name: Stop Docker Compose
         if: always()
-        run: docker compose -f docker-compose.yml -f docker-compose.e2e-recovery.yml down -v
+        run: docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.e2e-recovery.yml down -v
