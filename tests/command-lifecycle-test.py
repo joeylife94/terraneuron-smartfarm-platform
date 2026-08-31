@@ -181,19 +181,39 @@ def wait_for_plan(plan_id: str, token: str) -> Dict[str, Any]:
     raise CommandLifecycleFailure(f"timed out waiting for action plan {plan_id}")
 
 
+def fetch_device_state(farm_id: str, asset_id: str) -> Dict[str, Any]:
+    response = requests.get(
+        f"{TERRA_SENSE_BASE_URL}/api/v1/devices/status/{farm_id}/{asset_id}",
+        timeout=REQUEST_TIMEOUT_SECONDS,
+    )
+    return response_json(response, "device state query")
+
+
 def wait_for_device_state(farm_id: str, asset_id: str) -> Dict[str, Any]:
     deadline = time.monotonic() + POLL_TIMEOUT_SECONDS
     while time.monotonic() < deadline:
-        response = requests.get(
-            f"{TERRA_SENSE_BASE_URL}/api/v1/devices/status/{farm_id}/{asset_id}",
-            timeout=REQUEST_TIMEOUT_SECONDS,
-        )
-        payload = response_json(response, "device state query")
+        payload = fetch_device_state(farm_id, asset_id)
         if payload.get("state") == "online" and payload.get("deviceType") == "fan":
             return payload
         time.sleep(POLL_INTERVAL_SECONDS)
     raise CommandLifecycleFailure(
         f"timed out waiting for shared device state {farm_id}/{asset_id}"
+    )
+
+
+def wait_for_device_reported_at(
+    farm_id: str, asset_id: str, expected_reported_at: str
+) -> Dict[str, Any]:
+    deadline = time.monotonic() + POLL_TIMEOUT_SECONDS
+    latest: Dict[str, Any] = {}
+    while time.monotonic() < deadline:
+        latest = fetch_device_state(farm_id, asset_id)
+        if latest.get("reportedAt") == expected_reported_at:
+            return latest
+        time.sleep(POLL_INTERVAL_SECONDS)
+    raise CommandLifecycleFailure(
+        "timed out waiting for replayed ACK consumption in shared device state: "
+        f"expected reportedAt={expected_reported_at} latest={latest}"
     )
 
 
@@ -366,9 +386,20 @@ def main() -> int:
 
     print("[8/8] Replay terminal ACK and verify idempotent terminal state")
     duplicate_ack = dict(ack)
-    duplicate_ack["reportedAt"] = now_rfc3339()
+    replay_reported_at = now_rfc3339()
+    duplicate_ack["reportedAt"] = replay_reported_at
     publish_mqtt(status_topic, duplicate_ack)
-    time.sleep(max(2.0, POLL_INTERVAL_SECONDS * 2))
+    replay_state = wait_for_device_reported_at(farm_id, asset_id, replay_reported_at)
+    if replay_state.get("lastCommandId") != command_id:
+        raise CommandLifecycleFailure(
+            "replayed ACK shared state changed command correlation: "
+            f"expected={command_id} actual={replay_state.get('lastCommandId')}"
+        )
+    if replay_state.get("lastCommandStatus") != "EXECUTED":
+        raise CommandLifecycleFailure(
+            "replayed ACK shared state changed terminal command status: "
+            f"{replay_state.get('lastCommandStatus')}"
+        )
     replayed = response_json(fetch_plan(plan_id, token), "duplicate ACK plan query")
     if replayed.get("status") != "EXECUTED":
         raise CommandLifecycleFailure(
@@ -385,7 +416,7 @@ def main() -> int:
             f"{replayed.get('executionResult')}"
         )
     print(
-        "  PASS duplicate terminal ACK is idempotent: "
+        "  PASS duplicate terminal ACK consumed and remains idempotent: "
         f"plan={plan_id} command={command_id} status={replayed.get('status')}"
     )
     print("COMMAND LIFECYCLE GOLDEN PATH PASS")
