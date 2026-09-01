@@ -4,7 +4,7 @@
 > **Status:** `PROOF v1.0 FREEZE / HUMAN REVIEW PASSED — PROGRESSION ACTIVE`  
 > **Authority:** authoritative implementation status / execution contract for this repository  
 > **Proof v1.0 implementation baseline SHA:** `7ef9315890f1e2c06345bce94fb3334c2cff1c0e`  
-> **Current accepted progression main SHA before this STATUS reconciliation:** `a747ae679ea85d23853c924131c9af601d052983`
+> **Current accepted progression main SHA before this STATUS reconciliation:** `b272fa820da7537fc66d4ffa9ecd9f109f1d5040`
 
 When documents disagree, use:
 
@@ -46,33 +46,42 @@ Issue #53 / PR #54 added bounded executable software recovery Proof for:
 
 Issue #55 / PR #56 added one bounded synthetic service-restart Proof for a terminal device ACK published while Terra-Ops is temporarily down.
 
+### Actually Executed / Verified
+
+- PR #56 exact head `8616554c9dfb7db44736645daf5b517adf0ab8b6` passed `Terra-Ops Restart ACK Recovery Proof` run #1, `CI/CD Pipeline` run #276, and `Late ACK Recovery Proof` run #9;
+- PR #56 was squash-merged with expected-head guard as `a747ae679ea85d23853c924131c9af601d052983` and Issue #55 closed completed;
+- within the synthetic Compose software boundary, a persisted plan reached `DELIVERED`, a correlated terminal `EXECUTED` ACK published while Terra-Ops was down remained recoverable through the running integration path, the same plan reached `EXECUTED` with its original `commandId` after Terra-Ops restart, and replay preserved terminal-state idempotency.
+
+## Progression milestone — terminal ACK recovery across Kafka broker restart
+
+Issue #57 / PR #58 added one bounded synthetic broker-interruption Proof for an already-persisted command plan while Kafka is temporarily unavailable.
+
 ### Changed
 
-- reused the existing command-lifecycle helpers and persisted command-plan path;
-- stopped only `terra-ops` after the plan reached `DELIVERED`, while Kafka/MySQL/MQTT and Terra-Sense remained available;
-- published a correlated terminal `EXECUTED` ACK while Terra-Ops was down and required Terra-Sense to consume the exact marker;
-- restarted Terra-Ops, required health readiness, then verified the same persisted plan reconciled to `EXECUTED` with the same `commandId`;
-- replayed the terminal ACK after restart and verified terminal-state idempotency;
-- added a dedicated exact-head `Terra-Ops Restart ACK Recovery Proof` workflow with diagnostics.
+- added `tests/kafka-restart-ack-recovery-test.py` and a dedicated `Kafka Restart ACK Recovery Proof` workflow;
+- required MySQL/Kafka/application readiness instead of assuming startup/recovery;
+- drove a persisted plan to `DELIVERED`, stopped only Kafka while MySQL/MQTT/application state remained available, published a correlated terminal `EXECUTED` ACK through MQTT, restarted Kafka, then verified reconciliation of the same persisted plan;
+- replayed the terminal ACK after recovery and verified terminal-state idempotency;
+- after review identified that pull-request checkout used GitHub's synthetic merge ref, pinned the dedicated workflow checkout to `${{ github.event.pull_request.head.sha || github.sha }}` so acceptance evidence executes on the actual PR head.
 
 ### Actually Executed
 
-- PR #56 exact head: `8616554c9dfb7db44736645daf5b517adf0ab8b6`;
-- `Terra-Ops Restart ACK Recovery Proof` run #1 completed `success` on that exact head;
-- `CI/CD Pipeline` run #276 completed `success` on that same exact head;
-- `Late ACK Recovery Proof` run #9 also completed `success` on that exact head;
-- PR #56 had no submitted review blockers and was squash-merged with expected-head guard as `a747ae679ea85d23853c924131c9af601d052983`;
-- Issue #55 closed as completed.
+- corrected PR #58 exact head: `7de61c4fc30685dcad72bfae730b06bfb05c08cd`;
+- `Kafka Restart ACK Recovery Proof` run #2 completed `success` on that exact head;
+- `CI/CD Pipeline` run #280 completed `success` on that same exact head;
+- `Late ACK Recovery Proof` run #13 and `Terra-Ops Restart ACK Recovery Proof` run #5 also completed `success` on that exact head;
+- the review thread about exact-head checkout was addressed and resolved;
+- PR #58 was squash-merged with expected-head guard as `b272fa820da7537fc66d4ffa9ecd9f109f1d5040`;
+- Issue #57 closed as completed.
 
 ### Verified
 
 Within the executed synthetic Compose software boundary:
 
-- a persisted command plan reached `DELIVERED` before Terra-Ops was stopped;
-- a correlated terminal `EXECUTED` ACK published during the Terra-Ops outage remained recoverable through the running integration path;
-- after Terra-Ops restart and health readiness, the same persisted plan reached terminal `EXECUTED` while retaining its original `commandId`;
-- replay of the terminal ACK after restart preserved terminal-state idempotency;
-- the dedicated restart proof and broader CI/CD pipeline both passed on the exact merge-candidate head.
+- an already-persisted command plan remained recoverable across a bounded Kafka broker interruption;
+- after broker restart/readiness, the same persisted plan reached terminal `EXECUTED` while retaining its original `commandId`;
+- replay of the same terminal ACK preserved terminal-state idempotency;
+- the dedicated Kafka recovery proof and broader CI/CD pipeline both passed on the corrected exact merge-candidate head.
 
 ## Not Verified / limitations
 
@@ -82,15 +91,15 @@ All v1.0 non-claims remain in force. The accepted baseline and progression miles
 - physical actuator interlocks, emergency-stop behavior, manufacturer controller limits, physical-equipment certification, or physical device truth;
 - manufacturer/model-specific capability adapters;
 - production secrets management/key rotation;
-- production HA, backup/restore, DR, load testing, or fault-injection maturity;
+- production HA, backup/restore, DR, load testing, or general fault-injection maturity;
 - unattended autonomous control;
 - that device-reported or software state equals physical equipment state.
 
-The restart milestone is bounded synthetic software integration evidence. It does not establish production HA/fault-injection maturity, production network guarantees, or physical-equipment behavior.
+The service/broker restart milestones are bounded synthetic software integration evidence. They do not establish production HA/fault-injection maturity, production network guarantees, or physical-equipment behavior.
 
 ## Remaining risks
 
-- MQTT/Kafka reconnect and broader broker/network failure handling remain beyond the accepted bounded restart case and require separate executable evidence;
+- MQTT reconnect/broker interruption behavior and broader network failure handling remain beyond the accepted bounded Kafka case and require separate executable evidence;
 - operator/audit usability can still be strengthened where concrete delivery value exists;
 - deployment/handoff and production security/availability boundaries remain separate from the accepted bounded software Proof;
 - production and physical-world trust boundaries remain explicitly outside the accepted software Proof.
@@ -98,7 +107,7 @@ The restart milestone is bounded synthetic software integration evidence. It doe
 ## Exact Next Action
 
 - perform a fresh Progression Review against current `main` before selecting another milestone;
-- if justified, prefer exactly one bounded milestone in this order: MQTT/Kafka integration reproducibility/failure handling, operator observability/audit usability, synthetic device harness, deployment/handoff reproducibility, then material workflow security boundaries;
+- if justified, prefer exactly one bounded milestone in this order: remaining MQTT integration reproducibility/failure handling, operator observability/audit usability, synthetic device harness, deployment/handoff reproducibility, then material workflow security boundaries;
 - require concrete use/show/delivery value, executable acceptance criteria, one-Issue/one-PR scope, and no unresolved product-direction or physical-safety decision;
 - do not automatically select production MQTT TLS/identity, manufacturer adapters, HA/secrets/DR/load/fault-injection, physical certification, or unattended-control work;
 - if no next milestone is justified, remain enabled in lightweight HOLD/no-mutation mode rather than creating state-only churn.
