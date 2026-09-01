@@ -4,7 +4,7 @@
 > **Status:** `PROOF v1.0 FREEZE / HUMAN REVIEW PASSED — PROGRESSION ACTIVE`  
 > **Authority:** authoritative implementation status / execution contract for this repository  
 > **Proof v1.0 implementation baseline SHA:** `7ef9315890f1e2c06345bce94fb3334c2cff1c0e`  
-> **Current accepted progression main SHA before this STATUS reconciliation:** `815933edc25f68d744da73dad689c9e394d50a42`
+> **Current accepted progression main SHA before this STATUS reconciliation:** `072bbe7bda4101e89f0849ef81daf09debfb5db1`
 
 When documents disagree, use:
 
@@ -172,6 +172,19 @@ Issue #71 / PR #72 added bounded executable ordering evidence that once a correc
 - PR #72 was squash-merged with expected-head guard as `815933edc25f68d744da73dad689c9e394d50a42` and Issue #71 closed completed;
 - within the bounded synthetic software integration path, terminal `EXECUTION_FAILED` truth, original `commandId`, `DEVICE_EXECUTION_FAILED`, the original synthetic device error, and the cleared ACK deadline survived an actually consumed, non-dead-lettered stale `DELIVERED` event for the same command.
 
+## Progression milestone — duplicate terminal FAILED replay idempotency
+
+Issue #73 / PR #74 added bounded executable evidence that duplicate terminal `FAILED` feedback cannot rewrite an already-persisted execution failure.
+
+### Changed / Actually Executed / Verified
+
+- added `tests/duplicate-terminal-failure-replay-test.py` and dedicated exact-head `Duplicate Terminal Failure Replay Proof` workflow;
+- review identified that replaying a second MQTT status could be ignored after Terra-Sense removed the pending command, so the corrected proof publishes a schema-valid correlated `FAILED` feedback record directly to `terra.control.feedback` and waits for `terra-ops-group` catch-up;
+- corrected PR #74 exact head `6376b2a9796f93daf24a090469eb615c56c8f2f2` passed `Duplicate Terminal Failure Replay Proof` run #2, `CI/CD Pipeline` run #312, `Late ACK Recovery Proof` run #45, `Mismatched MQTT ACK Rejection Proof` run #14, `Synthetic MQTT Device Harness Proof` run #18, `Kafka Restart ACK Recovery Proof` run #34, `Software Proof Handoff` run #23, `Stale DELIVERED After Device Failure Proof` run #7, `Correlated MQTT Device Failure Proof` run #10, `MQTT Restart Subscription Recovery Proof` run #30, and `Terra-Ops Restart ACK Recovery Proof` run #37;
+- the inline review blocker was answered against the corrected exact head and resolved;
+- PR #74 was squash-merged with expected-head guard as `072bbe7bda4101e89f0849ef81daf09debfb5db1` and Issue #73 closed completed;
+- within the bounded synthetic software integration path, duplicate correlated terminal `FAILED` feedback traversed the Terra-Ops Kafka consumer without dead-lettering and preserved `EXECUTION_FAILED`, the original `commandId`, original failure timestamps/result fields, `DEVICE_EXECUTION_FAILED`, the original synthetic device error, and the cleared ACK deadline.
+
 ## Not Verified / limitations
 
 All v1.0 non-claims remain in force. The accepted baseline and progression milestones do **not** verify or claim:
@@ -184,7 +197,7 @@ All v1.0 non-claims remain in force. The accepted baseline and progression miles
 - unattended autonomous control;
 - that device-reported or software state equals physical equipment state.
 
-The service/broker restart milestones are bounded synthetic software integration evidence. They do not establish production HA/fault-injection maturity, production network guarantees, or physical-equipment behavior. The audit milestone establishes software/operator trace usability only; it does not establish physical-state truth or production compliance/audit certification. The handoff milestone establishes reproducibility of the bounded synthetic software Proof only; its demo-only local secret is not production secrets-management evidence. The synthetic device harness, mismatched-ACK rejection, correlated device-failure, and stale-feedback-ordering milestones establish software MQTT/Kafka contract, correlation, failure-propagation, and ordering behavior only; they do not establish cryptographic device identity, manufacturer fault semantics, physical-device semantics, actuator behavior, or production messaging trust.
+The service/broker restart milestones are bounded synthetic software integration evidence. They do not establish production HA/fault-injection maturity, production network guarantees, or physical-equipment behavior. The audit milestone establishes software/operator trace usability only; it does not establish physical-state truth or production compliance/audit certification. The handoff milestone establishes reproducibility of the bounded synthetic software Proof only; its demo-only local secret is not production secrets-management evidence. The synthetic device harness, mismatched-ACK rejection, correlated device-failure, stale-feedback-ordering, and duplicate-terminal-failure-replay milestones establish software MQTT/Kafka contract, correlation, failure-propagation, ordering, and idempotency behavior only; they do not establish cryptographic device identity, manufacturer fault semantics, physical-device semantics, actuator behavior, or production messaging trust.
 
 ## Remaining risks
 
