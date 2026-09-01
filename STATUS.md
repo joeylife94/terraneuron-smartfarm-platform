@@ -4,7 +4,7 @@
 > **Status:** `PROOF v1.0 FREEZE / HUMAN REVIEW PASSED — PROGRESSION ACTIVE`  
 > **Authority:** authoritative implementation status / execution contract for this repository  
 > **Proof v1.0 implementation baseline SHA:** `7ef9315890f1e2c06345bce94fb3334c2cff1c0e`  
-> **Current accepted progression main SHA before this STATUS reconciliation:** `b272fa820da7537fc66d4ffa9ecd9f109f1d5040`
+> **Current accepted progression main SHA before this STATUS reconciliation:** `0be87e0aca592e89f0f58a985d1629bfb5e4d76c`
 
 When documents disagree, use:
 
@@ -83,6 +83,35 @@ Within the executed synthetic Compose software boundary:
 - replay of the same terminal ACK preserved terminal-state idempotency;
 - the dedicated Kafka recovery proof and broader CI/CD pipeline both passed on the corrected exact merge-candidate head.
 
+## Progression milestone — MQTT subscription recovery across broker restart
+
+Issue #59 / PR #60 added bounded executable evidence that the running Terra-Sense integration path can recover its inbound MQTT status subscription after a Mosquitto restart without restarting Terra-Sense.
+
+### Changed
+
+- changed `MqttGatewayService` to use `MqttCallbackExtended` and restore the configured inbound MQTT subscriptions from `connectComplete(...)` after automatic reconnect;
+- added `tests/mqtt-restart-subscription-recovery-test.py` and a dedicated exact-head `MQTT Restart Subscription Recovery Proof` workflow with diagnostics;
+- drove a persisted plan to `DELIVERED`, restarted only Mosquitto, required broker recovery plus Terra-Sense automatic reconnect without a Terra-Sense restart, then published a correlated terminal `EXECUTED` status through the restored subscription;
+- fixed the proof harness after the first run exposed a missing `command_id` argument to the existing terminal-plan waiter.
+
+### Actually Executed
+
+- corrected PR #60 exact head: `79a38131a745d7c86b17c69910df814dd5831f5d`;
+- `MQTT Restart Subscription Recovery Proof` run #2 completed `success` on that exact head;
+- `CI/CD Pipeline` run #284 completed `success` on that same exact head;
+- `Late ACK Recovery Proof` run #17, `Terra-Ops Restart ACK Recovery Proof` run #9, and `Kafka Restart ACK Recovery Proof` run #6 also completed `success` on that exact head;
+- PR #60 was squash-merged as `0be87e0aca592e89f0f58a985d1629bfb5e4d76c`;
+- Issue #59 closed as completed.
+
+### Verified
+
+Within the executed synthetic Compose software boundary:
+
+- after a bounded Mosquitto broker restart, Terra-Sense automatically reconnected without a Terra-Sense service restart and restored its inbound status subscription;
+- a correlated terminal `EXECUTED` ACK published after broker recovery was consumed through the restored subscription and reconciled the same persisted plan while retaining its original `commandId`;
+- replay of the same terminal ACK preserved terminal-state idempotency;
+- the dedicated MQTT recovery proof and broader CI/CD pipeline both passed on the corrected exact merge-candidate head.
+
 ## Not Verified / limitations
 
 All v1.0 non-claims remain in force. The accepted baseline and progression milestones do **not** verify or claim:
@@ -99,7 +128,7 @@ The service/broker restart milestones are bounded synthetic software integration
 
 ## Remaining risks
 
-- MQTT reconnect/broker interruption behavior and broader network failure handling remain beyond the accepted bounded Kafka case and require separate executable evidence;
+- broader network failure handling beyond the accepted bounded Kafka/MQTT broker-restart cases requires separate executable evidence;
 - operator/audit usability can still be strengthened where concrete delivery value exists;
 - deployment/handoff and production security/availability boundaries remain separate from the accepted bounded software Proof;
 - production and physical-world trust boundaries remain explicitly outside the accepted software Proof.
@@ -107,7 +136,7 @@ The service/broker restart milestones are bounded synthetic software integration
 ## Exact Next Action
 
 - perform a fresh Progression Review against current `main` before selecting another milestone;
-- if justified, prefer exactly one bounded milestone in this order: remaining MQTT integration reproducibility/failure handling, operator observability/audit usability, synthetic device harness, deployment/handoff reproducibility, then material workflow security boundaries;
+- if justified, prefer exactly one bounded milestone in this order: operator observability/audit usability, synthetic device harness, deployment/handoff reproducibility, then material workflow security boundaries;
 - require concrete use/show/delivery value, executable acceptance criteria, one-Issue/one-PR scope, and no unresolved product-direction or physical-safety decision;
 - do not automatically select production MQTT TLS/identity, manufacturer adapters, HA/secrets/DR/load/fault-injection, physical certification, or unattended-control work;
 - if no next milestone is justified, remain enabled in lightweight HOLD/no-mutation mode rather than creating state-only churn.
