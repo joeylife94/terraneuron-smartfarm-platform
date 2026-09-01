@@ -122,8 +122,17 @@ def feedback_group_lag() -> int | None:
         if len(parts) < 6 or parts[1] != "terra.control.feedback":
             continue
         found = True
+        current_offset = parts[3]
+        log_end_offset = parts[4]
         lag = parts[5]
         if lag == "-":
+            # Kafka reports CURRENT-OFFSET/LAG as '-' for a partition that has
+            # never needed a committed offset. If that partition is empty
+            # (LOG-END-OFFSET=0), it is already caught up and must not prevent
+            # the proof from observing the non-empty partition's committed
+            # progress. A non-empty partition with unknown lag remains unsafe.
+            if current_offset == "-" and log_end_offset == "0":
+                continue
             return None
         total += int(lag)
     return total if found else None
