@@ -84,6 +84,9 @@ def main() -> int:
 
     print("[4/7] Capture dispatch command and approve plan")
     capture = helpers.start_mqtt_command_capture(command_topic)
+    # Match established proofs: give the non-retained MQTT subscriber time to attach
+    # before approval can dispatch the command.
+    time.sleep(0.5)
     approval = helpers.requests.post(
         f"{helpers.TERRA_OPS_BASE_URL}/api/actions/{plan_id}/approve",
         headers=helpers.auth_headers(token),
@@ -138,8 +141,9 @@ def main() -> int:
             "reportedAt": wrong_reported_at,
         },
     )
-    # Allow the asynchronous MQTT -> Terra-Sense path to process the negative ACK.
-    time.sleep(max(2.0, helpers.POLL_INTERVAL_SECONDS * 2))
+    # Prove Terra-Sense actually consumed the mismatched status before asserting
+    # that Terra-Ops rejected it for the target plan correlation boundary.
+    helpers.wait_for_device_reported_at(farm_id, wrong_asset_id, wrong_reported_at)
     after_wrong_ack = helpers.response_json(
         helpers.fetch_plan(plan_id, token), "plan query after mismatched ACK"
     )
@@ -152,7 +156,7 @@ def main() -> int:
             f"plan commandId changed after mismatched ACK: {after_wrong_ack}"
         )
     print(
-        "  PASS mismatched ACK did not complete target plan: "
+        "  PASS consumed mismatched ACK did not complete target plan: "
         f"status={after_wrong_ack.get('status')} command={after_wrong_ack.get('commandId')}"
     )
 
