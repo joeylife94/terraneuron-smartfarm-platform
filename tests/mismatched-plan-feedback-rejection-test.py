@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Bounded proof that a real commandId cannot be acknowledged under a different plan_id."""
-import importlib.util, json, sys, time, uuid
+import importlib.util, json, subprocess, sys, time, uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -32,17 +32,32 @@ def wait_for_status(plan_id: str, token: str, expected: set[str]):
     raise helpers.CommandLifecycleFailure(f"timed out waiting for {expected}; latest={latest}")
 
 
+def read_dlt_once() -> str:
+    completed = subprocess.run(
+        [
+            "docker", "exec", "-i", "terraneuron-kafka",
+            "kafka-console-consumer", "--bootstrap-server", "localhost:9092",
+            "--topic", "terra.control.feedback.DLT", "--from-beginning", "--timeout-ms", "2000",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    # kafka-console-consumer exits non-zero on its normal timeout when no record
+    # arrives. The proof treats that as "not observed yet" and keeps polling.
+    return completed.stdout
+
+
 def wait_for_dlt_record(command_id: str) -> None:
     deadline = time.monotonic() + helpers.POLL_TIMEOUT_SECONDS
     while time.monotonic() < deadline:
-        topics = helpers.run_container_command("terraneuron-kafka", ["kafka-topics", "--bootstrap-server", "localhost:9092", "--list"])
+        topics = helpers.run_container_command(
+            "terraneuron-kafka",
+            ["kafka-topics", "--bootstrap-server", "localhost:9092", "--list"],
+        )
         if "terra.control.feedback.DLT" in topics.splitlines():
-            out = helpers.run_container_command(
-                "terraneuron-kafka",
-                ["kafka-console-consumer", "--bootstrap-server", "localhost:9092", "--topic", "terra.control.feedback.DLT", "--from-beginning", "--timeout-ms", "2000"],
-                check=False,
-            )
-            if command_id in out:
+            if command_id in read_dlt_once():
                 return
         time.sleep(helpers.POLL_INTERVAL_SECONDS)
     raise helpers.CommandLifecycleFailure("mismatched feedback was not observed on terra.control.feedback.DLT")
