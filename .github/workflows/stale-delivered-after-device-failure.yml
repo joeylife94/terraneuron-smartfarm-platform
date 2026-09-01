@@ -87,6 +87,32 @@ jobs:
           set -o pipefail
           python tests/stale-delivered-after-device-failure-test.py 2>&1 | tee stale-delivered-after-device-failure-output.log
 
+      - name: Verify stale feedback was not dead-lettered
+        shell: bash
+        run: |
+          set -euo pipefail
+          DLT_TOPIC='terra.control.feedback.DLT'
+          if ! docker exec terraneuron-kafka kafka-topics \
+            --bootstrap-server localhost:9092 --list | grep -Fxq "${DLT_TOPIC}"; then
+            echo "PASS ${DLT_TOPIC} was not created"
+            exit 0
+          fi
+
+          DLT_RECORDS="$(docker exec terraneuron-kafka kafka-console-consumer \
+            --bootstrap-server localhost:9092 \
+            --topic "${DLT_TOPIC}" \
+            --from-beginning \
+            --timeout-ms 3000 2>/dev/null || true)"
+
+          if [ -n "${DLT_RECORDS}" ]; then
+            printf '%s\n' "${DLT_RECORDS}" > stale-delivered-after-device-failure-dlt.log
+            echo "FAIL ${DLT_TOPIC} contains a dead-letter record during the isolated proof"
+            exit 1
+          fi
+
+          : > stale-delivered-after-device-failure-dlt.log
+          echo "PASS ${DLT_TOPIC} contains no records after stale DELIVERED processing"
+
       - name: Capture diagnostics
         if: always()
         shell: bash
@@ -103,6 +129,7 @@ jobs:
           retention-days: 7
           path: |
             stale-delivered-after-device-failure-output.log
+            stale-delivered-after-device-failure-dlt.log
             stale-delivered-after-device-failure-compose-ps.txt
             stale-delivered-after-device-failure-compose.log
 
