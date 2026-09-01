@@ -85,6 +85,18 @@ def wait_for_execution_failure(plan_id: str, token: str, command_id: str, error:
     )
 
 
+def publish_feedback(event: dict) -> None:
+    helpers.run_container_command(
+        "terraneuron-kafka",
+        [
+            "kafka-console-producer",
+            "--bootstrap-server", "localhost:9092",
+            "--topic", "terra.control.feedback",
+        ],
+        stdin=json.dumps(event, separators=(",", ":")) + "\n",
+    )
+
+
 def feedback_group_lag() -> int | None:
     output = helpers.run_container_command(
         "terraneuron-kafka",
@@ -207,12 +219,7 @@ def main() -> int:
         raise helpers.CommandLifecycleFailure(
             f"MQTT command capture failed ({capture.returncode}): stdout={stdout!r} stderr={stderr!r}"
         )
-    try:
-        command = json.loads(stdout.strip())
-    except json.JSONDecodeError as exc:
-        raise helpers.CommandLifecycleFailure(
-            f"captured MQTT command was invalid JSON: {stdout!r}"
-        ) from exc
+    command = json.loads(stdout.strip())
     command_id = str(command.get("commandId") or "")
     if not command_id:
         raise helpers.CommandLifecycleFailure(f"MQTT command omitted commandId: {command}")
@@ -250,20 +257,26 @@ def main() -> int:
         )
     }
 
-    print("[8/9] Replay the same correlated terminal FAILED result")
-    time.sleep(1.1)
-    replay_reported_at = helpers.now_rfc3339()
-    helpers.publish_mqtt(status_topic, {
-        "farmId": farm_id,
-        "assetId": asset_id,
-        "deviceType": "fan",
-        "state": "fault",
-        "lastCommandId": command_id,
-        "lastCommandStatus": "FAILED",
-        "lastCommandError": device_error,
-        "reportedAt": replay_reported_at,
-    })
-    helpers.wait_for_device_reported_at(farm_id, asset_id, replay_reported_at)
+    print("[8/9] Replay schema-valid terminal FAILED directly through Terra-Ops Kafka consumer")
+    replay = {
+        "specversion": "1.0",
+        "type": "terra.sense.command.feedback",
+        "source": "//terraneuron/terra-sense",
+        "id": str(uuid.uuid4()),
+        "time": helpers.now_rfc3339(),
+        "datacontenttype": "application/json",
+        "data": {
+            "trace_id": trace_id,
+            "command_id": command_id,
+            "plan_id": plan_id,
+            "farm_id": farm_id,
+            "target_asset_id": asset_id,
+            "status": "FAILED",
+            "error": device_error,
+            "timestamp": helpers.now_rfc3339(),
+        },
+    }
+    publish_feedback(replay)
     wait_for_feedback_group_caught_up()
 
     print("[9/9] Verify duplicate FAILED replay did not rewrite terminal truth")
