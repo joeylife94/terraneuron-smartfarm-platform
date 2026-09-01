@@ -34,6 +34,13 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, Long> {
     @Query("SELECT COUNT(a) FROM AuditLog a WHERE a.eventType = :eventType AND a.timestamp > :since")
     long countEventsSince(@Param("eventType") AuditLog.EventType eventType, @Param("since") Instant since);
 
-    @Query("SELECT a FROM AuditLog a WHERE a.entityType = 'plan' AND a.entityId = :planId ORDER BY a.timestamp ASC")
+    @Query("""
+            SELECT a FROM AuditLog a
+            WHERE (a.entityType = 'plan' AND a.entityId = :planId)
+               OR (a.entityType = 'command' AND a.entityId = (
+                    SELECT p.commandId FROM ActionPlan p WHERE p.planId = :planId
+               ))
+            ORDER BY a.timestamp ASC
+            """)
     List<AuditLog> findPlanHistory(@Param("planId") String planId);
 }
