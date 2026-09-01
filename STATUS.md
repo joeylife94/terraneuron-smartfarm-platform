@@ -4,7 +4,7 @@
 > **Status:** `PROOF v1.0 FREEZE / HUMAN REVIEW PASSED — PROGRESSION ACTIVE`  
 > **Authority:** authoritative implementation status / execution contract for this repository  
 > **Proof v1.0 implementation baseline SHA:** `7ef9315890f1e2c06345bce94fb3334c2cff1c0e`  
-> **Current accepted progression main SHA before this STATUS reconciliation:** `0be87e0aca592e89f0f58a985d1629bfb5e4d76c`
+> **Current accepted progression main SHA before this STATUS reconciliation:** `c5c19f96c7b3d397da4044fb8121a34bb7d17923`
 
 When documents disagree, use:
 
@@ -112,6 +112,34 @@ Within the executed synthetic Compose software boundary:
 - replay of the same terminal ACK preserved terminal-state idempotency;
 - the dedicated MQTT recovery proof and broader CI/CD pipeline both passed on the corrected exact merge-candidate head.
 
+## Progression milestone — complete plan audit timeline across command lifecycle
+
+Issue #61 / PR #62 strengthened operator/audit usability by making the existing plan audit view include command-side lifecycle rows correlated by the plan's persisted `commandId`, while excluding unrelated commands.
+
+### Changed
+
+- extended the existing plan-history repository query so `GET /api/actions/{planId}/audit` includes both plan events and command events correlated through the same persisted plan/command relationship;
+- preserved chronological ordering and kept unrelated command audit rows outside the returned plan timeline;
+- added executable JPA coverage for plan event → command timeout → terminal command event ordering and unrelated-command exclusion.
+
+### Actually Executed
+
+- PR #62 exact head: `dad04f4d7c987bd2456d1dd47bea9076e09dde60`;
+- `CI/CD Pipeline` run #287 completed `success` on that exact head;
+- `Late ACK Recovery Proof` run #20, `Terra-Ops Restart ACK Recovery Proof` run #12, `Kafka Restart ACK Recovery Proof` run #9, `MQTT Restart Subscription Recovery Proof` run #5, and `Dashboard Authentication` run #43 also completed `success` on that same exact head;
+- no unresolved inline review threads or submitted review blockers remained;
+- PR #62 was squash-merged with expected-head guard as `c5c19f96c7b3d397da4044fb8121a34bb7d17923`;
+- Issue #61 closed as completed.
+
+### Verified
+
+Within the bounded software/operator boundary:
+
+- the existing plan audit entry point can expose a single chronological software lifecycle containing both plan-side and correlated command-side audit evidence;
+- command lifecycle rows are correlated by the plan's persisted `commandId` rather than by timestamp alone;
+- unrelated command rows are excluded by executable repository coverage;
+- broader CI and the established command-recovery proofs remained green on the exact merge-candidate head.
+
 ## Not Verified / limitations
 
 All v1.0 non-claims remain in force. The accepted baseline and progression milestones do **not** verify or claim:
@@ -124,12 +152,12 @@ All v1.0 non-claims remain in force. The accepted baseline and progression miles
 - unattended autonomous control;
 - that device-reported or software state equals physical equipment state.
 
-The service/broker restart milestones are bounded synthetic software integration evidence. They do not establish production HA/fault-injection maturity, production network guarantees, or physical-equipment behavior.
+The service/broker restart milestones are bounded synthetic software integration evidence. They do not establish production HA/fault-injection maturity, production network guarantees, or physical-equipment behavior. The audit milestone establishes software/operator trace usability only; it does not establish physical-state truth or production compliance/audit certification.
 
 ## Remaining risks
 
 - broader network failure handling beyond the accepted bounded Kafka/MQTT broker-restart cases requires separate executable evidence;
-- operator/audit usability can still be strengthened where concrete delivery value exists;
+- operator/audit usability can still be strengthened where another concrete delivery gap is demonstrated;
 - deployment/handoff and production security/availability boundaries remain separate from the accepted bounded software Proof;
 - production and physical-world trust boundaries remain explicitly outside the accepted software Proof.
 
