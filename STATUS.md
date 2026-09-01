@@ -4,7 +4,7 @@
 > **Status:** `PROOF v1.0 FREEZE / HUMAN REVIEW PASSED — PROGRESSION ACTIVE`  
 > **Authority:** authoritative implementation status / execution contract for this repository  
 > **Proof v1.0 implementation baseline SHA:** `7ef9315890f1e2c06345bce94fb3334c2cff1c0e`  
-> **Current accepted progression main SHA before this STATUS reconciliation:** `b6feb62f72d7ce8bb1a47b8eba298a70c02fc1ca`
+> **Current accepted progression main SHA before this STATUS reconciliation:** `815933edc25f68d744da73dad689c9e394d50a42`
 
 When documents disagree, use:
 
@@ -157,6 +157,21 @@ Issue #69 / PR #70 added bounded executable evidence that a correctly correlated
 - PR #70 was squash-merged with expected-head guard as `b6feb62f72d7ce8bb1a47b8eba298a70c02fc1ca` and Issue #69 closed completed;
 - within the bounded synthetic Compose software boundary, a correctly correlated terminal device `FAILED` status drove the same persisted plan to `EXECUTION_FAILED`, retained the original `commandId`, cleared its ACK deadline, and preserved operator-visible `DEVICE_EXECUTION_FAILED` plus the deterministic synthetic device error.
 
+## Progression milestone — stale DELIVERED cannot regress terminal device failure
+
+Issue #71 / PR #72 added bounded executable ordering evidence that once a correctly correlated synthetic device failure makes a persisted plan `EXECUTION_FAILED`, a later stale transport `DELIVERED` event for the same command cannot overwrite that stronger terminal truth.
+
+### Changed / Actually Executed / Verified
+
+- added `tests/stale-delivered-after-device-failure-test.py` and dedicated exact-head `Stale DELIVERED After Device Failure Proof` workflow;
+- review identified that consumer-group lag alone could false-PASS if the stale event were rejected and dead-lettered; the corrected workflow explicitly verifies `terra.control.feedback.DLT` contains no record after the isolated proof;
+- an execution failure in the lag wait was traced to Kafka empty partitions reporting `CURRENT-OFFSET=- / LOG-END-OFFSET=0 / LAG=-`; the same-gap correction treats only those empty partitions as caught up while preserving unknown lag as unsafe for non-empty partitions;
+- corrected PR #72 exact head `2ca81fd6c9eac65c8575fbe8c52b429ae18a3db1` passed `Stale DELIVERED After Device Failure Proof` run #3, including the explicit `Verify stale feedback was not dead-lettered` step;
+- that exact head also passed `CI/CD Pipeline` run #308, `Mismatched MQTT ACK Rejection Proof` run #10, `MQTT Restart Subscription Recovery Proof` run #26, `Software Proof Handoff` run #19, `Kafka Restart ACK Recovery Proof` run #30, `Correlated MQTT Device Failure Proof` run #6, `Terra-Ops Restart ACK Recovery Proof` run #33, `Late ACK Recovery Proof` run #41, and `Synthetic MQTT Device Harness Proof` run #14;
+- the inline review blocker was resolved after corrected exact-head execution evidence;
+- PR #72 was squash-merged with expected-head guard as `815933edc25f68d744da73dad689c9e394d50a42` and Issue #71 closed completed;
+- within the bounded synthetic software integration path, terminal `EXECUTION_FAILED` truth, original `commandId`, `DEVICE_EXECUTION_FAILED`, the original synthetic device error, and the cleared ACK deadline survived an actually consumed, non-dead-lettered stale `DELIVERED` event for the same command.
+
 ## Not Verified / limitations
 
 All v1.0 non-claims remain in force. The accepted baseline and progression milestones do **not** verify or claim:
@@ -169,7 +184,7 @@ All v1.0 non-claims remain in force. The accepted baseline and progression miles
 - unattended autonomous control;
 - that device-reported or software state equals physical equipment state.
 
-The service/broker restart milestones are bounded synthetic software integration evidence. They do not establish production HA/fault-injection maturity, production network guarantees, or physical-equipment behavior. The audit milestone establishes software/operator trace usability only; it does not establish physical-state truth or production compliance/audit certification. The handoff milestone establishes reproducibility of the bounded synthetic software Proof only; its demo-only local secret is not production secrets-management evidence. The synthetic device harness, mismatched-ACK rejection, and correlated device-failure milestones establish software MQTT contract/correlation/failure-propagation behavior only; they do not establish cryptographic device identity, manufacturer fault semantics, physical-device semantics, actuator behavior, or production MQTT trust.
+The service/broker restart milestones are bounded synthetic software integration evidence. They do not establish production HA/fault-injection maturity, production network guarantees, or physical-equipment behavior. The audit milestone establishes software/operator trace usability only; it does not establish physical-state truth or production compliance/audit certification. The handoff milestone establishes reproducibility of the bounded synthetic software Proof only; its demo-only local secret is not production secrets-management evidence. The synthetic device harness, mismatched-ACK rejection, correlated device-failure, and stale-feedback-ordering milestones establish software MQTT/Kafka contract, correlation, failure-propagation, and ordering behavior only; they do not establish cryptographic device identity, manufacturer fault semantics, physical-device semantics, actuator behavior, or production messaging trust.
 
 ## Remaining risks
 
