@@ -4,7 +4,7 @@
 > **Status:** `PROOF v1.0 FREEZE / HUMAN REVIEW PASSED — PROGRESSION ACTIVE`  
 > **Authority:** authoritative implementation status / execution contract for this repository  
 > **Proof v1.0 implementation baseline SHA:** `7ef9315890f1e2c06345bce94fb3334c2cff1c0e`  
-> **Current accepted progression main SHA before this STATUS reconciliation:** `d3608b12f7e58c95d58d6f16c5ebf108fa9ab5bf`
+> **Current accepted progression main SHA before this STATUS reconciliation:** `92d246025f10d04207cb27f0a52193287b4a3030`
 
 When documents disagree, use:
 
@@ -117,6 +117,20 @@ Within the current synthetic Compose software boundary:
 - diagnostics remain capturable before cleanup on CI failures;
 - broader CI and established command-recovery regression proofs remained green on the exact merge-candidate head.
 
+## Progression milestone — reusable synthetic MQTT device command/ACK harness
+
+Issue #65 / PR #66 added one reusable synthetic MQTT device actor and executable command→correlated-ACK Proof without claiming physical-device truth.
+
+### Changed / Actually Executed / Verified
+
+- added a reusable synthetic MQTT device actor that announces bounded synthetic state, subscribes only to its configured command topic, validates required farm/asset/plan/command correlation, and emits a terminal `EXECUTED` ACK with the received `commandId`;
+- added a bounded executable proof for `PENDING → approval/dispatch → independent synthetic actor consumes command → correlated ACK → same persisted plan EXECUTED / DEVICE_CONFIRMED` plus a dedicated exact-head workflow;
+- the first exact head exposed a contract-invalid synthetic `planId`; the same-gap fix changed the harness proof to the authoritative `^plan-[a-z0-9]+$` form rather than broadening scope;
+- corrected PR #66 exact head `85cf878af0639b85c8be01d9891b5ee93d23fd49` passed `Synthetic MQTT Device Harness Proof` run #2, `CI/CD Pipeline` run #296, `Kafka Restart ACK Recovery Proof` run #18, `MQTT Restart Subscription Recovery Proof` run #14, `Late ACK Recovery Proof` run #29, `Software Proof Handoff` run #7, and `Terra-Ops Restart ACK Recovery Proof` run #21;
+- PR #66 had no submitted reviews or unresolved review threads on the accepted exact head;
+- PR #66 was squash-merged with expected-head guard as `92d246025f10d04207cb27f0a52193287b4a3030` and Issue #65 closed completed;
+- within the bounded synthetic software boundary, an independent reusable actor can consume the existing MQTT command contract and return a correlated terminal ACK that drives the same persisted plan to `EXECUTED / DEVICE_CONFIRMED`.
+
 ## Not Verified / limitations
 
 All v1.0 non-claims remain in force. The accepted baseline and progression milestones do **not** verify or claim:
@@ -129,20 +143,20 @@ All v1.0 non-claims remain in force. The accepted baseline and progression miles
 - unattended autonomous control;
 - that device-reported or software state equals physical equipment state.
 
-The service/broker restart milestones are bounded synthetic software integration evidence. They do not establish production HA/fault-injection maturity, production network guarantees, or physical-equipment behavior. The audit milestone establishes software/operator trace usability only; it does not establish physical-state truth or production compliance/audit certification. The handoff milestone establishes reproducibility of the bounded synthetic software Proof only; its demo-only local secret is not production secrets-management evidence.
+The service/broker restart milestones are bounded synthetic software integration evidence. They do not establish production HA/fault-injection maturity, production network guarantees, or physical-equipment behavior. The audit milestone establishes software/operator trace usability only; it does not establish physical-state truth or production compliance/audit certification. The handoff milestone establishes reproducibility of the bounded synthetic software Proof only; its demo-only local secret is not production secrets-management evidence. The synthetic device harness establishes a reusable software actor and MQTT contract loop only; it does not establish physical-device semantics, actuator behavior, or production MQTT trust.
 
 ## Remaining risks
 
 - broader network failure handling beyond the accepted bounded Kafka/MQTT broker-restart cases requires separate executable evidence;
 - operator/audit usability can still be strengthened where another concrete delivery gap is demonstrated;
-- simulator/digital-twin or synthetic device harness coverage can be strengthened where it adds executable software-Proof value without implying physical-device truth;
+- synthetic device/digital-twin coverage can still be strengthened where a new executable software-Proof gap is concrete and does not imply physical-device truth;
 - production security/availability boundaries remain separate from the accepted bounded software Proof;
 - production and physical-world trust boundaries remain explicitly outside the accepted software Proof.
 
 ## Exact Next Action
 
 - perform a fresh Progression Review against current `main` before selecting another milestone;
-- if justified, prefer exactly one bounded milestone in this order: synthetic device harness / digital-twin reproducibility, then material workflow security boundaries, then another concrete operator/audit or recovery gap;
+- if justified, prefer exactly one bounded milestone in this order: software-level command lifecycle reliability/recovery/idempotency, MQTT/Kafka reproducibility/failure handling, operator observability/audit usability, synthetic device/digital-twin reproducibility, deployment/handoff reproducibility, then material workflow security boundaries;
 - require concrete use/show/delivery value, executable acceptance criteria, one-Issue/one-PR scope, and no unresolved product-direction or physical-safety decision;
 - do not automatically select production MQTT TLS/identity, manufacturer adapters, HA/secrets/DR/load/fault-injection, physical certification, or unattended-control work;
 - if no next milestone is justified, remain enabled in lightweight HOLD/no-mutation mode rather than creating state-only churn.
