@@ -16,6 +16,7 @@ jobs:
     timeout-minutes: 15
     env:
       JWT_SECRET: DEMO_ONLY_E2E_CI_JWT_SECRET_32_CHARS_MIN
+      TERRANEURON_HANDOFF_KEEP_STACK: '1'
       E2E_POLL_TIMEOUT_SECONDS: '90'
       E2E_POLL_INTERVAL_SECONDS: '2'
 
@@ -60,3 +61,8 @@ jobs:
             software-proof-handoff.log
             software-proof-compose-ps.txt
             software-proof-compose.log
+
+      - name: Cleanup bounded handoff stack
+        if: always()
+        shell: bash
+        run: docker compose down -v || true
