@@ -204,7 +204,7 @@ def main() -> int:
         raise cl.CommandLifecycleFailure(f"restored MQTT subscription correlation mismatch: {consumed_state}")
 
     print("[9/10] Verify same persisted plan reaches EXECUTED")
-    terminal = cl.wait_for_terminal_plan(plan_id, token)
+    terminal = cl.wait_for_terminal_plan(plan_id, token, command_id)
     if terminal.get("status") != "EXECUTED" or terminal.get("commandId") != command_id:
         raise cl.CommandLifecycleFailure(f"MQTT reconnect ACK did not reconcile same plan: {terminal}")
 
