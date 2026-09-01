@@ -4,7 +4,7 @@
 > **Status:** `PROOF v1.0 FREEZE / HUMAN REVIEW PASSED — PROGRESSION ACTIVE`  
 > **Authority:** authoritative implementation status / execution contract for this repository  
 > **Proof v1.0 implementation baseline SHA:** `7ef9315890f1e2c06345bce94fb3334c2cff1c0e`  
-> **Current accepted progression main SHA before this STATUS reconciliation:** `c5c19f96c7b3d397da4044fb8121a34bb7d17923`
+> **Current accepted progression main SHA before this STATUS reconciliation:** `d3608b12f7e58c95d58d6f16c5ebf108fa9ab5bf`
 
 When documents disagree, use:
 
@@ -56,89 +56,66 @@ Issue #55 / PR #56 added one bounded synthetic service-restart Proof for a termi
 
 Issue #57 / PR #58 added one bounded synthetic broker-interruption Proof for an already-persisted command plan while Kafka is temporarily unavailable.
 
-### Changed
+### Changed / Actually Executed / Verified
 
-- added `tests/kafka-restart-ack-recovery-test.py` and a dedicated `Kafka Restart ACK Recovery Proof` workflow;
-- required MySQL/Kafka/application readiness instead of assuming startup/recovery;
-- drove a persisted plan to `DELIVERED`, stopped only Kafka while MySQL/MQTT/application state remained available, published a correlated terminal `EXECUTED` ACK through MQTT, restarted Kafka, then verified reconciliation of the same persisted plan;
-- replayed the terminal ACK after recovery and verified terminal-state idempotency;
-- after review identified that pull-request checkout used GitHub's synthetic merge ref, pinned the dedicated workflow checkout to `${{ github.event.pull_request.head.sha || github.sha }}` so acceptance evidence executes on the actual PR head.
-
-### Actually Executed
-
-- corrected PR #58 exact head: `7de61c4fc30685dcad72bfae730b06bfb05c08cd`;
-- `Kafka Restart ACK Recovery Proof` run #2 completed `success` on that exact head;
-- `CI/CD Pipeline` run #280 completed `success` on that same exact head;
-- `Late ACK Recovery Proof` run #13 and `Terra-Ops Restart ACK Recovery Proof` run #5 also completed `success` on that exact head;
-- the review thread about exact-head checkout was addressed and resolved;
-- PR #58 was squash-merged with expected-head guard as `b272fa820da7537fc66d4ffa9ecd9f109f1d5040`;
-- Issue #57 closed as completed.
-
-### Verified
-
-Within the executed synthetic Compose software boundary:
-
-- an already-persisted command plan remained recoverable across a bounded Kafka broker interruption;
-- after broker restart/readiness, the same persisted plan reached terminal `EXECUTED` while retaining its original `commandId`;
-- replay of the same terminal ACK preserved terminal-state idempotency;
-- the dedicated Kafka recovery proof and broader CI/CD pipeline both passed on the corrected exact merge-candidate head.
+- added `tests/kafka-restart-ack-recovery-test.py` and a dedicated exact-head `Kafka Restart ACK Recovery Proof` workflow;
+- corrected PR #58 exact head `7de61c4fc30685dcad72bfae730b06bfb05c08cd` passed `Kafka Restart ACK Recovery Proof` run #2, `CI/CD Pipeline` run #280, `Late ACK Recovery Proof` run #13, and `Terra-Ops Restart ACK Recovery Proof` run #5;
+- PR #58 was squash-merged with expected-head guard as `b272fa820da7537fc66d4ffa9ecd9f109f1d5040` and Issue #57 closed completed;
+- within the executed synthetic Compose software boundary, an already-persisted command plan remained recoverable across a bounded Kafka broker interruption, retained its original `commandId`, reached terminal `EXECUTED` after broker recovery, and preserved terminal-state idempotency on ACK replay.
 
 ## Progression milestone — MQTT subscription recovery across broker restart
 
 Issue #59 / PR #60 added bounded executable evidence that the running Terra-Sense integration path can recover its inbound MQTT status subscription after a Mosquitto restart without restarting Terra-Sense.
 
-### Changed
+### Changed / Actually Executed / Verified
 
-- changed `MqttGatewayService` to use `MqttCallbackExtended` and restore the configured inbound MQTT subscriptions from `connectComplete(...)` after automatic reconnect;
-- added `tests/mqtt-restart-subscription-recovery-test.py` and a dedicated exact-head `MQTT Restart Subscription Recovery Proof` workflow with diagnostics;
-- drove a persisted plan to `DELIVERED`, restarted only Mosquitto, required broker recovery plus Terra-Sense automatic reconnect without a Terra-Sense restart, then published a correlated terminal `EXECUTED` status through the restored subscription;
-- fixed the proof harness after the first run exposed a missing `command_id` argument to the existing terminal-plan waiter.
-
-### Actually Executed
-
-- corrected PR #60 exact head: `79a38131a745d7c86b17c69910df814dd5831f5d`;
-- `MQTT Restart Subscription Recovery Proof` run #2 completed `success` on that exact head;
-- `CI/CD Pipeline` run #284 completed `success` on that same exact head;
-- `Late ACK Recovery Proof` run #17, `Terra-Ops Restart ACK Recovery Proof` run #9, and `Kafka Restart ACK Recovery Proof` run #6 also completed `success` on that exact head;
-- PR #60 was squash-merged as `0be87e0aca592e89f0f58a985d1629bfb5e4d76c`;
-- Issue #59 closed as completed.
-
-### Verified
-
-Within the executed synthetic Compose software boundary:
-
-- after a bounded Mosquitto broker restart, Terra-Sense automatically reconnected without a Terra-Sense service restart and restored its inbound status subscription;
-- a correlated terminal `EXECUTED` ACK published after broker recovery was consumed through the restored subscription and reconciled the same persisted plan while retaining its original `commandId`;
-- replay of the same terminal ACK preserved terminal-state idempotency;
-- the dedicated MQTT recovery proof and broader CI/CD pipeline both passed on the corrected exact merge-candidate head.
+- changed `MqttGatewayService` to use `MqttCallbackExtended` and restore configured inbound subscriptions from `connectComplete(...)` after automatic reconnect;
+- corrected PR #60 exact head `79a38131a745d7c86b17c69910df814dd5831f5d` passed `MQTT Restart Subscription Recovery Proof` run #2, `CI/CD Pipeline` run #284, `Late ACK Recovery Proof` run #17, `Terra-Ops Restart ACK Recovery Proof` run #9, and `Kafka Restart ACK Recovery Proof` run #6;
+- PR #60 was squash-merged as `0be87e0aca592e89f0f58a985d1629bfb5e4d76c` and Issue #59 closed completed;
+- within the executed synthetic Compose software boundary, Terra-Sense automatically reconnected after bounded Mosquitto restart without a Terra-Sense restart, restored its inbound status subscription, consumed a correlated terminal `EXECUTED` ACK, reconciled the same persisted plan with the original `commandId`, and preserved terminal-state idempotency on replay.
 
 ## Progression milestone — complete plan audit timeline across command lifecycle
 
 Issue #61 / PR #62 strengthened operator/audit usability by making the existing plan audit view include command-side lifecycle rows correlated by the plan's persisted `commandId`, while excluding unrelated commands.
 
+### Changed / Actually Executed / Verified
+
+- extended the plan-history repository query so `GET /api/actions/{planId}/audit` includes plan events plus command events correlated through the same persisted plan/command relationship while preserving chronology and excluding unrelated command rows;
+- PR #62 exact head `dad04f4d7c987bd2456d1dd47bea9076e09dde60` passed `CI/CD Pipeline` run #287 plus established recovery/authentication workflows;
+- PR #62 was squash-merged with expected-head guard as `c5c19f96c7b3d397da4044fb8121a34bb7d17923` and Issue #61 closed completed;
+- within the bounded software/operator boundary, the existing plan audit entry point now exposes one chronological software lifecycle containing plan-side and correlated command-side audit evidence.
+
+## Progression milestone — reproducible bounded software Proof handoff
+
+Issue #63 / PR #64 strengthened deployment/handoff reproducibility so a clean checkout can execute one bounded software-Proof handoff path instead of relying on stale production-sounding documentation.
+
 ### Changed
 
-- extended the existing plan-history repository query so `GET /api/actions/{planId}/audit` includes both plan events and command events correlated through the same persisted plan/command relationship;
-- preserved chronological ordering and kept unrelated command audit rows outside the returned plan timeline;
-- added executable JPA coverage for plan event → command timeout → terminal command event ordering and unrelated-command exclusion.
+- added `tests/software-proof-handoff.sh`, which validates Compose configuration, starts only the required synthetic stack, waits for MySQL/Terra-Sense/Terra-Ops readiness, executes the existing command-lifecycle Proof, and returns explicit PASS/FAIL;
+- the script now supplies an explicit demo-only local `JWT_SECRET` only when the caller did not provide one, allowing the documented one-command handoff to start from a clean checkout without implying production secret handling;
+- replaced stale `Production-Validated`, fixed historical success-rate/data-loss/load language in `QUICKSTART.md` with the current bounded software-Proof contract and explicit non-claims;
+- added `Software Proof Handoff` workflow pinned to the actual PR head;
+- after review identified diagnostics loss on failure, the workflow now retains the Compose stack through diagnostics capture/artifact upload and performs explicit cleanup afterward.
 
 ### Actually Executed
 
-- PR #62 exact head: `dad04f4d7c987bd2456d1dd47bea9076e09dde60`;
-- `CI/CD Pipeline` run #287 completed `success` on that exact head;
-- `Late ACK Recovery Proof` run #20, `Terra-Ops Restart ACK Recovery Proof` run #12, `Kafka Restart ACK Recovery Proof` run #9, `MQTT Restart Subscription Recovery Proof` run #5, and `Dashboard Authentication` run #43 also completed `success` on that same exact head;
-- no unresolved inline review threads or submitted review blockers remained;
-- PR #62 was squash-merged with expected-head guard as `c5c19f96c7b3d397da4044fb8121a34bb7d17923`;
-- Issue #61 closed as completed.
+- corrected PR #64 exact head: `7e77da339ffe35052794f81b76df945714132967`;
+- `Software Proof Handoff` run #3 completed `success` on that exact head;
+- `CI/CD Pipeline` run #292 completed `success` on that same exact head;
+- `MQTT Restart Subscription Recovery Proof` run #10, `Late ACK Recovery Proof` run #25, `Terra-Ops Restart ACK Recovery Proof` run #17, and `Kafka Restart ACK Recovery Proof` run #14 also completed `success` on the same exact head;
+- both inline review blockers were answered against the corrected exact head and resolved;
+- PR #64 was squash-merged with expected-head guard as `d3608b12f7e58c95d58d6f16c5ebf108fa9ab5bf`;
+- Issue #63 closed as completed.
 
 ### Verified
 
-Within the bounded software/operator boundary:
+Within the current synthetic Compose software boundary:
 
-- the existing plan audit entry point can expose a single chronological software lifecycle containing both plan-side and correlated command-side audit evidence;
-- command lifecycle rows are correlated by the plan's persisted `commandId` rather than by timestamp alone;
-- unrelated command rows are excluded by executable repository coverage;
-- broader CI and the established command-recovery proofs remained green on the exact merge-candidate head.
+- a reviewer/operator can run one repository handoff command from a clean checkout and obtain executable PASS/FAIL evidence for the bounded command-lifecycle software Proof;
+- the clean-checkout path does not require an undocumented `.env` solely to satisfy the Compose JWT requirement;
+- exact-head CI executes the same handoff script used by the documented human path;
+- diagnostics remain capturable before cleanup on CI failures;
+- broader CI and established command-recovery regression proofs remained green on the exact merge-candidate head.
 
 ## Not Verified / limitations
 
@@ -152,19 +129,20 @@ All v1.0 non-claims remain in force. The accepted baseline and progression miles
 - unattended autonomous control;
 - that device-reported or software state equals physical equipment state.
 
-The service/broker restart milestones are bounded synthetic software integration evidence. They do not establish production HA/fault-injection maturity, production network guarantees, or physical-equipment behavior. The audit milestone establishes software/operator trace usability only; it does not establish physical-state truth or production compliance/audit certification.
+The service/broker restart milestones are bounded synthetic software integration evidence. They do not establish production HA/fault-injection maturity, production network guarantees, or physical-equipment behavior. The audit milestone establishes software/operator trace usability only; it does not establish physical-state truth or production compliance/audit certification. The handoff milestone establishes reproducibility of the bounded synthetic software Proof only; its demo-only local secret is not production secrets-management evidence.
 
 ## Remaining risks
 
 - broader network failure handling beyond the accepted bounded Kafka/MQTT broker-restart cases requires separate executable evidence;
 - operator/audit usability can still be strengthened where another concrete delivery gap is demonstrated;
-- deployment/handoff and production security/availability boundaries remain separate from the accepted bounded software Proof;
+- simulator/digital-twin or synthetic device harness coverage can be strengthened where it adds executable software-Proof value without implying physical-device truth;
+- production security/availability boundaries remain separate from the accepted bounded software Proof;
 - production and physical-world trust boundaries remain explicitly outside the accepted software Proof.
 
 ## Exact Next Action
 
 - perform a fresh Progression Review against current `main` before selecting another milestone;
-- if justified, prefer exactly one bounded milestone in this order: operator observability/audit usability, synthetic device harness, deployment/handoff reproducibility, then material workflow security boundaries;
+- if justified, prefer exactly one bounded milestone in this order: synthetic device harness / digital-twin reproducibility, then material workflow security boundaries, then another concrete operator/audit or recovery gap;
 - require concrete use/show/delivery value, executable acceptance criteria, one-Issue/one-PR scope, and no unresolved product-direction or physical-safety decision;
 - do not automatically select production MQTT TLS/identity, manufacturer adapters, HA/secrets/DR/load/fault-injection, physical certification, or unattended-control work;
 - if no next milestone is justified, remain enabled in lightweight HOLD/no-mutation mode rather than creating state-only churn.
