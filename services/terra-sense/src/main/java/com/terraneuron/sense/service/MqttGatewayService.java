@@ -24,7 +24,7 @@ import java.util.concurrent.atomic.AtomicLong;
 /** MQTT gateway for outbound commands, inbound sensor data and device feedback. */
 @Slf4j
 @Service
-public class MqttGatewayService implements MqttCallback {
+public class MqttGatewayService implements MqttCallbackExtended {
 
     private static final String FEEDBACK_TOPIC = "terra.control.feedback";
 
@@ -149,6 +149,15 @@ public class MqttGatewayService implements MqttCallback {
     }
 
     @Override
+    public void connectComplete(boolean reconnect, String serverURI) {
+        if (!reconnect) {
+            return;
+        }
+        log.info("MQTT reconnect completed: server={}; restoring subscriptions", serverURI);
+        subscribeTopics();
+    }
+
+    @Override
     public void messageArrived(String topic, MqttMessage message) {
         try {
             String payload = new String(message.getPayload(), StandardCharsets.UTF_8);
@@ -210,10 +219,6 @@ public class MqttGatewayService implements MqttCallback {
             status.setAssetId(topicAssetId);
             boolean terminalAcknowledgement = status.hasTerminalCommandAcknowledgement();
 
-            // Never synthesize reportedAt from broker observation time. The safety policy
-            // must be able to distinguish a device timestamp from Terra-Sense receipt time.
-            // A shared-state write failure remains fail-closed for future command dispatch,
-            // but it must not suppress an already-received terminal device acknowledgement.
             try {
                 deviceStateRegistry.save(DeviceStateRecord.from(status, observedAt));
             } catch (DeviceStateRegistryUnavailableException stateWriteError) {
@@ -284,8 +289,6 @@ public class MqttGatewayService implements MqttCallback {
             return;
         }
 
-        // Feedback transport still needs a timestamp even when the device omitted
-        // reportedAt. This fallback does not alter the stored state used by safety checks.
         Instant acknowledgedAt = status.getReportedAt() != null
                 ? status.getReportedAt()
                 : clock.instant();
