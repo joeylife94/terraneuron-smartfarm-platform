@@ -1,0 +1,138 @@
+name: Duplicate Terminal Failure Replay Proof
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  duplicate-terminal-failure-replay:
+    name: Preserve Terminal Failure On FAILED Replay
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      JWT_SECRET: DEMO_ONLY_E2E_CI_JWT_SECRET_32_CHARS_MIN
+      E2E_POLL_TIMEOUT_SECONDS: '90'
+      E2E_POLL_INTERVAL_SECONDS: '1'
+
+    steps:
+      - name: Checkout exact source revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Validate proof syntax
+        run: |
+          python -m py_compile tests/command-lifecycle-test.py
+          python -m py_compile tests/duplicate-terminal-failure-replay-test.py
+
+      - name: Validate Docker Compose configuration
+        run: docker compose -f docker-compose.yml -f docker-compose.override.yml config --quiet
+
+      - name: Start bounded infrastructure
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.override.yml up -d \
+            zookeeper kafka mysql influxdb mosquitto redis
+
+      - name: Wait for MySQL readiness
+        shell: bash
+        run: |
+          for attempt in {1..60}; do
+            if docker compose -f docker-compose.yml -f docker-compose.override.yml \
+              exec -T mysql mysqladmin ping -h 127.0.0.1 -uroot -proot --silent; then
+              echo "mysql is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "mysql did not become ready"
+          docker compose -f docker-compose.yml -f docker-compose.override.yml logs --tail=100 mysql
+          exit 1
+
+      - name: Start bounded application services
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.override.yml up -d \
+            terra-sense terra-ops
+
+      - name: Wait for services
+        shell: bash
+        run: |
+          wait_for_service() {
+            local service="$1"
+            local url="$2"
+            for attempt in {1..60}; do
+              if curl --fail --silent --show-error --max-time 5 "${url}" > /dev/null; then
+                echo "${service} is ready"
+                return 0
+              fi
+              sleep 5
+            done
+            echo "${service} did not become ready"
+            docker compose -f docker-compose.yml -f docker-compose.override.yml logs --tail=100 "${service}"
+            return 1
+          }
+          wait_for_service terra-sense http://localhost:8081/actuator/health
+          wait_for_service terra-ops http://localhost:8080/actuator/health
+
+      - name: Install proof dependency
+        run: pip install requests
+
+      - name: Run duplicate terminal failure replay proof
+        shell: bash
+        run: |
+          set -o pipefail
+          python tests/duplicate-terminal-failure-replay-test.py 2>&1 | tee duplicate-terminal-failure-replay-output.log
+
+      - name: Verify replay feedback was not dead-lettered
+        shell: bash
+        run: |
+          set -euo pipefail
+          DLT_TOPIC='terra.control.feedback.DLT'
+          if ! docker exec terraneuron-kafka kafka-topics \
+            --bootstrap-server localhost:9092 --list | grep -Fxq "${DLT_TOPIC}"; then
+            echo "PASS ${DLT_TOPIC} was not created"
+            exit 0
+          fi
+
+          DLT_RECORDS="$(docker exec terraneuron-kafka kafka-console-consumer \
+            --bootstrap-server localhost:9092 \
+            --topic "${DLT_TOPIC}" \
+            --from-beginning \
+            --timeout-ms 3000 2>/dev/null || true)"
+
+          if [ -n "${DLT_RECORDS}" ]; then
+            printf '%s\n' "${DLT_RECORDS}" > duplicate-terminal-failure-replay-dlt.log
+            echo "FAIL ${DLT_TOPIC} contains a dead-letter record during the isolated replay proof"
+            exit 1
+          fi
+
+          : > duplicate-terminal-failure-replay-dlt.log
+          echo "PASS ${DLT_TOPIC} contains no records after duplicate FAILED replay"
+
+      - name: Capture diagnostics
+        if: always()
+        shell: bash
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.override.yml ps --all > duplicate-terminal-failure-replay-compose-ps.txt 2>&1 || true
+          docker compose -f docker-compose.yml -f docker-compose.override.yml logs --no-color > duplicate-terminal-failure-replay-compose.log 2>&1 || true
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: duplicate-terminal-failure-replay-diagnostics
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            duplicate-terminal-failure-replay-output.log
+            duplicate-terminal-failure-replay-dlt.log
+            duplicate-terminal-failure-replay-compose-ps.txt
+            duplicate-terminal-failure-replay-compose.log
+
+      - name: Stop Docker Compose
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.override.yml down -v || true
