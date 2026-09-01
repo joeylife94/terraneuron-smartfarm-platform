@@ -24,7 +24,9 @@ def main() -> int:
     run_id = uuid.uuid4().hex[:10]
     farm_id = f"farm-synth-{run_id}"
     asset_id = f"fan-synth-{run_id}"
-    plan_id = f"plan-synth-{run_id}"
+    # Keep the executable proof inside the repository's accepted action-plan
+    # contract: plan_id must match ^plan-[a-z0-9]+$.
+    plan_id = f"plan-{run_id}"
     trace_id = f"trace-synth-{run_id}"
 
     print("[1/6] Authenticate bounded human operator")
