@@ -13,6 +13,11 @@ cd "${ROOT_DIR}"
 COMPOSE=(docker compose)
 KEEP_STACK="${TERRANEURON_HANDOFF_KEEP_STACK:-0}"
 
+# docker-compose.yml requires JWT_SECRET. Keep the one-command bounded handoff
+# reproducible on a clean checkout without pretending this demo-only value is a
+# production secret. A caller-supplied JWT_SECRET always wins.
+export JWT_SECRET="${JWT_SECRET:-DEMO_ONLY_LOCAL_HANDOFF_JWT_SECRET_32_CHARS_MIN}"
+
 cleanup() {
   local exit_code=$?
   if [[ "${KEEP_STACK}" != "1" ]]; then
