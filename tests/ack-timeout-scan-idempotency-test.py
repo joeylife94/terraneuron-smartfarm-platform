@@ -75,6 +75,29 @@ def timeout_rows(rows: List[Dict[str, Any]], command_id: str) -> List[Dict[str, 
     ]
 
 
+def wait_for_single_timeout_row(plan_id: str, token: str, command_id: str) -> List[Dict[str, Any]]:
+    """Wait until the timeout transaction's audit row is query-visible before snapshotting.
+
+    The plan status and the audit endpoint are observed through separate requests. A status read can
+    race the visibility of the audit read even though the timeout transition itself is valid, so the
+    proof waits for the first committed audit row before starting its idempotency observation window.
+    """
+    deadline = time.monotonic() + cl.POLL_TIMEOUT_SECONDS
+    latest: List[Dict[str, Any]] = []
+    while time.monotonic() < deadline:
+        latest = timeout_rows(fetch_audit(plan_id, token), command_id)
+        if len(latest) == 1:
+            return latest
+        if len(latest) > 1:
+            raise cl.CommandLifecycleFailure(
+                f"timeout transition already duplicated COMMAND_TIMEOUT audit evidence: {latest}"
+            )
+        time.sleep(cl.POLL_INTERVAL_SECONDS)
+    raise cl.CommandLifecycleFailure(
+        f"timed out waiting for first COMMAND_TIMEOUT audit row; latest={latest}"
+    )
+
+
 def lifecycle_snapshot(plan: Dict[str, Any]) -> Dict[str, Any]:
     keys = (
         "status", "commandId", "dispatchedAt", "deliveredAt", "executedAt",
@@ -158,13 +181,9 @@ def main() -> int:
     if timed_out.get("executionResult") != "DEVICE_ACK_TIMEOUT":
         raise cl.CommandLifecycleFailure(f"unexpected timeout result: {timed_out}")
 
-    print("[6/8] Snapshot timeout lifecycle and audit evidence")
+    print("[6/8] Snapshot timeout lifecycle and committed audit evidence")
     before_snapshot = lifecycle_snapshot(timed_out)
-    before_rows = timeout_rows(fetch_audit(plan_id, token), command_id)
-    if len(before_rows) != 1:
-        raise cl.CommandLifecycleFailure(
-            f"expected exactly one COMMAND_TIMEOUT audit row after first timeout, got {len(before_rows)}: {before_rows}"
-        )
+    before_rows = wait_for_single_timeout_row(plan_id, token, command_id)
 
     print("[7/8] Allow multiple additional timeout scan cycles")
     time.sleep(2.0)
@@ -180,6 +199,10 @@ def main() -> int:
     if len(after_rows) != 1:
         raise cl.CommandLifecycleFailure(
             f"repeated timeout scans duplicated COMMAND_TIMEOUT audit evidence: {after_rows}"
+        )
+    if after_rows[0].get("id") != before_rows[0].get("id"):
+        raise cl.CommandLifecycleFailure(
+            f"repeated timeout scans replaced COMMAND_TIMEOUT audit evidence: before={before_rows} after={after_rows}"
         )
 
     print("PASS repeated ACK timeout scans preserve one bounded timeout transition and one audit row")
