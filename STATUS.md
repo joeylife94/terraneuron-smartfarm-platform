@@ -4,7 +4,7 @@
 > **Status:** `PROOF v1.0 FREEZE / HUMAN REVIEW PASSED — PROGRESSION ACTIVE`  
 > **Authority:** authoritative implementation status / execution contract for this repository  
 > **Proof v1.0 implementation baseline SHA:** `7ef9315890f1e2c06345bce94fb3334c2cff1c0e`  
-> **Current accepted progression main SHA before this STATUS reconciliation:** `ae27da10fe4d555dd7dce515b789fdc66c7bf0a5`
+> **Current accepted progression main SHA before this STATUS reconciliation:** `1dd1cf648eafc432943a28fa0b628acde5533cb0`
 
 When documents disagree, use:
 
@@ -225,6 +225,19 @@ Issue #79 / PR #80 added bounded executable ordering evidence that a correctly c
 - PR #80 was squash-merged with expected-head guard as `ae27da10fe4d555dd7dce515b789fdc66c7bf0a5` and Issue #79 closed completed;
 - within the bounded synthetic software integration path, contradictory correlated `FAILED` feedback reached the configured rejection path without changing the already terminal `EXECUTED / DEVICE_CONFIRMED` plan or its original command/lifecycle fields.
 
+## Progression milestone — contradictory EXECUTED cannot regress terminal EXECUTION_FAILED
+
+Issue #81 / PR #82 added bounded executable ordering evidence that a correctly correlated late `EXECUTED` feedback event cannot overwrite an already terminal execution-failure command plan.
+
+### Changed / Actually Executed / Verified
+
+- added `tests/contradictory-success-after-failure-test.py` and dedicated exact-head `Contradictory Success After Failure Proof` workflow;
+- the proof dispatches a real command, drives it through the accepted synthetic MQTT failure path to `EXECUTION_FAILED / DEVICE_EXECUTION_FAILED`, records the terminal lifecycle fields and `terra.control.feedback.DLT` end offset, then publishes schema-valid correlated `EXECUTED` feedback for the same persisted owner and command;
+- PR #82 exact head `ff69275576c1ce1149c574a76e9096115094da02` produced 15 PR-triggered workflow runs and all completed successfully, including `Contradictory Success After Failure Proof` run #1 (`33595312706`) and `CI/CD Pipeline` run #326 (`33595312804`);
+- PR #82 had no submitted review blocker or unresolved inline review thread on the accepted exact head;
+- PR #82 was squash-merged with expected-head guard as `1dd1cf648eafc432943a28fa0b628acde5533cb0` and Issue #81 closed completed;
+- within the bounded synthetic software integration path, contradictory correlated `EXECUTED` feedback reached the configured rejection path without changing the already terminal `EXECUTION_FAILED / DEVICE_EXECUTION_FAILED` plan or its original command/lifecycle fields.
+
 ## Not Verified / limitations
 
 All v1.0 non-claims remain in force. The accepted baseline and progression milestones do **not** verify or claim:
@@ -237,7 +250,7 @@ All v1.0 non-claims remain in force. The accepted baseline and progression miles
 - unattended autonomous control;
 - that device-reported or software state equals physical equipment state.
 
-The service/broker restart milestones are bounded synthetic software integration evidence. They do not establish production HA/fault-injection maturity, production network guarantees, or physical-equipment behavior. The audit milestone establishes software/operator trace usability only; it does not establish physical-state truth or production compliance/audit certification. The handoff milestone establishes reproducibility of the bounded synthetic software Proof only; its demo-only local secret is not production secrets-management evidence. The synthetic device harness, mismatched-ACK rejection, correlated device-failure, stale-feedback-ordering, duplicate-terminal-failure-replay, mismatched-plan-feedback, mismatched-owner-feedback, and contradictory-failure-after-success milestones establish software MQTT/Kafka contract, correlation, failure-propagation, ordering, idempotency, persisted ownership rejection, and terminal-state rejection behavior only; they do not establish cryptographic device identity, manufacturer fault semantics, physical-device semantics, actuator behavior, or production messaging trust.
+The service/broker restart milestones are bounded synthetic software integration evidence. They do not establish production HA/fault-injection maturity, production network guarantees, or physical-equipment behavior. The audit milestone establishes software/operator trace usability only; it does not establish physical-state truth or production compliance/audit certification. The handoff milestone establishes reproducibility of the bounded synthetic software Proof only; its demo-only local secret is not production secrets-management evidence. The synthetic device harness, mismatched-ACK rejection, correlated device-failure, stale-feedback-ordering, duplicate-terminal-failure-replay, mismatched-plan-feedback, mismatched-owner-feedback, contradictory-failure-after-success, and contradictory-success-after-failure milestones establish software MQTT/Kafka contract, correlation, failure-propagation, ordering, idempotency, persisted ownership rejection, and terminal-state rejection behavior only; they do not establish cryptographic device identity, manufacturer fault semantics, physical-device semantics, actuator behavior, or production messaging trust.
 
 ## Remaining risks
 
@@ -250,7 +263,3 @@ The service/broker restart milestones are bounded synthetic software integration
 ## Exact Next Action
 
 - perform a fresh Progression Review against current `main` before selecting another milestone;
-- if justified, prefer exactly one bounded milestone in this order: software-level command lifecycle reliability/recovery/idempotency, MQTT/Kafka reproducibility/failure handling, operator observability/audit usability, synthetic device/digital-twin reproducibility, deployment/handoff reproducibility, then material workflow security boundaries;
-- require concrete use/show/delivery value, executable acceptance criteria, one-Issue/one-PR scope, and no unresolved product-direction or physical-safety decision;
-- do not automatically select production MQTT TLS/identity, manufacturer adapters, HA/secrets/DR/load/fault-injection, physical certification, or unattended-control work;
-- if no next milestone is justified, remain enabled in lightweight HOLD/no-mutation mode rather than creating state-only churn.
