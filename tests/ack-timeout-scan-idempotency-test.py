@@ -60,7 +60,16 @@ def fetch_audit(plan_id: str, token: str) -> List[Dict[str, Any]]:
         headers=cl.auth_headers(token),
         timeout=cl.REQUEST_TIMEOUT_SECONDS,
     )
-    payload = cl.response_json(response, "plan audit query")
+    if not response.ok:
+        raise cl.CommandLifecycleFailure(
+            f"plan audit query failed with HTTP {response.status_code}: {response.text}"
+        )
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise cl.CommandLifecycleFailure(
+            f"plan audit query returned invalid JSON: {response.text}"
+        ) from exc
     if not isinstance(payload, list):
         raise cl.CommandLifecycleFailure(f"plan audit response was not a list: {payload}")
     return payload
