@@ -4,7 +4,7 @@
 > **Status:** `PROOF v1.0 FREEZE / HUMAN REVIEW PASSED — PROGRESSION ACTIVE`  
 > **Authority:** authoritative implementation status / execution contract for this repository  
 > **Proof v1.0 implementation baseline SHA:** `7ef9315890f1e2c06345bce94fb3334c2cff1c0e`  
-> **Current accepted progression main SHA before this STATUS reconciliation:** `52c2c335498c6bb22904f865b45ce388ee252f2f`
+> **Current accepted progression main SHA before this STATUS reconciliation:** `1f60c10a7ed90308cbbac3291d8953e85487abd8`
 
 When documents disagree, use:
 
@@ -198,6 +198,20 @@ Issue #75 / PR #76 added bounded executable negative-path evidence that a schema
 - PR #76 was squash-merged with expected-head guard as `52c2c335498c6bb22904f865b45ce388ee252f2f` and Issue #75 closed completed;
 - within the bounded synthetic software integration path, mismatched plan ownership feedback reached the configured failure path without advancing the target plan, after which correctly correlated feedback for the same original `commandId` still completed the intended plan normally.
 
+## Progression milestone — mismatched farm / asset feedback ownership rejection
+
+Issue #77 / PR #78 added bounded executable negative-path evidence that schema-valid Kafka feedback carrying a real dispatched `commandId` but the wrong persisted `farm_id` or `target_asset_id` cannot mutate the command owner's persisted plan.
+
+### Changed / Actually Executed / Verified
+
+- added `tests/mismatched-owner-feedback-rejection-test.py` and dedicated exact-head `Mismatched Owner Feedback Rejection Proof` workflow;
+- the proof records `terra.control.feedback.DLT` end offsets before each mismatched event, requires the configured rejection path to advance for both wrong-farm and wrong-asset feedback, and verifies the target plan lifecycle remains unchanged after each rejection;
+- after both negative cases, correctly correlated feedback for the same original `commandId` still completes the intended plan normally;
+- PR #78 exact head `c3ae0539d9aa2e99ec3ff895d1b62eaf01a5ec44` passed all 13 exact-head workflows, including `Mismatched Owner Feedback Rejection Proof` run #1 and `CI/CD Pipeline` run #320; all relevant accepted regression workflows also completed `success`;
+- PR #78 had no submitted review blockers or unresolved inline review threads on the accepted exact head;
+- PR #78 was squash-merged with expected-head guard as `1f60c10a7ed90308cbbac3291d8953e85487abd8` and Issue #77 closed completed;
+- within the bounded synthetic software integration path, mismatched persisted farm or asset ownership feedback reached the configured failure path without advancing the target plan, after which correctly correlated feedback for the original command still completed the intended plan.
+
 ## Not Verified / limitations
 
 All v1.0 non-claims remain in force. The accepted baseline and progression milestones do **not** verify or claim:
@@ -210,7 +224,7 @@ All v1.0 non-claims remain in force. The accepted baseline and progression miles
 - unattended autonomous control;
 - that device-reported or software state equals physical equipment state.
 
-The service/broker restart milestones are bounded synthetic software integration evidence. They do not establish production HA/fault-injection maturity, production network guarantees, or physical-equipment behavior. The audit milestone establishes software/operator trace usability only; it does not establish physical-state truth or production compliance/audit certification. The handoff milestone establishes reproducibility of the bounded synthetic software Proof only; its demo-only local secret is not production secrets-management evidence. The synthetic device harness, mismatched-ACK rejection, correlated device-failure, stale-feedback-ordering, duplicate-terminal-failure-replay, and mismatched-plan-feedback milestones establish software MQTT/Kafka contract, correlation, failure-propagation, ordering, idempotency, and plan-ownership rejection behavior only; they do not establish cryptographic device identity, manufacturer fault semantics, physical-device semantics, actuator behavior, or production messaging trust.
+The service/broker restart milestones are bounded synthetic software integration evidence. They do not establish production HA/fault-injection maturity, production network guarantees, or physical-equipment behavior. The audit milestone establishes software/operator trace usability only; it does not establish physical-state truth or production compliance/audit certification. The handoff milestone establishes reproducibility of the bounded synthetic software Proof only; its demo-only local secret is not production secrets-management evidence. The synthetic device harness, mismatched-ACK rejection, correlated device-failure, stale-feedback-ordering, duplicate-terminal-failure-replay, mismatched-plan-feedback, and mismatched-owner-feedback milestones establish software MQTT/Kafka contract, correlation, failure-propagation, ordering, idempotency, and persisted ownership rejection behavior only; they do not establish cryptographic device identity, manufacturer fault semantics, physical-device semantics, actuator behavior, or production messaging trust.
 
 ## Remaining risks
 
