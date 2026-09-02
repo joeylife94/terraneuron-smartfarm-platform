@@ -32,35 +32,55 @@ def wait_for_status(plan_id: str, token: str, expected: set[str]):
     raise helpers.CommandLifecycleFailure(f"timed out waiting for {expected}; latest={latest}")
 
 
-def read_dlt_once() -> str:
+def dlt_end_offset() -> int:
+    topics = helpers.run_container_command(
+        "terraneuron-kafka",
+        ["kafka-topics", "--bootstrap-server", "localhost:9092", "--list"],
+    )
+    if "terra.control.feedback.DLT" not in topics.splitlines():
+        return 0
+
     completed = subprocess.run(
         [
             "docker", "exec", "-i", "terraneuron-kafka",
-            "kafka-console-consumer", "--bootstrap-server", "localhost:9092",
-            "--topic", "terra.control.feedback.DLT", "--from-beginning", "--timeout-ms", "2000",
+            "kafka-run-class", "kafka.tools.GetOffsetShell",
+            "--bootstrap-server", "localhost:9092",
+            "--topic", "terra.control.feedback.DLT",
+            "--time", "-1",
         ],
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         check=False,
     )
-    # kafka-console-consumer exits non-zero on its normal timeout when no record
-    # arrives. The proof treats that as "not observed yet" and keeps polling.
-    return completed.stdout
-
-
-def wait_for_dlt_record(command_id: str) -> None:
-    deadline = time.monotonic() + helpers.POLL_TIMEOUT_SECONDS
-    while time.monotonic() < deadline:
-        topics = helpers.run_container_command(
-            "terraneuron-kafka",
-            ["kafka-topics", "--bootstrap-server", "localhost:9092", "--list"],
+    if completed.returncode != 0:
+        raise helpers.CommandLifecycleFailure(
+            f"failed to read DLT end offset: stdout={completed.stdout!r} stderr={completed.stderr!r}"
         )
-        if "terra.control.feedback.DLT" in topics.splitlines():
-            if command_id in read_dlt_once():
-                return
+
+    total = 0
+    for line in completed.stdout.splitlines():
+        line = line.strip()
+        if not line or ":" not in line:
+            continue
+        try:
+            total += int(line.rsplit(":", 1)[1])
+        except ValueError as exc:
+            raise helpers.CommandLifecycleFailure(f"unparseable DLT offset line: {line!r}") from exc
+    return total
+
+
+def wait_for_dlt_increment(before: int) -> int:
+    deadline = time.monotonic() + helpers.POLL_TIMEOUT_SECONDS
+    latest = before
+    while time.monotonic() < deadline:
+        latest = dlt_end_offset()
+        if latest > before:
+            return latest
         time.sleep(helpers.POLL_INTERVAL_SECONDS)
-    raise helpers.CommandLifecycleFailure("mismatched feedback was not observed on terra.control.feedback.DLT")
+    raise helpers.CommandLifecycleFailure(
+        f"mismatched feedback did not increment terra.control.feedback.DLT; before={before} latest={latest}"
+    )
 
 
 def main() -> int:
@@ -112,6 +132,7 @@ def main() -> int:
     if delivered.get("commandId") != command_id:
         raise helpers.CommandLifecycleFailure(f"DELIVERED command mismatch: {delivered}")
     stable = {k: delivered.get(k) for k in ("status","commandId","deliveredAt","executedAt","executionResult","executionError","ackDeadlineAt")}
+    dlt_before = dlt_end_offset()
 
     print("[5/8] Publish schema-valid feedback with real commandId but wrong plan_id")
     bad = {"specversion":"1.0","type":"terra.sense.command.feedback","source":"//terraneuron/terra-sense","id":str(uuid.uuid4()),
@@ -120,11 +141,12 @@ def main() -> int:
     publish_feedback(bad)
 
     print("[6/8] Prove rejected feedback reached configured failure path")
-    wait_for_dlt_record(command_id)
+    dlt_after = wait_for_dlt_increment(dlt_before)
     after_bad = helpers.response_json(helpers.fetch_plan(plan_id, token), "post-mismatch plan query")
     after_fields = {k: after_bad.get(k) for k in stable}
     if after_fields != stable:
         raise helpers.CommandLifecycleFailure(f"mismatched plan feedback mutated target plan: before={stable} after={after_fields}")
+    print(f"DLT offset advanced from {dlt_before} to {dlt_after}")
 
     print("[7/8] Publish correctly correlated terminal feedback for same command")
     good = {"specversion":"1.0","type":"terra.sense.command.feedback","source":"//terraneuron/terra-sense","id":str(uuid.uuid4()),
