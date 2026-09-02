@@ -1,0 +1,108 @@
+name: Contradictory Success After Delivery Failure Proof
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  contradictory-success-after-delivery-failure:
+    name: Preserve Terminal Delivery Failure Against Contradictory Success
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      JWT_SECRET: DEMO_ONLY_E2E_CI_JWT_SECRET_32_CHARS_MIN
+      E2E_POLL_TIMEOUT_SECONDS: '90'
+      E2E_POLL_INTERVAL_SECONDS: '1'
+
+    steps:
+      - name: Checkout exact source revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Validate proof syntax
+        run: |
+          python -m py_compile tests/command-lifecycle-test.py
+          python -m py_compile tests/contradictory-success-after-delivery-failure-test.py
+
+      - name: Validate Docker Compose configuration
+        run: docker compose -f docker-compose.yml -f docker-compose.override.yml config --quiet
+
+      - name: Start bounded infrastructure
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.override.yml up -d \
+            zookeeper kafka mysql influxdb mosquitto redis
+
+      - name: Wait for MySQL readiness
+        shell: bash
+        run: |
+          for attempt in {1..60}; do
+            if docker compose -f docker-compose.yml -f docker-compose.override.yml \
+              exec -T mysql mysqladmin ping -h 127.0.0.1 -uroot -proot --silent; then
+              echo "mysql is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose -f docker-compose.yml -f docker-compose.override.yml logs --tail=100 mysql
+          exit 1
+
+      - name: Start bounded application services
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.override.yml up -d terra-sense terra-ops
+
+      - name: Wait for services
+        shell: bash
+        run: |
+          wait_for_service() {
+            local service="$1"; local url="$2"
+            for attempt in {1..60}; do
+              if curl --fail --silent --show-error --max-time 5 "${url}" > /dev/null; then
+                echo "${service} is ready"; return 0
+              fi
+              sleep 5
+            done
+            docker compose -f docker-compose.yml -f docker-compose.override.yml logs --tail=100 "${service}"
+            return 1
+          }
+          wait_for_service terra-sense http://localhost:8081/actuator/health
+          wait_for_service terra-ops http://localhost:8080/actuator/health
+
+      - name: Install proof dependency
+        run: pip install requests
+
+      - name: Run contradictory success after delivery failure proof
+        shell: bash
+        run: |
+          set -o pipefail
+          python tests/contradictory-success-after-delivery-failure-test.py 2>&1 | tee contradictory-success-after-delivery-failure-output.log
+
+      - name: Capture diagnostics
+        if: always()
+        shell: bash
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.override.yml ps --all > contradictory-success-after-delivery-failure-compose-ps.txt 2>&1 || true
+          docker compose -f docker-compose.yml -f docker-compose.override.yml logs --no-color > contradictory-success-after-delivery-failure-compose.log 2>&1 || true
+          docker exec terraneuron-kafka kafka-console-consumer --bootstrap-server localhost:9092 --topic terra.control.feedback.DLT --from-beginning --timeout-ms 3000 > contradictory-success-after-delivery-failure-dlt.log 2>/dev/null || true
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: contradictory-success-after-delivery-failure-diagnostics
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            contradictory-success-after-delivery-failure-output.log
+            contradictory-success-after-delivery-failure-dlt.log
+            contradictory-success-after-delivery-failure-compose-ps.txt
+            contradictory-success-after-delivery-failure-compose.log
+
+      - name: Stop Docker Compose
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.override.yml down -v || true
