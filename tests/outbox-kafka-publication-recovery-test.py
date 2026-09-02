@@ -60,13 +60,21 @@ def query_outbox(plan_id: str) -> Dict[str, Any]:
         "COALESCE(last_error,'') "
         "FROM command_outbox WHERE plan_id='" + plan_id.replace("'", "''") + "';"
     )
-    result = compose(
-        "exec", "-T", "-e", "MYSQL_PWD=root", "mysql",
-        "mysql", "-N", "-B", "-uroot", "terra_ops", "-e", sql,
+    result = subprocess.run(
+        [
+            *COMPOSE,
+            "exec", "-T", "-e", "MYSQL_PWD=root", "mysql",
+            "mysql", "-N", "-B", "-uroot", "terra_ops", "-e", sql,
+        ],
         check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
     )
     if result.returncode != 0:
-        raise cl.CommandLifecycleFailure(f"outbox query failed: {result.stdout}")
+        raise cl.CommandLifecycleFailure(
+            f"outbox query failed: stdout={result.stdout!r} stderr={result.stderr!r}"
+        )
     rows = [line for line in result.stdout.splitlines() if line.strip()]
     if not rows:
         return {}
