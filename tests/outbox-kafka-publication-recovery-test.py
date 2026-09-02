@@ -61,8 +61,8 @@ def query_outbox(plan_id: str) -> Dict[str, Any]:
         "FROM command_outbox WHERE plan_id='" + plan_id.replace("'", "''") + "';"
     )
     result = compose(
-        "exec", "-T", "mysql",
-        "mysql", "-N", "-B", "-uroot", "-proot", "terra_ops", "-e", sql,
+        "exec", "-T", "-e", "MYSQL_PWD=root", "mysql",
+        "mysql", "-N", "-B", "-uroot", "terra_ops", "-e", sql,
         check=False,
     )
     if result.returncode != 0:
