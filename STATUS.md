@@ -1,10 +1,10 @@
 # TerraNeuron — Implementation Status
 
-> **Last updated:** 2026-09-02  
+> **Last updated:** 2026-09-03  
 > **Status:** `PROOF v1.0 FREEZE / HUMAN REVIEW PASSED — PROGRESSION ACTIVE`  
 > **Authority:** authoritative implementation status / execution contract for this repository  
 > **Proof v1.0 implementation baseline SHA:** `7ef9315890f1e2c06345bce94fb3334c2cff1c0e`  
-> **Current accepted progression main SHA before this STATUS reconciliation:** `58c5ffadf181446b4f36e00dd9c2ae569d3905a3`
+> **Current accepted progression main SHA before this STATUS reconciliation:** `6d04311caac3ea6f98a33f0347004a498c65513b`
 
 When documents disagree, use:
 
@@ -289,6 +289,19 @@ Issue #89 / PR #90 added bounded executable recovery evidence that a correctly c
 - PR #90 was squash-merged with expected-head guard as `58c5ffadf181446b4f36e00dd9c2ae569d3905a3` and Issue #89 closed completed;
 - within the bounded synthetic software integration path, the same persisted `commandId` survived ACK timeout, the delayed correlated failure cleared the ACK deadline, preserved deterministic delayed device-failure evidence, and converged the plan to `EXECUTION_FAILED / DEVICE_EXECUTION_FAILED` rather than leaving timeout state stale.
 
+## Progression milestone — repeated ACK-timeout scan idempotency
+
+Issue #91 / PR #92 added bounded executable scheduler/audit evidence that repeated ACK-timeout scans do not rewrite an already persisted timeout lifecycle or duplicate its operator-visible timeout audit row.
+
+### Changed / Actually Executed / Verified
+
+- added `tests/ack-timeout-scan-idempotency-test.py` and dedicated exact-head `ACK Timeout Scan Idempotency Proof` workflow;
+- two same-gap test-harness defects were corrected before acceptance: the proof now waits for the first committed `COMMAND_TIMEOUT` audit row before starting the idempotency observation window, and it parses the audit endpoint's authoritative JSON-list response contract directly;
+- corrected PR #92 exact head `0f07d9b9ebaaa0517a2303f95f333a7009dbefbd` produced 20 exact-head workflow runs and all completed `success`, including `CI/CD Pipeline` run #343 (`33655907427`) and the dedicated `ACK Timeout Scan Idempotency Proof` run #3;
+- the earlier inline review thread concerned the corrected audit parsing defect and was resolved on the accepted exact head;
+- PR #92 was squash-merged with expected-head guard as `6d04311caac3ea6f98a33f0347004a498c65513b` and Issue #91 closed completed;
+- within the bounded synthetic software scheduler/database/audit boundary, after one real `DELIVERED → ACK_TIMEOUT / DEVICE_ACK_TIMEOUT` transition, multiple additional timeout-scan cycles preserved the original lifecycle snapshot and retained exactly one `COMMAND_TIMEOUT` audit row for the original command.
+
 ## Not Verified / limitations
 
 All v1.0 non-claims remain in force. The accepted baseline and progression milestones do **not** verify or claim:
@@ -301,7 +314,7 @@ All v1.0 non-claims remain in force. The accepted baseline and progression miles
 - unattended autonomous control;
 - that device-reported or software state equals physical equipment state.
 
-The service/broker restart milestones are bounded synthetic software integration evidence. They do not establish production HA/fault-injection maturity, production network guarantees, or physical-equipment behavior. The audit milestone establishes software/operator trace usability only; it does not establish physical-state truth or production compliance/audit certification. The handoff milestone establishes reproducibility of the bounded synthetic software Proof only; its demo-only local secret is not production secrets-management evidence. The synthetic device harness, mismatched-ACK rejection, correlated device-failure, stale-feedback-ordering, duplicate-terminal-failure-replay, mismatched-plan-feedback, mismatched-owner-feedback, contradictory-failure-after-success, contradictory-success-after-failure, contradictory-success-after-delivery-failure, stale-delivered-after-delivery-failure, duplicate-delivery-failure-replay, and late-failure-after-ack-timeout milestones establish software MQTT/Kafka contract, correlation, failure-propagation, ordering, idempotency, persisted ownership rejection, recovery, and terminal-state behavior only; they do not establish cryptographic device identity, manufacturer fault semantics, physical-device semantics, actuator behavior, or production messaging trust.
+The service/broker restart milestones are bounded synthetic software integration evidence. They do not establish production HA/fault-injection maturity, production network guarantees, or physical-equipment behavior. The audit milestone establishes software/operator trace usability only; it does not establish physical-state truth or production compliance/audit certification. The handoff milestone establishes reproducibility of the bounded synthetic software Proof only; its demo-only local secret is not production secrets-management evidence. The synthetic device harness, mismatched-ACK rejection, correlated device-failure, stale-feedback-ordering, duplicate-terminal-failure-replay, mismatched-plan-feedback, mismatched-owner-feedback, contradictory-failure-after-success, contradictory-success-after-failure, contradictory-success-after-delivery-failure, stale-delivered-after-delivery-failure, duplicate-delivery-failure-replay, late-failure-after-ack-timeout, and repeated-ACK-timeout-scan-idempotency milestones establish software MQTT/Kafka contract, correlation, failure-propagation, ordering, idempotency, persisted ownership rejection, recovery, scheduler/audit behavior, and terminal-state behavior only; they do not establish cryptographic device identity, manufacturer fault semantics, physical-device semantics, actuator behavior, or production messaging trust.
 
 ## Remaining risks
 
