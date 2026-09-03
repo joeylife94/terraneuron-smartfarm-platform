@@ -27,16 +27,33 @@ JSON_ARTIFACT = ARTIFACT_DIR / "synthetic-farm-operations-pilot.json"
 MARKDOWN_ARTIFACT = ARTIFACT_DIR / "synthetic-farm-operations-pilot.md"
 
 
+def response_list(response: Any, operation: str) -> List[Dict[str, Any]]:
+    if not response.ok:
+        raise cl.CommandLifecycleFailure(
+            f"{operation} failed: HTTP {response.status_code} - {response.text}"
+        )
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise cl.CommandLifecycleFailure(
+            f"{operation} returned invalid JSON: {response.text}"
+        ) from exc
+    if not isinstance(payload, list):
+        raise cl.CommandLifecycleFailure(
+            f"{operation} returned {type(payload).__name__}, expected list"
+        )
+    if any(not isinstance(row, dict) for row in payload):
+        raise cl.CommandLifecycleFailure(f"{operation} returned non-object list rows: {payload}")
+    return payload
+
+
 def fetch_pending(token: str) -> List[Dict[str, Any]]:
     response = cl.requests.get(
         f"{cl.TERRA_OPS_BASE_URL}/api/actions/pending",
         headers=cl.auth_headers(token),
         timeout=cl.REQUEST_TIMEOUT_SECONDS,
     )
-    payload = cl.response_json(response, "operator pending action list")
-    if not isinstance(payload, list):
-        raise cl.CommandLifecycleFailure(f"pending action response was not a list: {payload}")
-    return payload
+    return response_list(response, "operator pending action list")
 
 
 def fetch_audit(plan_id: str, token: str) -> List[Dict[str, Any]]:
@@ -45,10 +62,7 @@ def fetch_audit(plan_id: str, token: str) -> List[Dict[str, Any]]:
         headers=cl.auth_headers(token),
         timeout=cl.REQUEST_TIMEOUT_SECONDS,
     )
-    payload = cl.response_json(response, "plan audit timeline")
-    if not isinstance(payload, list):
-        raise cl.CommandLifecycleFailure(f"plan audit response was not a list: {payload}")
-    return payload
+    return response_list(response, "plan audit timeline")
 
 
 def wait_for_complete_audit(plan_id: str, token: str, command_id: str) -> List[Dict[str, Any]]:
