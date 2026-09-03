@@ -1,10 +1,10 @@
 # TerraNeuron — Implementation Status
 
 > **Last updated:** 2026-09-03  
-> **Status:** `PROOF v1.0 FREEZE / HUMAN REVIEW PASSED — PROGRESSION ACTIVE`  
+> **Status:** `PROOF v1.0 FREEZE / HUMAN REVIEW PASSED — D1+D2 SOFTWARE DESTINATIONS REACHED / HUMAN REVIEW NEXT DESTINATION`  
 > **Authority:** authoritative implementation status / execution contract for this repository  
 > **Proof v1.0 implementation baseline SHA:** `7ef9315890f1e2c06345bce94fb3334c2cff1c0e`  
-> **Accepted progression through D1 before this STATUS reconciliation:** `bc04848b82e4a5d2319263a966e19cd9178d95c1`
+> **Accepted progression through D2:** `9ffee0a63a183304a07b5f22a7ec94d16068db4e`
 
 When documents disagree, use:
 
@@ -50,6 +50,7 @@ The following bounded progression slices were accepted by exact-head executable 
 | #93 / #94 | `ed55c56fa3b4d048cc40576a2e2d48698e3ff57b` | `97d482f991e435058492949cab46bb510d0da858` | transactional-outbox publication recovery after bounded Kafka outage, preserving command identity |
 | #95 / #96 | `6128196409783ef3069531d3e5a35ea34469ce36` | `ef3daf50c7c10412b7fbd120bc0410b1471ec861` | stale `PROCESSING` outbox claim recovery after Terra-Ops restart, preserving command identity |
 | #97 / #98 | `1870f6cd1917df9b26e1485ac73901a4276aa9ca` | `bc04848b82e4a5d2319263a966e19cd9178d95c1` | real Kafka publication retry exhaustion → outbox `DEAD` → plan `DISPATCH_FAILED / OUTBOX_DEAD_LETTER`, with later scans preserving terminal truth |
+| #99 / #100 | `45acaddd0ff70210284db2d49a8dd5ccfe370d55` | `9ffee0a63a183304a07b5f22a7ec94d16068db4e` | coherent Synthetic Farm Operations Pilot: synthetic starting state → operator-visible decision/approval → MQTT actor → correlated `EXECUTED` → chronological audit → evidence artifact/handoff |
 
 ## Milestone #24 reconciliation — outbox retry exhaustion terminal failure
 
@@ -89,17 +90,31 @@ D1 now has executable evidence for the intended invariant family:
 
 Under the anti-micro-loop rule, further isolated command-message/failure permutations are **not** useful progression unless a coherent D2 scenario exposes a concrete blocker.
 
-## Next destination — D2 Synthetic Farm Operations Pilot
+## D2 reconciliation — Synthetic Farm Operations Pilot
 
-The next meaningful software destination is a coherent, buyer-demonstrable **Synthetic Farm Operations Pilot** assembled from existing supported assets, not another reliability micro-variant.
+### `DESTINATION REACHED — SYNTHETIC FARM OPERATIONS PILOT`
 
-The first bounded D2 slice should connect one small synthetic farm scenario end to end:
+### Changed
 
-`synthetic sensor/device state → operator-visible plan/decision boundary → explicit approval/dispatch → reusable synthetic MQTT device actor → correlated terminal result → complete plan/command audit timeline → bounded evidence artifact / reproducible handoff`
+- added one reusable coherent synthetic farm-operations scenario and a dedicated executable workflow;
+- the first exact-head run exposed a harness-only parsing mismatch for list-shaped operator endpoints; the same-gap fix added explicit list parsing/validation without changing product semantics;
+- the corrected exact head also exposed one transient clean-checkout handoff startup race where Terra-Ops attempted Flyway connection before MySQL accepted connections; rerunning the existing handoff job on the same exact head succeeded, so no product/handoff mutation was justified.
 
-A supported failure/recovery may be included only if the coherent scenario itself exposes a blocker or if it materially improves the demo without expanding into another permutation campaign.
+### Actually Executed / Verified
 
-D2 acceptance must prove a coherent operator/demo experience and reusable executable scenario. It must not infer physical actuator truth, manufacturer semantics, production messaging trust, field safety, or production availability maturity.
+- PR #100 accepted exact head `45acaddd0ff70210284db2d49a8dd5ccfe370d55` produced **24/24 PR-triggered workflow runs with `completed / success`** after the same-head handoff rerun, including `Synthetic Farm Operations Pilot`, `Software Proof Handoff`, `CI/CD Pipeline`, and the accepted D1 regression set;
+- the dedicated D2 scenario executed the bounded path `synthetic device state → operator-visible PENDING plan → explicit approval/dispatch → reusable synthetic MQTT device actor → correlated EXECUTED result → chronological plan/command audit → JSON/Markdown evidence artifact`;
+- the sole prior P1 review thread addressed the list-parser mismatch, became outdated after the same-gap correction, and was resolved before merge;
+- PR #100 was squash-merged with expected-head guard as `9ffee0a63a183304a07b5f22a7ec94d16068db4e`;
+- Issue #99 closed completed.
+
+### Verified D2 value
+
+D2 establishes a coherent, reusable, buyer-demonstrable **synthetic software operations pilot** built from the accepted command lifecycle, operator boundary, synthetic MQTT actor, audit timeline, evidence artifact, and reproducible handoff. It demonstrates use/show/delivery value as one scenario rather than another isolated command-message permutation.
+
+### Not Verified by D2
+
+D2 does not verify or claim physical actuator truth, manufacturer/controller semantics, production MQTT identity/auth/TLS, field safety/interlocks, unattended autonomous control, production HA/DR/load maturity, certification, or that synthetic/device-reported software state equals physical equipment state.
 
 ## Not Verified / limitations
 
@@ -115,17 +130,23 @@ All v1.0 non-claims remain in force. The accepted baseline and progression miles
 
 The service/broker restart milestones are bounded synthetic software integration evidence. They do not establish production HA/fault-injection maturity, production network guarantees, or physical-equipment behavior. The audit milestone establishes software/operator trace usability only; it does not establish physical-state truth or production compliance/audit certification. The handoff milestone establishes reproducibility of the bounded synthetic software Proof only; its demo-only local secret is not production secrets-management evidence.
 
-The synthetic device harness and all D1 progression slices establish software MQTT/Kafka contract, correlation, failure propagation, ordering, idempotency, persisted ownership rejection, bounded recovery, scheduler/audit behavior, outbox retry/publication recovery, stale-claim recovery, and terminal-state behavior only. They do not establish cryptographic device identity, manufacturer fault semantics, physical-device semantics, actuator behavior, or production messaging trust.
+The synthetic device harness, D1 progression slices, and D2 pilot establish software MQTT/Kafka contract, correlation, failure propagation, ordering, idempotency, persisted ownership rejection, bounded recovery, scheduler/audit behavior, outbox retry/publication recovery, stale-claim recovery, terminal-state behavior, and a coherent synthetic operator/demo flow only. They do not establish cryptographic device identity, manufacturer fault semantics, physical-device semantics, actuator behavior, or production messaging trust.
 
 ## Remaining risks / destination gates
 
-- D2 buyer-facing demonstrability is not yet accepted as one coherent executable farm-operations scenario even though its underlying pieces exist;
+- D1 and D2 are accepted bounded software destinations; another isolated ACK/outbox/message-ordering proof is not justified absent a newly observed blocker;
 - production security/availability boundaries remain separate from the accepted bounded software Proof;
 - production and physical-world trust boundaries remain explicitly outside the accepted software Proof;
-- after D2, if the next meaningful destination requires real hardware/manufacturer adapters, physical safety/interlocks, production MQTT identity/TLS, production HA/DR/load, or unattended control, progression must stop at `HUMAN REVIEW — NEXT DESTINATION / PHYSICAL TRUST DECISION` rather than inferring those claims.
+- the next meaningful expansion beyond this synthetic pilot would require a product decision about real hardware/manufacturer adapters, physical safety/interlocks, production messaging identity/TLS, production HA/DR/load, unattended control, or another explicitly chosen bounded destination.
+
+## Next destination gate
+
+### `HUMAN REVIEW — NEXT DESTINATION / PHYSICAL TRUST DECISION`
+
+No further automatic progression milestone is selected. D1 and D2 have reached their bounded software destinations. Advancing toward real devices, manufacturer-specific adapters/semantics, physical safety/interlocks, production MQTT identity/TLS, production HA/DR/load, or unattended autonomous control requires separate evidence and an explicit human/product decision; those claims must not be inferred from D1/D2.
 
 ## Exact Next Action
 
-- perform one bounded D2 Progression Review against current `main` and existing synthetic/device/dashboard/audit/handoff assets;
-- if the D2 gate is satisfied, open exactly one Issue / one PR for a reusable coherent `Synthetic Farm Operations Pilot` scenario;
-- do not open another isolated ACK/outbox/message-ordering milestone unless the D2 run exposes that blocker.
+- human/product review chooses whether TerraNeuron should remain frozen at the accepted D1+D2 bounded software-Proof/pilot boundary or open a separately scoped next destination;
+- if a next destination is approved, define its explicit trust/evidence boundary before creating any new Issue/PR;
+- do not reopen command-message permutation work merely to accumulate more tests.
