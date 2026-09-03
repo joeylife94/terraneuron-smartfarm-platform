@@ -1,0 +1,67 @@
+name: Synthetic Farm Operations Pilot
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-farm-operations-pilot:
+    name: Coherent Synthetic Farm Operations Pilot
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      JWT_SECRET: DEMO_ONLY_E2E_CI_JWT_SECRET_32_CHARS_MIN
+      E2E_POLL_TIMEOUT_SECONDS: '90'
+      E2E_POLL_INTERVAL_SECONDS: '1'
+
+    steps:
+      - name: Checkout exact source revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Validate pilot syntax
+        run: |
+          python -m py_compile tests/command-lifecycle-test.py
+          python -m py_compile tests/synthetic-mqtt-device.py
+          python -m py_compile tests/synthetic-farm-operations-pilot.py
+          bash -n tests/synthetic-farm-operations-pilot.sh
+
+      - name: Install pilot dependency
+        run: pip install requests
+
+      - name: Run one-command Synthetic Farm Operations Pilot
+        shell: bash
+        run: |
+          set -o pipefail
+          TERRANEURON_PILOT_KEEP_STACK=1 bash tests/synthetic-farm-operations-pilot.sh 2>&1 | tee synthetic-farm-operations-pilot-output.log
+
+      - name: Capture diagnostics
+        if: always()
+        shell: bash
+        run: |
+          docker compose ps --all > synthetic-farm-operations-pilot-compose-ps.txt 2>&1 || true
+          docker compose logs --no-color > synthetic-farm-operations-pilot-compose.log 2>&1 || true
+
+      - name: Upload pilot evidence and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: synthetic-farm-operations-pilot-evidence
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            artifacts/synthetic-farm-operations-pilot.json
+            artifacts/synthetic-farm-operations-pilot.md
+            synthetic-farm-operations-pilot-output.log
+            synthetic-farm-operations-pilot-compose-ps.txt
+            synthetic-farm-operations-pilot-compose.log
+
+      - name: Stop Docker Compose
+        if: always()
+        run: docker compose down -v || true
