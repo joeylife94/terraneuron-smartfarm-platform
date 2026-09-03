@@ -4,7 +4,7 @@
 > **Status:** `PROOF v1.0 FREEZE / HUMAN REVIEW PASSED — PROGRESSION ACTIVE`  
 > **Authority:** authoritative implementation status / execution contract for this repository  
 > **Proof v1.0 implementation baseline SHA:** `7ef9315890f1e2c06345bce94fb3334c2cff1c0e`  
-> **Current accepted progression main SHA before this STATUS reconciliation:** `6d04311caac3ea6f98a33f0347004a498c65513b`
+> **Current accepted progression main SHA before this STATUS reconciliation:** `97d482f991e435058492949cab46bb510d0da858`
 
 When documents disagree, use:
 
@@ -302,6 +302,18 @@ Issue #91 / PR #92 added bounded executable scheduler/audit evidence that repeat
 - PR #92 was squash-merged with expected-head guard as `6d04311caac3ea6f98a33f0347004a498c65513b` and Issue #91 closed completed;
 - within the bounded synthetic software scheduler/database/audit boundary, after one real `DELIVERED → ACK_TIMEOUT / DEVICE_ACK_TIMEOUT` transition, multiple additional timeout-scan cycles preserved the original lifecycle snapshot and retained exactly one `COMMAND_TIMEOUT` audit row for the original command.
 
+## Progression milestone — command outbox publication recovery after Kafka outage
+
+Issue #93 / PR #94 added bounded executable transactional-outbox recovery evidence that an approval committed while Kafka is unavailable can retain command identity, record retry evidence, and publish the same command after bounded broker recovery.
+
+### Changed / Actually Executed / Verified
+
+- added `tests/outbox-kafka-publication-recovery-test.py` and dedicated exact-head `Outbox Kafka Publication Recovery Proof` workflow;
+- two same-gap test-harness defects were corrected before acceptance: MySQL password warnings were removed from the query path, and SQL stdout was isolated from Docker Compose stderr so warnings could not be misparsed as extra outbox rows;
+- corrected PR #94 exact head `ed55c56fa3b4d048cc40576a2e2d48698e3ff57b` produced 21 exact-head workflow runs; the exact-head set completed successfully, including `CI/CD Pipeline` run #348 (`33686136253`) and the dedicated `Outbox Kafka Publication Recovery Proof` run #3;
+- PR #94 was squash-merged as `97d482f991e435058492949cab46bb510d0da858` and Issue #93 closed completed;
+- within the bounded synthetic Compose software integration path, approval/outbox persistence survived a bounded Kafka outage, persisted retry evidence without replacing the command identity, recovered publication on the same outbox/command after broker restart, and the same command completed through MQTT plus a correlated synthetic terminal ACK to `EXECUTED`.
+
 ## Not Verified / limitations
 
 All v1.0 non-claims remain in force. The accepted baseline and progression milestones do **not** verify or claim:
@@ -314,7 +326,7 @@ All v1.0 non-claims remain in force. The accepted baseline and progression miles
 - unattended autonomous control;
 - that device-reported or software state equals physical equipment state.
 
-The service/broker restart milestones are bounded synthetic software integration evidence. They do not establish production HA/fault-injection maturity, production network guarantees, or physical-equipment behavior. The audit milestone establishes software/operator trace usability only; it does not establish physical-state truth or production compliance/audit certification. The handoff milestone establishes reproducibility of the bounded synthetic software Proof only; its demo-only local secret is not production secrets-management evidence. The synthetic device harness, mismatched-ACK rejection, correlated device-failure, stale-feedback-ordering, duplicate-terminal-failure-replay, mismatched-plan-feedback, mismatched-owner-feedback, contradictory-failure-after-success, contradictory-success-after-failure, contradictory-success-after-delivery-failure, stale-delivered-after-delivery-failure, duplicate-delivery-failure-replay, late-failure-after-ack-timeout, and repeated-ACK-timeout-scan-idempotency milestones establish software MQTT/Kafka contract, correlation, failure-propagation, ordering, idempotency, persisted ownership rejection, recovery, scheduler/audit behavior, and terminal-state behavior only; they do not establish cryptographic device identity, manufacturer fault semantics, physical-device semantics, actuator behavior, or production messaging trust.
+The service/broker restart milestones are bounded synthetic software integration evidence. They do not establish production HA/fault-injection maturity, production network guarantees, or physical-equipment behavior. The audit milestone establishes software/operator trace usability only; it does not establish physical-state truth or production compliance/audit certification. The handoff milestone establishes reproducibility of the bounded synthetic software Proof only; its demo-only local secret is not production secrets-management evidence. The synthetic device harness, mismatched-ACK rejection, correlated device-failure, stale-feedback-ordering, duplicate-terminal-failure-replay, mismatched-plan-feedback, mismatched-owner-feedback, contradictory-failure-after-success, contradictory-success-after-failure, contradictory-success-after-delivery-failure, stale-delivered-after-delivery-failure, duplicate-delivery-failure-replay, late-failure-after-ack-timeout, repeated-ACK-timeout-scan-idempotency, and outbox-Kafka-publication-recovery milestones establish software MQTT/Kafka contract, correlation, failure-propagation, ordering, idempotency, persisted ownership rejection, recovery, scheduler/audit behavior, outbox retry/publication recovery, and terminal-state behavior only; they do not establish cryptographic device identity, manufacturer fault semantics, physical-device semantics, actuator behavior, or production messaging trust.
 
 ## Remaining risks
 
