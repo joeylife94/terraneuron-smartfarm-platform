@@ -4,7 +4,7 @@
 > **Status:** `PROOF v1.0 FREEZE / HUMAN REVIEW PASSED — PROGRESSION ACTIVE`  
 > **Authority:** authoritative implementation status / execution contract for this repository  
 > **Proof v1.0 implementation baseline SHA:** `7ef9315890f1e2c06345bce94fb3334c2cff1c0e`  
-> **Current accepted progression main SHA before this STATUS reconciliation:** `97d482f991e435058492949cab46bb510d0da858`
+> **Current accepted progression main SHA before this STATUS reconciliation:** `ef3daf50c7c10412b7fbd120bc0410b1471ec861`
 
 When documents disagree, use:
 
@@ -314,6 +314,19 @@ Issue #93 / PR #94 added bounded executable transactional-outbox recovery eviden
 - PR #94 was squash-merged as `97d482f991e435058492949cab46bb510d0da858` and Issue #93 closed completed;
 - within the bounded synthetic Compose software integration path, approval/outbox persistence survived a bounded Kafka outage, persisted retry evidence without replacing the command identity, recovered publication on the same outbox/command after broker restart, and the same command completed through MQTT plus a correlated synthetic terminal ACK to `EXECUTED`.
 
+## Progression milestone — stale PROCESSING outbox claim recovery after Terra-Ops restart
+
+Issue #95 / PR #96 added bounded executable evidence that a stale transactional-outbox claim can recover after Terra-Ops restart without replacing the persisted command identity.
+
+### Changed / Actually Executed / Verified
+
+- added `tests/stale-outbox-claim-recovery-test.py` and dedicated exact-head `Stale Outbox Claim Recovery Proof` workflow;
+- the proof creates one real persisted command/outbox identity, stops Terra-Ops, deterministically marks that same outbox row stale `PROCESSING`, then restarts Terra-Ops and requires the running stale-claim recovery path to republish the same outbox/command;
+- PR #96 exact head `6128196409783ef3069531d3e5a35ea34469ce36` produced 22 PR-triggered workflow runs and all completed `success`;
+- PR #96 was squash-merged with expected-head guard as `ef3daf50c7c10412b7fbd120bc0410b1471ec861` and Issue #95 closed completed;
+- within the bounded synthetic Compose software integration path, the same stale `PROCESSING` outbox row recovered to publication after Terra-Ops restart, retained the original `commandId`, and the command completed through MQTT plus a correlated synthetic terminal ACK to `EXECUTED`;
+- this proof deterministically injects the stale persisted state while Terra-Ops is stopped; it does not claim reproduction of a particular production crash instruction boundary.
+
 ## Not Verified / limitations
 
 All v1.0 non-claims remain in force. The accepted baseline and progression milestones do **not** verify or claim:
@@ -326,7 +339,7 @@ All v1.0 non-claims remain in force. The accepted baseline and progression miles
 - unattended autonomous control;
 - that device-reported or software state equals physical equipment state.
 
-The service/broker restart milestones are bounded synthetic software integration evidence. They do not establish production HA/fault-injection maturity, production network guarantees, or physical-equipment behavior. The audit milestone establishes software/operator trace usability only; it does not establish physical-state truth or production compliance/audit certification. The handoff milestone establishes reproducibility of the bounded synthetic software Proof only; its demo-only local secret is not production secrets-management evidence. The synthetic device harness, mismatched-ACK rejection, correlated device-failure, stale-feedback-ordering, duplicate-terminal-failure-replay, mismatched-plan-feedback, mismatched-owner-feedback, contradictory-failure-after-success, contradictory-success-after-failure, contradictory-success-after-delivery-failure, stale-delivered-after-delivery-failure, duplicate-delivery-failure-replay, late-failure-after-ack-timeout, repeated-ACK-timeout-scan-idempotency, and outbox-Kafka-publication-recovery milestones establish software MQTT/Kafka contract, correlation, failure-propagation, ordering, idempotency, persisted ownership rejection, recovery, scheduler/audit behavior, outbox retry/publication recovery, and terminal-state behavior only; they do not establish cryptographic device identity, manufacturer fault semantics, physical-device semantics, actuator behavior, or production messaging trust.
+The service/broker restart milestones are bounded synthetic software integration evidence. They do not establish production HA/fault-injection maturity, production network guarantees, or physical-equipment behavior. The audit milestone establishes software/operator trace usability only; it does not establish physical-state truth or production compliance/audit certification. The handoff milestone establishes reproducibility of the bounded synthetic software Proof only; its demo-only local secret is not production secrets-management evidence. The synthetic device harness, mismatched-ACK rejection, correlated device-failure, stale-feedback-ordering, duplicate-terminal-failure-replay, mismatched-plan-feedback, mismatched-owner-feedback, contradictory-failure-after-success, contradictory-success-after-failure, contradictory-success-after-delivery-failure, stale-delivered-after-delivery-failure, duplicate-delivery-failure-replay, late-failure-after-ack-timeout, repeated-ACK-timeout-scan-idempotency, outbox-Kafka-publication-recovery, and stale-outbox-claim-recovery milestones establish software MQTT/Kafka contract, correlation, failure-propagation, ordering, idempotency, persisted ownership rejection, recovery, scheduler/audit behavior, outbox retry/publication recovery, stale-claim recovery, and terminal-state behavior only; they do not establish cryptographic device identity, manufacturer fault semantics, physical-device semantics, actuator behavior, or production messaging trust.
 
 ## Remaining risks
 
