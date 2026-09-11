@@ -53,7 +53,20 @@ def mqtt_command(username: str | None, password: str | None, topic: str, payload
 
 
 def require_denied(result: subprocess.CompletedProcess[str], label: str) -> None:
-    if result.returncode == 0:
+    # mosquitto_pub with MQTT v5 can report a broker PUBLISH rejection in stderr
+    # while still exiting 0 (for example: "Publish 1 failed: Not authorized").
+    # Treat that explicit broker reason as denial evidence rather than relying on
+    # process exit status alone.
+    rejection_text = f"{result.stdout}\n{result.stderr}".lower()
+    explicit_broker_denial = any(
+        marker in rejection_text
+        for marker in (
+            "not authorized",
+            "not authorised",
+            "bad user name or password",
+        )
+    )
+    if result.returncode == 0 and not explicit_broker_denial:
         raise cl.CommandLifecycleFailure(
             f"{label} unexpectedly succeeded: stdout={result.stdout!r} stderr={result.stderr!r}"
         )
