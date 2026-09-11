@@ -72,10 +72,13 @@ docker run --rm \
 chmod 0644 "${RUNTIME}/passwords"
 
 "${COMPOSE[@]}" config --quiet
-"${COMPOSE[@]}" up -d --build redis zookeeper kafka mysql influxdb mosquitto terra-sense terra-ops
+# Start dependencies first. Terra-Ops runs Flyway during startup and must not race
+# MySQL initialization in the deterministic D3 proof environment.
+"${COMPOSE[@]}" up -d --build redis zookeeper kafka mysql influxdb mosquitto
 
 for attempt in {1..60}; do
   if "${COMPOSE[@]}" exec -T mysql mysqladmin ping -h 127.0.0.1 -uroot -proot --silent >/dev/null 2>&1; then
+    echo "[d3] mysql ready"
     break
   fi
   if [[ "${attempt}" -eq 60 ]]; then
@@ -85,6 +88,8 @@ for attempt in {1..60}; do
   fi
   sleep 2
 done
+
+"${COMPOSE[@]}" up -d --build terra-sense terra-ops
 
 wait_for_http terra-sense http://localhost:8081/actuator/health
 wait_for_http terra-ops http://localhost:8080/actuator/health
