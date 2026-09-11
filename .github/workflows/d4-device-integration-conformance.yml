@@ -1,0 +1,80 @@
+name: D4 Device Integration Conformance Pilot
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  d4-device-integration-conformance:
+    name: Synthetic Adapter Capability Conformance
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+
+    steps:
+      - name: Checkout exact source revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.5'
+
+      - name: Execute bounded synthetic adapter contract
+        working-directory: services/terra-sense
+        run: >-
+          gradle test --no-daemon --stacktrace
+          --tests com.terraneuron.sense.service.SyntheticConformanceDeviceCapabilityResolverTest
+
+      - name: Emit machine-readable bounded conformance evidence
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          cat > artifacts/d4-device-integration-conformance.json <<'JSON'
+          {
+            "proofBoundary": "repository-owned synthetic device adapter capability conformance",
+            "adapterId": "terraneuron-synthetic-conformance-v1",
+            "modelId": "tn-synth-climate-01",
+            "verifiedByExecutableTest": {
+              "declaredCapabilitiesOnly": true,
+              "supportedActionAdmittedByExistingSafetyPolicy": true,
+              "unsupportedActionFailsClosed": true,
+              "unknownSyntheticModelFailsClosedWithoutGenericFallback": true,
+              "declaredAdjustParameterRequired": true
+            },
+            "transportRegressionEvidence": "D3 Authenticated Device Messaging Pilot runs independently on the same exact PR head",
+            "nonClaims": [
+              "real manufacturer semantics",
+              "real hardware or physical actuator truth",
+              "physical safety/interlocks/E-stop",
+              "production provisioning/PKI/secrets lifecycle",
+              "unattended autonomous control",
+              "production HA/DR/load/public deployment",
+              "certification"
+            ]
+          }
+          JSON
+
+      - name: Upload bounded conformance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: d4-device-integration-conformance-evidence
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            artifacts/d4-device-integration-conformance.json
+            services/terra-sense/build/test-results/test/
+            services/terra-sense/build/reports/tests/test/
