@@ -22,10 +22,18 @@ def now_rfc3339() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
-def run_mosquitto(args: list[str], stdin: str | None = None) -> str:
+def connection_args(args: argparse.Namespace) -> list[str]:
+    values = ["-h", args.host, "-p", str(args.port)]
+    if args.username:
+        values += ["-u", args.username, "-P", args.password or ""]
+    if args.cafile:
+        values += ["--cafile", args.cafile]
+    return values
+
+
+def run_mosquitto(command: str, args: argparse.Namespace, extra: list[str]) -> str:
     completed = subprocess.run(
-        ["docker", "exec", "-i", "terraneuron-mosquitto", *args],
-        input=stdin,
+        ["docker", "exec", "-i", "terraneuron-mosquitto", command, *connection_args(args), *extra],
         text=True,
         capture_output=True,
         check=False,
@@ -38,21 +46,11 @@ def run_mosquitto(args: list[str], stdin: str | None = None) -> str:
     return completed.stdout.strip()
 
 
-def publish(topic: str, payload: Dict[str, Any]) -> None:
+def publish(topic: str, payload: Dict[str, Any], args: argparse.Namespace) -> None:
     run_mosquitto(
-        [
-            "mosquitto_pub",
-            "-h",
-            "localhost",
-            "-p",
-            "1883",
-            "-q",
-            "1",
-            "-t",
-            topic,
-            "-m",
-            json.dumps(payload, separators=(",", ":")),
-        ]
+        "mosquitto_pub",
+        args,
+        ["-q", "1", "-t", topic, "-m", json.dumps(payload, separators=(",", ":"))],
     )
 
 
@@ -63,6 +61,11 @@ def main() -> int:
     parser.add_argument("--plan-id", required=True)
     parser.add_argument("--device-type", default="fan")
     parser.add_argument("--timeout-seconds", type=int, default=90)
+    parser.add_argument("--host", default="localhost")
+    parser.add_argument("--port", type=int, default=1883)
+    parser.add_argument("--username", default="")
+    parser.add_argument("--password", default="")
+    parser.add_argument("--cafile", default="")
     args = parser.parse_args()
 
     command_topic = f"terra/devices/{args.farm_id}/{args.asset_id}/command"
@@ -70,23 +73,9 @@ def main() -> int:
 
     subscriber = subprocess.Popen(
         [
-            "docker",
-            "exec",
-            "-i",
-            "terraneuron-mosquitto",
-            "mosquitto_sub",
-            "-h",
-            "localhost",
-            "-p",
-            "1883",
-            "-q",
-            "1",
-            "-t",
-            command_topic,
-            "-C",
-            "1",
-            "-W",
-            str(args.timeout_seconds),
+            "docker", "exec", "-i", "terraneuron-mosquitto", "mosquitto_sub",
+            *connection_args(args),
+            "-q", "1", "-t", command_topic, "-C", "1", "-W", str(args.timeout_seconds),
         ],
         text=True,
         stdout=subprocess.PIPE,
@@ -103,6 +92,7 @@ def main() -> int:
             "maintenanceMode": False,
             "reportedAt": now_rfc3339(),
         },
+        args,
     )
 
     try:
@@ -156,7 +146,7 @@ def main() -> int:
         "lastCommandStatus": "EXECUTED",
         "reportedAt": now_rfc3339(),
     }
-    publish(status_topic, ack)
+    publish(status_topic, ack, args)
 
     print(
         json.dumps(
@@ -167,6 +157,7 @@ def main() -> int:
                 "planId": args.plan_id,
                 "commandId": command_id,
                 "terminalStatus": "EXECUTED",
+                "transport": "authenticated-tls" if args.cafile else "default",
             },
             separators=(",", ":"),
         )
