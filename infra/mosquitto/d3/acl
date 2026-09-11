@@ -1,0 +1,13 @@
+# D3 synthetic identities only. Topic scopes are intentionally narrow.
+
+user terra-sense-bridge
+topic write terra/devices/+/+/command
+topic read terra/devices/+/+/status
+
+user device-a
+topic read terra/devices/farm-d3/device-a/command
+topic write terra/devices/farm-d3/device-a/status
+
+user device-b
+topic read terra/devices/farm-d3/device-b/command
+topic write terra/devices/farm-d3/device-b/status

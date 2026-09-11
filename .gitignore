@@ -69,3 +69,4 @@ test_report_*.html
 # Runtime or temp files
 *.pid
 *.cache
+.d3-runtime/

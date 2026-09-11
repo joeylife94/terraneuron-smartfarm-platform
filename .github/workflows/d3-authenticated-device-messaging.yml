@@ -1,0 +1,71 @@
+name: D3 Authenticated Device Messaging Pilot
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  d3-authenticated-device-messaging:
+    name: Bounded Authenticated Device Messaging Pilot
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      JWT_SECRET: DEMO_ONLY_D3_CI_JWT_SECRET_32_CHARS_MIN
+      E2E_POLL_TIMEOUT_SECONDS: '90'
+      E2E_POLL_INTERVAL_SECONDS: '1'
+
+    steps:
+      - name: Checkout exact source revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Validate D3 proof syntax
+        run: |
+          python -m py_compile tests/command-lifecycle-test.py
+          python -m py_compile tests/synthetic-mqtt-device.py
+          python -m py_compile tests/synthetic-farm-operations-pilot.py
+          python -m py_compile tests/d3-authenticated-device-messaging.py
+          bash -n tests/d3-authenticated-device-messaging.sh
+          docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.d3.yml config --quiet
+
+      - name: Install proof dependency
+        run: pip install requests
+
+      - name: Run bounded authenticated device messaging pilot
+        shell: bash
+        run: |
+          set -o pipefail
+          TERRANEURON_D3_KEEP_STACK=1 bash tests/d3-authenticated-device-messaging.sh 2>&1 | tee d3-authenticated-device-messaging-output.log
+
+      - name: Capture diagnostics without runtime credentials
+        if: always()
+        shell: bash
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.d3.yml ps --all > d3-compose-ps.txt 2>&1 || true
+          docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.d3.yml logs --no-color > d3-compose.log 2>&1 || true
+          rm -rf .d3-runtime
+
+      - name: Upload bounded evidence and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: d3-authenticated-device-messaging-evidence
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            artifacts/d3-authenticated-device-messaging.json
+            d3-authenticated-device-messaging-output.log
+            d3-compose-ps.txt
+            d3-compose.log
+
+      - name: Stop Docker Compose
+        if: always()
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.d3.yml down -v || true
+          rm -rf .d3-runtime
