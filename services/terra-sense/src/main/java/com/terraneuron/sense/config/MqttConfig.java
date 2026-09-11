@@ -27,6 +27,12 @@ public class MqttConfig {
     @Value("${mqtt.client.id:terra-sense-bridge}")
     private String clientId;
 
+    @Value("${mqtt.username:}")
+    private String username;
+
+    @Value("${mqtt.password:}")
+    private String password;
+
     @Value("${mqtt.connect.timeout:10}")
     private int connectTimeout;
 
@@ -38,7 +44,8 @@ public class MqttConfig {
 
     @Bean(destroyMethod = "disconnect")
     public MqttClient mqttClient() throws MqttException {
-        log.info("🔌 MQTT 클라이언트 초기화: broker={}, clientId={}", brokerUrl, clientId);
+        log.info("🔌 MQTT 클라이언트 초기화: broker={}, clientId={}, authenticated={}",
+                brokerUrl, clientId, username != null && !username.isBlank());
 
         MqttConnectOptions options = new MqttConnectOptions();
         options.setServerURIs(new String[]{brokerUrl});
@@ -46,8 +53,12 @@ public class MqttConfig {
         options.setKeepAliveInterval(keepAlive);
         options.setAutomaticReconnect(autoReconnect);
         options.setCleanSession(true);
-        // 최대 재전송 중 메시지 수
         options.setMaxInflight(50);
+
+        if (username != null && !username.isBlank()) {
+            options.setUserName(username);
+            options.setPassword(password != null ? password.toCharArray() : new char[0]);
+        }
 
         MqttClient client = new MqttClient(brokerUrl, clientId, new MemoryPersistence());
         client.connect(options);
