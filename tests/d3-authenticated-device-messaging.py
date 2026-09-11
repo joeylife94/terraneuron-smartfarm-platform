@@ -59,6 +59,19 @@ def require_denied(result: subprocess.CompletedProcess[str], label: str) -> None
         )
 
 
+def wait_for_unknown_device_state(farm_id: str, asset_id: str) -> Dict[str, Any]:
+    deadline = time.time() + cl.POLL_TIMEOUT_SECONDS
+    last: Dict[str, Any] = {}
+    while time.time() < deadline:
+        last = cl.fetch_device_state(farm_id, asset_id)
+        if last.get("state") == "unknown":
+            return last
+        time.sleep(cl.POLL_INTERVAL_SECONDS)
+    raise cl.CommandLifecycleFailure(
+        f"timed out waiting for rejected device state invalidation; last={last}"
+    )
+
+
 def main() -> int:
     bridge_password = os.environ["D3_BRIDGE_PASSWORD"]
     device_a_password = os.environ["D3_DEVICE_A_PASSWORD"]
@@ -80,6 +93,29 @@ def main() -> int:
     )
 
     print("[3/9] Prove topic/payload identity mismatch is rejected by Terra-Sense")
+    baseline = mqtt_command(
+        "device-a",
+        device_a_password,
+        topic_a_status,
+        {
+            "farmId": FARM_ID,
+            "assetId": ASSET_A,
+            "deviceType": "fan",
+            "state": "online",
+            "maintenanceMode": False,
+            "reportedAt": cl.now_rfc3339(),
+        },
+    )
+    if baseline.returncode != 0:
+        raise cl.CommandLifecycleFailure(
+            f"authorized baseline probe could not reach broker: {baseline.stderr!r}"
+        )
+    baseline_state = cl.wait_for_device_state(FARM_ID, ASSET_A)
+    if baseline_state.get("state") != "online":
+        raise cl.CommandLifecycleFailure(
+            f"authorized baseline state was not observed before mismatch probe: {baseline_state}"
+        )
+
     mismatch = mqtt_command(
         "device-a",
         device_a_password,
@@ -97,12 +133,7 @@ def main() -> int:
         raise cl.CommandLifecycleFailure(
             f"authorized mismatch probe could not reach broker: {mismatch.stderr!r}"
         )
-    time.sleep(2)
-    rejected_state = cl.fetch_device_state(FARM_ID, ASSET_A)
-    if rejected_state.get("state") != "unknown":
-        raise cl.CommandLifecycleFailure(
-            f"topic/payload identity mismatch mutated device A state: {rejected_state}"
-        )
+    wait_for_unknown_device_state(FARM_ID, ASSET_A)
 
     print("[4/9] Start authenticated TLS synthetic device A actor")
     actor = subprocess.Popen(
