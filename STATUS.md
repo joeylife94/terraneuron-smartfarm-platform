@@ -1,11 +1,12 @@
 # TerraNeuron — Implementation Status
 
 > **Last updated:** 2026-09-11  
-> **Status:** `PROOF v1.0 FREEZE / HUMAN REVIEW PASSED — D1+D2 SOFTWARE DESTINATIONS REACHED / P0 ACCEPTED / D3 ACTIVE`  
+> **Status:** `PROOF v1.0 FREEZE / HUMAN REVIEW PASSED — D1+D2+D3 SOFTWARE DESTINATIONS REACHED / P0 ACCEPTED / D4 ACTIVE`  
 > **Authority:** authoritative implementation status / execution contract for this repository  
 > **Proof v1.0 implementation baseline SHA:** `7ef9315890f1e2c06345bce94fb3334c2cff1c0e`  
 > **Accepted progression through D2:** `9ffee0a63a183304a07b5f22a7ec94d16068db4e`  
-> **Accepted P0 truthfulness reconciliation:** `b24a245e12cb02a58e68fab486413b097d6241de`
+> **Accepted P0 truthfulness reconciliation:** `b24a245e12cb02a58e68fab486413b097d6241de`  
+> **Accepted D3 authenticated messaging pilot:** `df63cd688d1ef1856ab8bd1a82bf95ea9e648d61`
 
 When documents disagree, use:
 
@@ -53,132 +54,101 @@ The following bounded progression slices were accepted by exact-head executable 
 | #97 / #98 | `1870f6cd1917df9b26e1485ac73901a4276aa9ca` | `bc04848b82e4a5d2319263a966e19cd9178d95c1` | real Kafka publication retry exhaustion → outbox `DEAD` → plan `DISPATCH_FAILED / OUTBOX_DEAD_LETTER`, with later scans preserving terminal truth |
 | #99 / #100 | `45acaddd0ff70210284db2d49a8dd5ccfe370d55` | `9ffee0a63a183304a07b5f22a7ec94d16068db4e` | coherent Synthetic Farm Operations Pilot: synthetic starting state → operator-visible decision/approval → MQTT actor → correlated `EXECUTED` → chronological audit → evidence artifact/handoff |
 | #101 / #102 | `5a2cebc59d739dd686cfbd4742f3ff92a18ab4ad` | `b24a245e12cb02a58e68fab486413b097d6241de` | buyer-facing truthfulness reconciliation: stale production/throughput/field-readiness claims qualified to bounded software-Proof semantics without adding capability claims |
-
-## Milestone #24 reconciliation — outbox retry exhaustion terminal failure
-
-### Changed
-
-- added the dedicated retry-exhaustion executable proof and proof-only configuration for bounded `max-attempts=2` plus short backoff;
-- the first run exposed that two real Kafka metadata failures could exceed the proof's 120-second polling deadline; the same-gap correction increased the dedicated proof deadline to 180 seconds without changing product defaults or acceptance semantics.
-
-### Actually Executed / Verified
-
-- PR #98 accepted exact head `1870f6cd1917df9b26e1485ac73901a4276aa9ca` produced **23/23 PR-triggered workflow runs with `completed / success`**, including the dedicated `Outbox Retry Exhaustion Proof` and `CI/CD Pipeline` plus the accepted regression set;
-- the corrected exact head had no remaining review blocker before merge;
-- PR #98 was squash-merged with expected-head guard as `bc04848b82e4a5d2319263a966e19cd9178d95c1`;
-- Issue #97 closed completed;
-- within the bounded synthetic Compose software boundary, one persisted command/outbox identity survived real repeated Kafka publication failures until the configured proof retry limit, the outbox became `DEAD`, its owning plan became `DISPATCH_FAILED / OUTBOX_DEAD_LETTER`, and later publisher scans did not resurrect or rewrite that terminal truth.
-
-### Not Verified by #24
-
-The proof-only retry limit/backoff settings do not redefine production defaults and do not establish production Kafka HA/DR, load behavior, general fault-injection maturity, or production messaging identity/TLS.
+| #103 / #104 | `a727720be5c21f3a02d1ed727820d4ec79f9da08` | `df63cd688d1ef1856ab8bd1a82bf95ea9e648d61` | bounded authenticated+encrypted synthetic MQTT boundary: authenticated own-topic flow, anonymous denial, cross-device topic denial, payload/topic identity protection, preserved approval/safety/ACK/audit journey |
 
 ## Destination review — D1
 
 ### `DESTINATION REACHED — BOUNDED COMMAND-LIFECYCLE SOFTWARE PROOF`
 
-The accepted progression through merge `bc04848b82e4a5d2319263a966e19cd9178d95c1`, together with the frozen v1.0 baseline, is sufficient to establish D1 as a **strong bounded software Proof** rather than a collection that still needs more isolated ACK/replay/timeout/outbox permutations.
+The accepted D1 progression plus the frozen v1.0 baseline is sufficient to establish a strong bounded command-lifecycle software Proof. It includes persisted plans/command identity, transactional outbox, bounded retry/recovery and terminal exhaustion, Kafka/MQTT software integration, reusable synthetic MQTT actor, terminal success/failure/idempotency/ordering, audit evidence, bounded restart recovery where explicitly executed, and reproducible software handoff.
 
-D1 now has executable evidence for the intended invariant family:
-
-- persisted action plans and stable command identity;
-- transactional-outbox persistence, retry, stale-claim recovery, broker-outage recovery, and bounded terminal retry exhaustion;
-- running Kafka → Terra-Sense → MQTT command delivery and MQTT → Terra-Sense → Kafka → Terra-Ops correlated synthetic feedback;
-- a reusable independent synthetic MQTT device actor;
-- terminal success/failure, timeout/recovery, stale/contradictory ordering, correlation rejection, and idempotent replay behavior;
-- operator-visible chronological plan/command audit evidence and timeout audit idempotency;
-- bounded broker/service restart recovery where explicitly executed;
-- one-command clean-checkout software-Proof handoff with executable PASS/FAIL and failure diagnostics.
-
-Under the anti-micro-loop rule, further isolated command-message/failure permutations are **not** useful progression unless a coherent D2 scenario exposes a concrete blocker.
+Under the anti-micro-loop rule, further isolated ACK/replay/timeout/outbox permutations are not useful progression unless a coherent later destination exposes a concrete blocker.
 
 ## D2 reconciliation — Synthetic Farm Operations Pilot
 
 ### `DESTINATION REACHED — SYNTHETIC FARM OPERATIONS PILOT`
 
-### Changed
+PR #100 accepted exact head `45acaddd0ff70210284db2d49a8dd5ccfe370d55` with 24/24 PR-triggered workflow runs successful after the same-head handoff rerun. The bounded scenario executed:
 
-- added one reusable coherent synthetic farm-operations scenario and a dedicated executable workflow;
-- the first exact-head run exposed a harness-only parsing mismatch for list-shaped operator endpoints; the same-gap fix added explicit list parsing/validation without changing product semantics;
-- the corrected exact head also exposed one transient clean-checkout handoff startup race where Terra-Ops attempted Flyway connection before MySQL accepted connections; rerunning the existing handoff job on the same exact head succeeded, so no product/handoff mutation was justified.
+`synthetic device state → operator-visible PENDING plan → explicit approval/dispatch → reusable synthetic MQTT device actor → correlated EXECUTED result → chronological plan/command audit → JSON/Markdown evidence artifact`
 
-### Actually Executed / Verified
-
-- PR #100 accepted exact head `45acaddd0ff70210284db2d49a8dd5ccfe370d55` produced **24/24 PR-triggered workflow runs with `completed / success`** after the same-head handoff rerun, including `Synthetic Farm Operations Pilot`, `Software Proof Handoff`, `CI/CD Pipeline`, and the accepted D1 regression set;
-- the dedicated D2 scenario executed the bounded path `synthetic device state → operator-visible PENDING plan → explicit approval/dispatch → reusable synthetic MQTT device actor → correlated EXECUTED result → chronological plan/command audit → JSON/Markdown evidence artifact`;
-- the sole prior P1 review thread addressed the list-parser mismatch, became outdated after the same-gap correction, and was resolved before merge;
-- PR #100 was squash-merged with expected-head guard as `9ffee0a63a183304a07b5f22a7ec94d16068db4e`;
-- Issue #99 closed completed.
-
-### Verified D2 value
-
-D2 establishes a coherent, reusable, buyer-demonstrable **synthetic software operations pilot** built from the accepted command lifecycle, operator boundary, synthetic MQTT actor, audit timeline, evidence artifact, and reproducible handoff. It demonstrates use/show/delivery value as one scenario rather than another isolated command-message permutation.
-
-### Not Verified by D2
-
-D2 does not verify or claim physical actuator truth, manufacturer/controller semantics, production MQTT identity/auth/TLS, field safety/interlocks, unattended autonomous control, production HA/DR/load maturity, certification, or that synthetic/device-reported software state equals physical equipment state.
+D2 establishes a coherent, reusable, buyer-demonstrable synthetic software operations pilot. It does not establish physical actuator truth, manufacturer/controller semantics, production MQTT identity/auth/TLS, field safety/interlocks, unattended autonomous control, production HA/DR/load maturity, certification, or that software/device-reported state equals physical equipment state.
 
 ## P0 reconciliation — Buyer-facing Truthfulness Reconciliation
 
 ### `P0 ACCEPTED — BUYER-FACING CLAIMS RECONCILED TO BOUNDED SOFTWARE-PROOF TRUTH`
 
+PR #102 accepted exact head `5a2cebc59d739dd686cfbd4742f3ff92a18ab4ad` with 24/24 PR-triggered workflows successful and no unresolved review thread. `PROJECT_SUMMARY.md` was reconciled so historical local/synthetic measurements and planning estimates are not presented as production validation, throughput proof, field readiness, or physical truth. P0 changed documentation truthfulness only and created no new product capability claim.
+
+## D3 reconciliation — Bounded Authenticated Device Messaging Pilot
+
+### `DESTINATION REACHED — BOUNDED AUTHENTICATED DEVICE MESSAGING PILOT`
+
 ### Changed
 
-- `PROJECT_SUMMARY.md` was reconciled against this authoritative status boundary;
-- stale present-tense `Production-Validated` / `production-ready` wording was replaced or qualified;
-- December 2025 run counts and latency values were retained only as historical local/synthetic observations rather than production/performance evidence;
-- old throughput/capacity language was qualified as unvalidated historical planning material;
-- explicit non-claims were preserved for physical devices/safety, manufacturer semantics, production MQTT/PKI, HA/DR/load, unattended control, certification, and public production readiness.
+- added a proof-only Mosquitto TLS/authentication/ACL profile while leaving the ordinary development MQTT profile unchanged;
+- added explicit repository-owned synthetic identities for `terra-sense-bridge`, `device-a`, and `device-b` with bounded topic authorization;
+- added minimal optional MQTT username/password support to Terra-Sense and optional TLS/auth parameters to the existing synthetic MQTT actor;
+- added runtime-generated proof credentials/certificates excluded from source/evidence artifacts;
+- added one coherent D3 executable pilot and dedicated workflow;
+- same-gap corrections were limited to actual acceptance blockers: MySQL/Terra-Ops startup ordering, observable topic/payload mismatch handling, MQTT v5 broker-denial interpretation, and schema-valid synthetic plan identity.
 
 ### Actually Executed / Verified
 
-- PR #102 accepted exact head `5a2cebc59d739dd686cfbd4742f3ff92a18ab4ad` produced **24/24 PR-triggered workflow runs with `completed / success`**, including `CI/CD Pipeline`, `Synthetic Farm Operations Pilot`, `Software Proof Handoff`, and the accepted D1 regression set;
-- the PR had no unresolved review threads before merge;
-- PR #102 was squash-merged with expected-head guard as `b24a245e12cb02a58e68fab486413b097d6241de`;
-- Issue #101 closed completed;
-- P0 changed documentation truthfulness only and did not create a new product capability claim.
+- PR #104 accepted exact head `a727720be5c21f3a02d1ed727820d4ec79f9da08` produced **25/25 PR-triggered workflow runs with `completed / success`** after same-head reruns of transient regression failures;
+- the accepted exact head includes successful `D3 Authenticated Device Messaging Pilot`, `Synthetic Farm Operations Pilot`, `Software Proof Handoff`, `CI/CD Pipeline`, and the accepted D1 regression set;
+- the sole inline review thread was resolved and outdated before merge;
+- PR #104 was squash-merged with expected-head guard as `df63cd688d1ef1856ab8bd1a82bf95ea9e648d61`;
+- Issue #103 closed completed;
+- the bounded synthetic proof established authenticated device-A own-topic messaging over encrypted MQTT, unauthenticated denial, device-B cross-topic impersonation denial, topic/payload identity protection, preservation of explicit operator approval and the existing two-stage software safety path before command delivery, correlated terminal ACK, and operator audit evidence.
 
-### Not Verified by P0
+### Not Verified by D3
 
-P0 does not establish authenticated device identity, TLS, broker authorization, production PKI/provisioning, physical-device truth, manufacturer semantics, field safety, HA/DR/load maturity, unattended control, or certification.
+D3 is synthetic/local/CI software evidence only. It does not verify or claim production PKI/CA operations, certificate rotation/revocation, manufacturing or field provisioning, TPM/HSM, physical-device identity, field-network security, production MQTT infrastructure or secrets lifecycle, physical actuator truth, electrical interlocks/E-stop, manufacturer semantics, unattended autonomous control, HA/DR/load maturity, public production deployment, or certification.
 
 ## Not Verified / limitations
 
 All v1.0 non-claims remain in force. The accepted baseline and progression milestones do **not** verify or claim:
 
-- production MQTT client identity, authentication, authorization, or TLS;
+- production MQTT client identity, production-grade authentication/authorization/TLS operations, PKI lifecycle, or real provisioning;
 - physical actuator interlocks, emergency-stop behavior, manufacturer controller limits, physical-equipment certification, or physical device truth;
-- manufacturer/model-specific capability adapters;
+- real manufacturer/model-specific adapters or semantics;
 - production secrets management/key rotation;
 - production HA, backup/restore, DR, load testing, or general fault-injection maturity;
 - unattended autonomous control;
 - that device-reported or software state equals physical equipment state.
 
-The service/broker restart milestones are bounded synthetic software integration evidence. They do not establish production HA/fault-injection maturity, production network guarantees, or physical-equipment behavior. The audit milestone establishes software/operator trace usability only; it does not establish physical-state truth or production compliance/audit certification. The handoff milestone establishes reproducibility of the bounded synthetic software Proof only; its demo-only local secret is not production secrets-management evidence.
-
-The synthetic device harness, D1 progression slices, and D2 pilot establish software MQTT/Kafka contract, correlation, failure propagation, ordering, idempotency, persisted ownership rejection, bounded recovery, scheduler/audit behavior, outbox retry/publication recovery, stale-claim recovery, terminal-state behavior, and a coherent synthetic operator/demo flow only. They do not establish cryptographic device identity, manufacturer fault semantics, physical-device semantics, actuator behavior, or production messaging trust.
+The accepted D3 profile strengthens only the bounded synthetic software trust chain. It must not be promoted into a claim of production or physical device identity.
 
 ## Remaining risks / destination gates
 
-- D1 and D2 are accepted bounded software destinations; another isolated ACK/outbox/message-ordering proof is not justified absent a newly observed D3/D4 blocker;
-- P0 removed buyer-facing claim drift but did not create device-authentication evidence;
-- current Mosquitto default configuration still allows anonymous access and does not itself establish authenticated/encrypted device identity or topic authorization;
+- D1, D2, and D3 are accepted bounded software destinations; another isolated ACK/outbox/message-ordering/security timing proof is not justified absent a newly observed D4 blocker;
+- P0 removed buyer-facing claim drift but created no capability claim;
+- D3 establishes a bounded authenticated/encrypted synthetic MQTT boundary, not production PKI/provisioning or physical-device trust;
 - production security/availability boundaries remain separate from the accepted bounded software Proof;
 - production and physical-world trust boundaries remain explicitly outside the accepted software Proof.
 
-## Current destination — D3
+## Current destination — D4
 
-### `D3 ACTIVE — BOUNDED AUTHENTICATED DEVICE MESSAGING PILOT`
+### `D4 ACTIVE — DEVICE INTEGRATION CONFORMANCE PILOT`
 
-D3 is human-approved as a **software-only synthetic trust destination**. The selected scope is to reuse the existing Mosquitto, Terra-Sense bridge, synthetic MQTT actor, D2 operator/approval/safety-gate path, command correlation, and audit flow while introducing a deterministic authenticated + encrypted MQTT proof boundary suitable for local/CI execution.
+D4 is pre-authorized as a **software-only synthetic conformance destination**. Reuse the existing synthetic MQTT actor, device state/status contract, command/ACK correlation, `DeviceCapabilityResolver`, default safety policy, and accepted D3 messaging identity.
 
-D3 must prove, by exact-head executable evidence, authenticated synthetic device A own-topic success, unauthenticated denial, cross-device impersonation denial, payload/topic identity protection, approval + two-stage software safety gate before delivery, correlated terminal ACK/audit, and applicable D1/D2 gates GREEN.
+The smallest coherent D4 slice is one repository-owned clearly synthetic adapter/model fixture plus one deterministic conformance harness proving:
 
-D3 does **not** authorize or imply production PKI, certificate rotation, manufacturing provisioning, TPM/HSM, real physical-device identity, field-network security, production MQTT infrastructure, physical actuator truth, field safety, or certification.
+- explicit synthetic adapter/model identity and declared capabilities;
+- supported category/action is admitted only when declared capabilities permit it;
+- unsupported or unknown model/action fails closed before the MQTT actuation path;
+- the accepted D3 authenticated messaging boundary is preserved;
+- command identity and terminal ACK correlation are preserved;
+- one bounded evidence result demonstrates the reusable future-adapter software contract.
+
+D4 must not fabricate Samsung, LG, or any other real manufacturer semantics. It does not validate real hardware or manufacturer integration.
 
 ## Exact Next Action
 
-- open one bounded D3 Issue using current repository assets and current Mosquitto/Terra-Sense configuration as the acceptance contract;
-- implement one coherent authenticated+encrypted synthetic messaging pilot with repository-owned test credentials/identity material that is safe for public CI and not reusable as production secrets;
-- require exact-head executable success for authenticated device-A own-topic flow, unauthenticated denial, cross-device denial, payload/topic identity protection, preserved D2 approval/safety/ACK/audit journey, and applicable regression gates before D3 acceptance;
-- after D3 acceptance, reconcile STATUS and automatically begin D4; do not cross into real hardware/manufacturer/physical trust claims.
+- open one bounded D4 Issue using current repository extension assets as the sole acceptance contract;
+- inspect and reuse the current `DeviceCapabilityResolver`, default safety policy, synthetic device actor, and D3 authenticated identity path before adding new abstractions;
+- implement one clearly synthetic adapter/model fixture and deterministic conformance proof with fail-closed unsupported/unknown behavior before MQTT delivery;
+- require exact-head executable D4 evidence plus applicable D3/D2/D1 regression gates before destination acceptance;
+- after D4 acceptance, reconcile STATUS and stop at `HUMAN REVIEW — PHYSICAL TRUST DECISION`; do not select D5 automatically.
