@@ -61,12 +61,14 @@ keytool -importcert -noprompt -alias terraneuron-d3-ca \
   -storetype PKCS12 -storepass changeit >/dev/null
 
 touch "${RUNTIME}/passwords"
-docker run --rm -v "${RUNTIME}:/work" eclipse-mosquitto:2.0 sh -ec '
-  mosquitto_passwd -b /work/passwords terra-sense-bridge "$D3_BRIDGE_PASSWORD"
-  mosquitto_passwd -b /work/passwords device-a "$D3_DEVICE_A_PASSWORD"
-  mosquitto_passwd -b /work/passwords device-b "$D3_DEVICE_B_PASSWORD"
-' \
-  -e D3_BRIDGE_PASSWORD -e D3_DEVICE_A_PASSWORD -e D3_DEVICE_B_PASSWORD
+docker run --rm \
+  -e D3_BRIDGE_PASSWORD -e D3_DEVICE_A_PASSWORD -e D3_DEVICE_B_PASSWORD \
+  -v "${RUNTIME}:/work" \
+  eclipse-mosquitto:2.0 sh -ec '
+    mosquitto_passwd -b /work/passwords terra-sense-bridge "$D3_BRIDGE_PASSWORD"
+    mosquitto_passwd -b /work/passwords device-a "$D3_DEVICE_A_PASSWORD"
+    mosquitto_passwd -b /work/passwords device-b "$D3_DEVICE_B_PASSWORD"
+  '
 chmod 0644 "${RUNTIME}/passwords"
 
 "${COMPOSE[@]}" config --quiet
@@ -75,6 +77,11 @@ chmod 0644 "${RUNTIME}/passwords"
 for attempt in {1..60}; do
   if "${COMPOSE[@]}" exec -T mysql mysqladmin ping -h 127.0.0.1 -uroot -proot --silent >/dev/null 2>&1; then
     break
+  fi
+  if [[ "${attempt}" -eq 60 ]]; then
+    echo "[d3] mysql readiness failed"
+    "${COMPOSE[@]}" logs --tail=150 mysql || true
+    exit 1
   fi
   sleep 2
 done
