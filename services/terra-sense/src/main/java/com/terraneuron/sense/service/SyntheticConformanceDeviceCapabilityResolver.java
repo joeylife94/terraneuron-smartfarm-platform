@@ -27,7 +27,7 @@ public class SyntheticConformanceDeviceCapabilityResolver implements DeviceCapab
     public static final String MODEL_ID = "tn-synth-climate-01";
 
     private static final DeviceCapabilities KNOWN_MODEL_CAPABILITIES = new DeviceCapabilities(
-            Set.of("climate"),
+            Set.of("heating"),
             Set.of("turn_on", "turn_off", "adjust"),
             Set.of("target_temperature"));
 
