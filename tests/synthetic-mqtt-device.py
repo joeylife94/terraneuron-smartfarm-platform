@@ -31,6 +31,15 @@ def connection_args(args: argparse.Namespace) -> list[str]:
     return values
 
 
+def status_attributes(args: argparse.Namespace) -> Dict[str, str]:
+    attributes: Dict[str, str] = {}
+    if args.adapter_id:
+        attributes["adapterId"] = args.adapter_id
+    if args.model_id:
+        attributes["modelId"] = args.model_id
+    return attributes
+
+
 def run_mosquitto(command: str, args: argparse.Namespace, extra: list[str]) -> str:
     completed = subprocess.run(
         ["docker", "exec", "-i", "terraneuron-mosquitto", command, *connection_args(args), *extra],
@@ -60,6 +69,8 @@ def main() -> int:
     parser.add_argument("--asset-id", required=True)
     parser.add_argument("--plan-id", required=True)
     parser.add_argument("--device-type", default="fan")
+    parser.add_argument("--adapter-id", default="")
+    parser.add_argument("--model-id", default="")
     parser.add_argument("--timeout-seconds", type=int, default=90)
     parser.add_argument("--host", default="localhost")
     parser.add_argument("--port", type=int, default=1883)
@@ -82,18 +93,18 @@ def main() -> int:
         stderr=subprocess.PIPE,
     )
 
-    publish(
-        status_topic,
-        {
-            "farmId": args.farm_id,
-            "assetId": args.asset_id,
-            "deviceType": args.device_type,
-            "state": "online",
-            "maintenanceMode": False,
-            "reportedAt": now_rfc3339(),
-        },
-        args,
-    )
+    online_payload: Dict[str, Any] = {
+        "farmId": args.farm_id,
+        "assetId": args.asset_id,
+        "deviceType": args.device_type,
+        "state": "online",
+        "maintenanceMode": False,
+        "reportedAt": now_rfc3339(),
+    }
+    attributes = status_attributes(args)
+    if attributes:
+        online_payload["attributes"] = attributes
+    publish(status_topic, online_payload, args)
 
     try:
         stdout, stderr = subscriber.communicate(timeout=args.timeout_seconds + 10)
@@ -136,7 +147,7 @@ def main() -> int:
         )
 
     command_id = str(required["commandId"])
-    ack = {
+    ack: Dict[str, Any] = {
         "farmId": args.farm_id,
         "assetId": args.asset_id,
         "deviceType": args.device_type,
@@ -146,6 +157,8 @@ def main() -> int:
         "lastCommandStatus": "EXECUTED",
         "reportedAt": now_rfc3339(),
     }
+    if attributes:
+        ack["attributes"] = attributes
     publish(status_topic, ack, args)
 
     print(
@@ -158,6 +171,8 @@ def main() -> int:
                 "commandId": command_id,
                 "terminalStatus": "EXECUTED",
                 "transport": "authenticated-tls" if args.cafile else "default",
+                "adapterId": args.adapter_id or None,
+                "modelId": args.model_id or None,
             },
             separators=(",", ":"),
         )

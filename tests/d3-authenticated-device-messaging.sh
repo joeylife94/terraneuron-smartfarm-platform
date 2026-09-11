@@ -18,8 +18,8 @@ cleanup() {
   local code=$?
   if [[ "${KEEP_STACK}" != "1" ]]; then
     "${COMPOSE[@]}" down -v >/dev/null 2>&1 || true
+    rm -rf "${RUNTIME}"
   fi
-  rm -rf "${RUNTIME}"
   exit "${code}"
 }
 trap cleanup EXIT
