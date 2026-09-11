@@ -2,50 +2,52 @@
 
 **Generated for Senior Architect Code Review**  
 **Date:** December 9, 2025  
-**Last Updated:** January 2026 (Phase 2.A + Phase 3 Complete)  
+**Historical Snapshot Updated:** January 2026 (Phase 2.A + Phase 3)  
 **Architecture Pattern:** Microservices (MSA) with Event-Driven Architecture (EDA)  
-**Validation Status:** ✅ **Production-Validated** (E2E Pipeline + RAG System + Security Layer Verified)  
-**Current Phase:** ✅ **Phase 3 Complete** - CloudEvents + Safety Guards + JWT Security
+**Current Evidence Status:** **Bounded software Proof — see `STATUS.md` for authoritative accepted D1/D2 evidence and non-claims**  
+**Historical Phase Marker:** Phase 3 - CloudEvents + software safety guards + JWT security
+
+> **Authority / truthfulness note (2026-09):** `STATUS.md` is the authoritative implementation/evidence boundary. This document originated as a December 2025–January 2026 architecture review and retains historical implementation notes and small local/synthetic test observations where useful. Those historical observations are **not** production validation, load/performance certification, physical-device validation, manufacturer validation, field-safety evidence, HA/DR evidence, or public-production readiness. Current accepted scope is the bounded D1 command-lifecycle software Proof plus the D2 Synthetic Farm Operations Pilot.
 
 ---
 
 ## 📋 Executive Summary
 
-TerraNeuron is a production-ready, **event-driven microservices platform** for smart farm IoT data management and AI-powered analysis. The system follows neural network-inspired naming conventions, where three core microservices (terra-sense, terra-cortex, terra-ops) work together like a biological nervous system to collect, analyze, and manage agricultural sensor data.
+TerraNeuron is a production-oriented **event-driven microservices architecture prototype** for smart-farm IoT data management and AI-assisted analysis. The system follows neural network-inspired naming conventions, where three core microservices (terra-sense, terra-cortex, terra-ops) work together to collect, analyze, and manage software-reported agricultural sensor data.
 
 ### Key Highlights
 - ✅ **4 microservices** (3 core + 1 API Gateway)
 - ✅ **Event-driven architecture** with Apache Kafka
 - ✅ **Polyglot persistence** (MySQL, InfluxDB, Redis, ChromaDB)
-- ✅ **Complete observability** stack (Prometheus + Grafana)
-- ✅ **Production-ready CI/CD** pipelines (GitHub Actions)
+- ✅ **Observability stack components** (Prometheus + Grafana)
+- ✅ **CI/CD workflows** (GitHub Actions)
 - ✅ **Security layers** (API Gateway, rate limiting, authentication)
 - ✅ **Comprehensive documentation** (README, CONTRIBUTING, DEPLOYMENT, TROUBLESHOOTING)
-- ✅ **E2E Pipeline Validated** (25+ insights processed, 100% success rate)
+- ✅ **Historical local E2E sample retained for context** (December 2025; not a production/load claim)
 - ✅ **Hybrid AI + RAG Architecture** (Local Edge + Cloud LLM + Knowledge Base)
-- ✅ **Professional HTML Test Reporter** (AI verification, performance metrics, color-coded results)
-- ✅ **CloudEvents v1.0 Standard** (Phase 2.A Complete - Action Protocol Implementation)
-- ✅ **4-Layer Safety Validation** (Logical, Context, Permission, Device) - IMPLEMENTED
+- ✅ **HTML Test Reporter** (AI verification, performance fields, color-coded results)
+- ✅ **CloudEvents v1.0 Standard** (Phase 2.A - Action Protocol Implementation)
+- ✅ **Software safety validation layers** (Logical, Context, Permission, Device) - IMPLEMENTED; not physical-safety evidence
 - ✅ **Distributed Tracing** (Mandatory trace_id propagation) - IMPLEMENTED
-- ✅ **FarmOS Compatible** (Asset/Log/Plan unified model) - IMPLEMENTED
-- ✅ **JWT Authentication** (Phase 3 Complete - Role-based Access Control)
-- ✅ **Audit Logging** (Event-sourcing for compliance and security)
+- ✅ **FarmOS-compatible model mapping** (Asset/Log/Plan unified model) - IMPLEMENTED within repository scope
+- ✅ **JWT Authentication** (Phase 3 - Role-based Access Control)
+- ✅ **Software audit logging** (event history for traceability)
 
 ---
 
 ## 🏗️ System Architecture
 
-### High-Level Data Flow (Production-Validated ✅)
+### High-Level Data Flow (software architecture)
 ```
 IoT Sensors → HTTP POST → terra-sense → Kafka (raw-sensor-data) → terra-cortex (AI) → Kafka (processed-insights) → terra-ops → MySQL
                              ↓                                                                                             ↓
                          InfluxDB                                                                                    Dashboard API
 
-📊 Verified Metrics:
-- HTTP Ingestion: 100% success rate (15/15 requests in final test)
-- AI Detection: 1 anomaly detected (Temperature 39.98°C > 30°C threshold)
-- Data Persistence: 25 insights stored in MySQL (0% data loss)
-- E2E Latency: ~1-2 seconds (HTTP POST → MySQL INSERT)
+📊 Historical December 2025 local/synthetic run observations (non-authoritative for current production readiness):
+- HTTP Ingestion: 15/15 requests succeeded in that bounded run
+- AI Detection: 1 configured threshold anomaly observed (Temperature 39.98°C > 30°C threshold)
+- Data Persistence: 25 insights present in MySQL for that run
+- E2E Latency: approximately 1-2 seconds in that environment
 ```
 
 ### Microservices Overview
@@ -69,7 +71,9 @@ IoT Sensors → HTTP POST → terra-sense → Kafka (raw-sensor-data) → terra-
 | **Redis** | 7 | Rate limiting cache |
 | **ChromaDB** | Latest | Vector database for RAG knowledge base |
 | **Prometheus** | 2.48 | Metrics collection |
-| **Grafana** | 10.2 | Visualization dashboards |---
+| **Grafana** | 10.2 | Visualization dashboards |
+
+---
 
 ## 📁 Repository Structure
 
@@ -128,7 +132,7 @@ terraneuron-smartfarm-platform/
 ├── tools/
 │   └── sensor-simulator.py      # Data generator (4 modes: normal/anomaly/mixed/stress)
 ├── tests/
-│   ├── simulation.py            # Production-ready E2E pipeline testing tool (NEW!)
+│   ├── simulation.py            # E2E pipeline simulation/testing tool
 │   ├── neural-flow-test.py      # End-to-end integration test
 │   ├── README.md                # Complete testing guide
 │   ├── QUICKSTART.md            # 5-minute quick start guide
@@ -185,11 +189,11 @@ services:
 
 **Persistence:**
 - Named volumes: `mysql_data`, `influxdb_data`, `grafana_data`, `kafka_data`, `zookeeper_data`
-- Prevents data loss on container restarts
+- Provides persistent local volumes across ordinary container restarts; this is not backup/DR evidence
 
 **Health Checks:**
-- All services configured with proper `depends_on` chains
-- Ensures sequential startup and availability
+- Services include configured health/dependency checks where implemented
+- These checks support local orchestration; they are not production availability/HA evidence
 
 **Environment Configuration:**
 - Centralized via `.env` file support
@@ -231,7 +235,7 @@ services:
 ```
 fastapi==0.109.0
 uvicorn[standard]==0.27.0
-aiokafka==0.8.1          # Async Kafka client for high-performance processing
+aiokafka==0.8.1          # Async Kafka client
 pydantic==2.5.3
 python-dateutil==2.8.2
 ```
@@ -341,7 +345,7 @@ def analyze_sensor_data(data: dict) -> dict:
 2. **MVP Analysis Logic**: Simple threshold-based detection (temp > 30°C or humidity < 40%)
 3. **Insight Generation**: Creates structured insights with `farmId`, `status`, `message`, `timestamp`
 4. **Async Kafka Producer**: Publishes to `processed-insights` topic
-5. **High Performance**: Async I/O enables handling thousands of messages per second
+5. **Async Processing**: Non-blocking I/O is implemented; no current throughput/load claim is made here
 
 ---
 
@@ -623,18 +627,18 @@ jobs:
 
 ## 🧪 Testing & Validation
 
-### Pipeline Simulation Script (NEW! 🎉)
+### Pipeline Simulation Script
 
-**tests/simulation.py** - Production-ready end-to-end testing tool:
-- **435 lines** of comprehensive Python code
+**tests/simulation.py** - bounded end-to-end simulation/testing tool:
+- **435 lines** of Python code
 - **3 data generation modes:**
-  - `normal` - Realistic sensor values within expected ranges
-  - `anomaly` - Out-of-range values to test AI detection
-  - `mixed` - 80% normal + 20% anomaly (realistic scenario)
+  - `normal` - Generated sensor values within expected ranges
+  - `anomaly` - Generated out-of-range values to exercise threshold detection
+  - `mixed` - 80% normal + 20% anomaly generation mode
 - **5 sensor types:** Temperature, Humidity, Soil Moisture, CO2, Light
-- **Real-time statistics:** Success rate, status code distribution, performance metrics
+- **Run statistics:** Success rate, status code distribution, timing fields
 - **Color-coded output:** ✅ success, ❌ failure, ⏱️ timeout indicators
-- **Full CLI interface:** Configurable count, interval, mode, URL, verbose output
+- **CLI interface:** Configurable count, interval, mode, URL, verbose output
 
 **Usage Examples:**
 ```bash
@@ -644,7 +648,7 @@ python tests/simulation.py
 # Anomaly detection test
 python tests/simulation.py --mode anomaly --count 20
 
-# Load test (100 requests, 0.1s interval)
+# Bounded higher-rate local run (not a production load test)
 python tests/simulation.py --count 100 --interval 0.1
 
 # Verbose output with full request/response
@@ -673,19 +677,21 @@ curl http://localhost:8083/api/v1/dashboard/insights | jq
 curl http://localhost:8083/api/v1/dashboard/summary | jq
 ```
 
-### Production Validation Results (December 8, 2025) ✅
+### Historical Local Software Run (December 8, 2025)
 
-**Phase 3: Database Persistence Verification** - Complete end-to-end pipeline validated with real production data.
+> The following values are retained as a **historical bounded local/synthetic run record**. They do not establish production readiness, production data quality, performance/load capacity, physical-device behavior, field reliability, or statistical AI accuracy.
+
+**Phase 3 database-persistence exercise** - a small end-to-end software pipeline run recorded these observations.
 
 #### SQL Query Results
 
 **1. Total Insights Count:**
 ```sql
 SELECT COUNT(*) as total_insights FROM insights;
--- Result: 25 insights (100% persistence, 0% data loss)
+-- Historical run result: 25 insights
 ```
 
-**2. Anomaly Detection Verification:**
+**2. Threshold Detection Observation:**
 ```sql
 SELECT id, farm_id, status, message, timestamp 
 FROM insights 
@@ -696,9 +702,9 @@ ORDER BY timestamp DESC LIMIT 5;
 |----|------|--------|---------|-----------|
 | 11 | farm-E | ANOMALY | 🚨 Temperature is too high: 39.98°C (threshold: 30°C) | 2025-12-08 12:37:27.755762 |
 
-**AI Detection Accuracy: 100%** - Terra-Cortex correctly identified temperature threshold breach.
+**Observed threshold case:** Terra-Cortex identified the single configured temperature-threshold example in this run. This is not an accuracy benchmark.
 
-**3. Farm Distribution Analysis:**
+**3. Farm-ID Distribution in the Historical Run:**
 ```sql
 SELECT farm_id, COUNT(*) as count, 
        SUM(CASE WHEN status='ANOMALY' THEN 1 ELSE 0 END) as anomalies 
@@ -706,15 +712,15 @@ FROM insights GROUP BY farm_id ORDER BY farm_id;
 ```
 | Farm | Total | Anomalies | Status |
 |------|-------|-----------|--------|
-| farm-A | 8 | 0 | ✅ Healthy |
-| farm-B | 4 | 0 | ✅ Healthy |
-| farm-C | 6 | 0 | ✅ Healthy |
-| farm-D | 3 | 0 | ✅ Healthy |
-| farm-E | 4 | 1 | ⚠️ Warning |
+| farm-A | 8 | 0 | ✅ sample normal |
+| farm-B | 4 | 0 | ✅ sample normal |
+| farm-C | 6 | 0 | ✅ sample normal |
+| farm-D | 3 | 0 | ✅ sample normal |
+| farm-E | 4 | 1 | ⚠️ sample threshold event |
 
-**Multi-Farm Monitoring: 5 farms simultaneously tracked**
+**Historical sample:** five farm IDs were represented in this run.
 
-**4. Timeline Analysis:**
+**4. Timeline Observation:**
 ```sql
 SELECT DATE_FORMAT(timestamp, '%Y-%m-%d %H:%i') as time_window, 
        COUNT(*) as insights_count, status 
@@ -726,18 +732,17 @@ FROM insights GROUP BY time_window, status ORDER BY time_window DESC;
 | 2025-12-08 12:37 | 1 | ANOMALY |
 | 2025-12-08 12:21 | 10 | NORMAL |
 
-**Data Continuity: ✅** Two simulation batches successfully recorded with microsecond-precision timestamps.
+**Historical observation:** two simulation batches were present with timestamped records.
 
-#### Key Performance Indicators (Production-Verified)
+#### Historical Run Metrics (not production/performance validation)
 
-| Metric | Value | Status |
-|--------|-------|--------|
-| **HTTP Success Rate** | 100% (15/15 final test) | ✅ |
-| **Data Persistence** | 100% (25/25 records saved) | ✅ |
-| **AI Accuracy** | 100% (1/1 anomaly detected) | ✅ |
-| **E2E Latency** | 1-2 seconds | ✅ |
-| **Zero Data Loss** | 0 records lost | ✅ |
-| **Multi-Farm Support** | 5 farms monitored | ✅ |
+| Metric | Historical observation | Scope |
+|--------|------------------------|-------|
+| **HTTP requests** | 15/15 succeeded in the final small run | bounded local sample only |
+| **Data persistence** | 25/25 generated records observed | bounded local sample only |
+| **Threshold detector** | 1/1 configured anomaly example detected | single case, not accuracy statistics |
+| **E2E latency** | approximately 1-2 seconds | that environment/run only |
+| **Farm IDs** | 5 represented | synthetic/local sample only |
 
 ### Legacy Testing Tools
 
@@ -747,7 +752,7 @@ FROM insights GROUP BY time_window, status ORDER BY time_window DESC;
 
 **tests/neural-flow-test.py:**
 - Legacy end-to-end integration test
-- Validates complete data flow (IoT → AI → Dashboard)
+- Validates complete software data flow (IoT-shaped input → analysis → Dashboard)
 
 ---
 
@@ -761,60 +766,59 @@ FROM insights GROUP BY time_window, status ORDER BY time_window DESC;
 
 2. **Network Isolation**
    - Internal Docker bridge network
-   - Only gateway port exposed to external traffic
+   - Local composition/exposure rules as configured in repository
 
 3. **Container Security**
-   - Multi-stage Docker builds (smaller attack surface)
-   - Non-root user execution in containers
-   - Trivy vulnerability scanning in CI/CD
+   - Multi-stage Docker builds where configured
+   - Non-root execution where implemented
+   - Trivy vulnerability scanning workflow
 
 4. **Dependency Management**
-   - Automated security scanning (GitHub Actions)
-   - Regular dependency updates
+   - Security/dependency scanning workflows where configured
 
-### Recommendations for Production
+### Production Security Gaps / Separate Evidence Required
 
-- [ ] Enable TLS/SSL for all external endpoints
-- [ ] Implement JWT-based authentication for API Gateway
-- [ ] Add Kafka message encryption (SSL/SASL)
-- [ ] Configure MySQL with encrypted connections
-- [ ] Set up secrets management (HashiCorp Vault, AWS Secrets Manager)
-- [ ] Enable audit logging for all API requests
+- [ ] Production TLS/SSL boundary and certificate lifecycle
+- [ ] Production MQTT/Kafka authenticated identity and authorization boundary
+- [ ] Encrypted production database connections as required by deployment
+- [ ] Production secrets management and rotation
+- [ ] Production audit/compliance requirements
+
+These are separate from the accepted D1/D2 bounded software Proof.
 
 ---
 
 ## 📈 Performance Characteristics
 
-### Production-Verified Throughput (December 8, 2025)
+### Historical Observed Sample (December 8, 2025 — not a throughput benchmark)
 
-| Service | Tested Load | Observed Performance | Status |
-|---------|-------------|---------------------|--------|
-| **terra-sense** | 15 req/15s (1 req/sec) | 100% success rate, HTTP 200 | ✅ Verified |
-| **terra-cortex** | 15 msg/15s | 1 anomaly detected, <1s latency | ✅ Verified |
-| **terra-ops** | 15 msg/15s | 100% MySQL persistence | ✅ Verified |
-| **End-to-End** | Full pipeline | 1-2 second total latency | ✅ Verified |
+| Service | Historical sample | Observed result in that run | Scope |
+|---------|-------------------|-----------------------------|-------|
+| **terra-sense** | 15 req/15s | 15 HTTP requests succeeded | bounded local sample |
+| **terra-cortex** | 15 msg/15s | configured threshold event observed | bounded local sample |
+| **terra-ops** | 15 msg/15s | generated records persisted | bounded local sample |
+| **End-to-End** | small pipeline run | approximately 1-2 second latency | environment-specific observation |
 
-### Expected Throughput (Projected)
+### Historical Capacity-Planning Estimates (not validated/current claims)
 
-| Service | Expected Load | Max Throughput |
-|---------|--------------|----------------|
-| **terra-sense** | 1000 sensors × 1 msg/min | ~17 msg/sec (scalable via Kafka partitions) |
-| **terra-cortex** | AI processing | ~50 msg/sec (CPU-bound, can scale horizontally) |
-| **terra-ops** | Dashboard queries | ~100 req/sec |
+Earlier planning notes used the following rough numbers. They are retained only as historical design context and **must not be interpreted as measured capacity or promised throughput**.
 
-### Scalability Patterns
+| Service | Historical planning input | Historical rough estimate |
+|---------|---------------------------|---------------------------|
+| **terra-sense** | 1000 sensors × 1 msg/min | ~17 msg/sec input arithmetic; scalability not validated |
+| **terra-cortex** | AI processing | ~50 msg/sec was an unvalidated planning estimate |
+| **terra-ops** | Dashboard queries | ~100 req/sec was an unvalidated planning estimate |
+
+### Scalability Patterns (architectural options, not validated capacity)
 
 1. **Horizontal Scaling (Kafka Partitioning)**
-   - Increase Kafka partitions for `raw-sensor-data` topic
-   - Deploy multiple terra-cortex instances (consumer group)
+   - Kafka partitions/consumer groups are architectural options; production scale behavior is not established here
 
 2. **Database Optimization**
-   - InfluxDB retention policies (e.g., 90 days for raw data)
-   - MySQL read replicas for dashboard queries
+   - Retention policies/read replicas are deployment options, not accepted production evidence
 
 3. **Caching Layer**
-   - Redis caching for frequently accessed dashboard data
-   - Cache-aside pattern for farm/sensor metadata
+   - Redis caching/cache-aside are architectural options where useful; production capacity is not claimed
 
 ---
 
@@ -848,8 +852,8 @@ FROM insights GROUP BY time_window, status ORDER BY time_window DESC;
 
 ### Branch Strategy
 
-- `main` - Production-ready code
-- `develop` - Integration branch
+- `main` - accepted integration branch; current evidence boundary is defined by `STATUS.md`
+- `develop` - Integration branch (where used)
 - `feature/*` - New features
 - `hotfix/*` - Critical bug fixes
 
@@ -869,12 +873,13 @@ test: Add integration tests for terra-cortex
 
 | Document | Purpose | Location |
 |----------|---------|----------|
+| **STATUS.md** | Authoritative current implementation/evidence boundary | Root |
 | **README.md** | Project overview, quick start, architecture | Root |
 | **CONTRIBUTING.md** | Contribution guidelines, coding standards | Root |
 | **QUICKSTART.md** | Fast setup guide with curl examples | Root |
-| **docs/DEPLOYMENT.md** | Deployment instructions (local/cloud/K8s) | docs/ |
+| **docs/DEPLOYMENT.md** | Deployment instructions/reference | docs/ |
 | **docs/TROUBLESHOOTING.md** | Common issues and solutions | docs/ |
-| **PROJECT_SUMMARY.md** | This comprehensive technical review | Root |
+| **PROJECT_SUMMARY.md** | Historical technical review reconciled to current truth boundary | Root |
 | **services/terra-sense/IMPLEMENTATION.md** | terra-sense detailed implementation guide | services/terra-sense/ |
 | **services/terra-sense/README.md** | terra-sense service documentation | services/terra-sense/ |
 | **services/terra-sense/QUICKREF.md** | terra-sense quick reference | services/terra-sense/ |
@@ -890,101 +895,101 @@ test: Add integration tests for terra-cortex
 
 ---
 
-## 🔮 Roadmap & Future Enhancements
+## 🔮 Historical Roadmap Snapshot & Current Boundary
 
-### Phase 1: Current State (✅ Completed - December 8, 2025)
+The phase list below originated in the 2025–2026 planning document. It is retained as historical context, **not** as a current authorization to implement production/physical scope. Current progression authority is `STATUS.md` plus explicitly human-approved destinations.
+
+### Phase 1: Historical State (December 8, 2025)
 - [x] Core microservices architecture (terra-sense, terra-cortex, terra-ops)
 - [x] Kafka event streaming (raw-sensor-data → processed-insights topics)
 - [x] MVP AI anomaly detection (rule-based: temp > 30°C or humidity < 40%)
-- [x] Docker Compose orchestration (13 services)
-- [x] Monitoring with Prometheus + Grafana
-- [x] Comprehensive service documentation (IMPLEMENTATION.md, README.md, QUICKREF.md for each service)
-- [x] Simplified data model (Insight entity with id, farmId, status, message, timestamp)
-- [x] Production-ready simulation testing tool (tests/simulation.py with 5 testing scenarios)
-- [x] **E2E Pipeline Validation** (25 insights processed, 100% success rate, 0% data loss)
-- [x] **AI Anomaly Detection Verified** (Temperature threshold breach correctly identified)
-- [x] **Multi-Farm Monitoring Confirmed** (5 farms simultaneously tracked)
+- [x] Docker Compose orchestration
+- [x] Monitoring components with Prometheus + Grafana
+- [x] Service documentation
+- [x] Simplified data model
+- [x] Simulation testing tool
+- [x] Historical small E2E pipeline run recorded
+- [x] Single configured threshold anomaly example observed
+- [x] Five synthetic/local farm IDs represented in historical run
 
-### Phase 2: Production Readiness (In Progress)
+### Historical Phase 2: Production Readiness Ideas (not accepted current evidence)
 - [ ] Kubernetes deployment manifests (Helm charts)
 - [ ] Advanced ML models (LSTM, Transformer-based time-series)
-- [ ] Authentication & authorization (OAuth2, JWT)
+- [ ] Authentication & authorization evolution
 - [ ] API versioning strategy
 - [ ] Load testing & performance benchmarking
 
-### Phase 3: Feature Expansion
+### Historical Phase 3: Feature Expansion Ideas (not authorized by this document)
 - [ ] Mobile app integration (Flutter/React Native)
 - [ ] Real-time WebSocket dashboard updates
-- [ ] Automated farm irrigation control (actuator commands)
+- [ ] Automated farm irrigation control (requires separate physical-trust/safety review)
 - [ ] Multi-tenancy support (farm owner isolation)
 - [ ] Advanced analytics (yield prediction, crop health scoring)
 
-### Phase 4: Enterprise Features
-- [ ] Multi-region deployment (geo-distributed farms)
-- [ ] Data lake integration (S3, BigQuery)
-- [ ] Machine learning model registry (MLflow)
-- [ ] A/B testing framework for AI models
-- [ ] Compliance & audit logging (GDPR, AgriTech regulations)
+### Historical Phase 4: Enterprise Ideas (not accepted current evidence)
+- [ ] Multi-region deployment
+- [ ] Data lake integration
+- [ ] Machine learning model registry
+- [ ] A/B testing framework
+- [ ] Compliance/audit program work
 
 ---
 
-## 🎯 Code Review Checklist
+## 🎯 Code Review Checklist (historical implementation checklist)
 
 ### Architecture & Design
-- [x] Microservices properly decoupled with clear boundaries
-- [x] Event-driven communication via Kafka (async, scalable)
-- [x] Polyglot persistence (right database for each use case)
-- [x] API Gateway pattern for single entry point
+- [x] Microservice boundaries implemented
+- [x] Event-driven communication via Kafka implemented
+- [x] Multiple persistence technologies present
+- [x] API Gateway pattern present
 
 ### Code Quality
-- [x] Java services follow Spring Boot best practices
-- [x] Python service uses FastAPI async patterns
-- [x] Proper error handling and logging
-- [x] Lombok reduces boilerplate in Java code
+- [x] Java Spring Boot service patterns present
+- [x] Python FastAPI async patterns present
+- [x] Error handling/logging implemented in reviewed paths
+- [x] Lombok used in Java code where applicable
 
-### Operational Excellence
-- [x] Docker multi-stage builds for optimized images
-- [x] Health check endpoints for all services
-- [x] Prometheus metrics exposed (`/actuator/prometheus`, `/metrics`)
-- [x] Comprehensive docker-compose with all dependencies
+### Operational Components
+- [x] Docker build definitions present
+- [x] Health endpoints/checks present in bounded paths
+- [x] Prometheus metrics endpoints/configuration present
+- [x] Docker Compose dependencies present
 
 ### Testing
-- [x] Production-ready simulation tool (`simulation.py` with 435 lines, 5 testing scenarios)
-- [x] End-to-end integration test (`neural-flow-test.py`)
-- [x] Data simulator for realistic testing scenarios
-- [x] Comprehensive testing documentation (README.md, QUICKSTART.md)
-- [x] Load testing capability (configurable count, interval, modes)
-- [x] **Production Validation Complete** (Phase 3: Database persistence verified with SQL queries)
-- [x] **100% E2E Success Rate** (15/15 requests in final validation test)
-- [x] **AI Detection Accuracy Confirmed** (1/1 anomaly correctly identified)
-- [ ] Unit test coverage (recommend 80%+ for critical paths)
+- [x] Simulation tool present
+- [x] End-to-end integration tests present
+- [x] Data simulator present
+- [x] Testing documentation present
+- [x] Configurable higher-rate local simulation is possible; this is not production load certification
+- [x] Historical database persistence exercise recorded
+- [x] Historical 15/15 request sample recorded
+- [x] Single configured threshold detection example recorded; not an AI accuracy claim
+- [ ] Broader unit/coverage targets remain separate engineering work
 
 ### Security
-- [x] API Gateway rate limiting
-- [x] Container security scanning (Trivy)
-- [ ] TLS/SSL for external traffic (recommended for prod)
-- [ ] Secrets management (needs implementation)
+- [x] API Gateway rate limiting implemented in bounded scope
+- [x] Container security scanning workflow present
+- [ ] Production TLS/identity/secret lifecycle requires separate evidence
 
 ### Documentation
-- [x] Clear README with architecture diagram
-- [x] API documentation (Swagger for terra-ops)
-- [x] Deployment guide
+- [x] README with architecture overview
+- [x] API documentation where configured
+- [x] Deployment reference
 - [x] Troubleshooting guide
 - [x] Contributing guidelines
-- [x] Service-level documentation (IMPLEMENTATION.md, README.md, QUICKREF.md for each microservice)
+- [x] Service-level documentation
 
 ---
 
 ## 📞 Project Metadata
 
 **Repository:** terraneuron-smartfarm-platform  
-**Total Files:** 60+ (includes new testing suite)  
-**Lines of Code:** ~4500+ (excluding dependencies)  
-**Docker Images:** 4 custom services + 9 infrastructure components  
-**Testing Tools:** Production-ready simulation script (435 lines)  
-**Production Validation Date:** December 8, 2025  
-**Validation Status:** ✅ **E2E Pipeline Verified** (25 insights, 100% success, AI detection confirmed)  
-**Last Updated:** December 8, 2025  
+**Historical snapshot size:** 60+ files / ~4500+ LOC at the time of the original summary; current repository may differ  
+**Docker Images in historical composition:** 4 custom services + infrastructure components  
+**Testing Tool:** simulation script retained as a bounded software test utility  
+**Historical E2E Sample Date:** December 8, 2025  
+**Historical Sample:** 25 generated/local insights with a 15-request final sample; not production validation  
+**Current Evidence Authority:** `STATUS.md`  
 **License:** (To be determined)
 
 ---
@@ -1001,46 +1006,28 @@ test: Add integration tests for terra-cortex
 
 ## 📝 Conclusion
 
-TerraNeuron Smart Farm Platform demonstrates a **production-validated, event-driven microservices system** with verified end-to-end functionality:
+TerraNeuron demonstrates a **bounded, production-oriented event-driven smart-farm software architecture prototype** with accepted software Proof slices recorded in `STATUS.md`. The authoritative accepted destinations are D1 (bounded command-lifecycle software Proof) and D2 (Synthetic Farm Operations Pilot).
 
-✅ **Proven Strengths (Production-Validated December 8, 2025):**
-- ✅ **100% E2E Success Rate**: 15/15 HTTP requests successfully processed through entire pipeline
-- ✅ **Zero Data Loss**: 25/25 insights persisted to MySQL with microsecond-precision timestamps
-- ✅ **AI Detection Confirmed**: Temperature anomaly (39.98°C > 30°C) correctly identified as CRITICAL
-- ✅ **Multi-Farm Monitoring**: 5 farms (farm-A through farm-E) simultaneously tracked
-- ✅ **Sub-2-Second Latency**: Complete E2E data flow (HTTP POST → MySQL INSERT) in 1-2 seconds
-- Clear separation of concerns (IoT ingestion, AI processing, management/dashboard)
-- Scalable event-driven architecture with Kafka (async processing with aiokafka)
-- Simplified data model for efficient querying (Insight entity with 5 core fields)
-- Comprehensive observability stack (Prometheus + Grafana)
-- Complete service-level documentation (3 docs per service: IMPLEMENTATION.md, README.md, QUICKREF.md)
-- Production-ready Spring Boot patterns (JPA repositories, Kafka listeners, REST controllers)
-- Async Python implementation for high-performance AI processing
+### Current accepted strengths
+- persisted plan/command identity and transactional outbox behavior under the accepted D1 boundary;
+- bounded Kafka/MQTT software integration with a repository-owned synthetic device actor;
+- explicit human approval and software safety-gate behavior under the implemented policy boundary;
+- correlated synthetic ACK/feedback, terminal-state ordering/idempotency, bounded retry/recovery, and audit timeline evidence;
+- reproducible software handoff and one coherent D2 operator/demo scenario with evidence artifact.
 
-⚠️ **Areas for Enhancement:**
-- Evolve from MVP rule-based logic to advanced ML models (LSTM, Transformer-based)
-- Add Kubernetes deployment for cloud scalability
-- Implement authentication/authorization layer (JWT, OAuth2)
-- Increase unit test coverage (currently focused on integration tests)
-- Add TLS/SSL for production security
-- Implement advanced analytics (yield prediction, crop health scoring)
+### Historical December 2025 observations retained for context
+- a 15-request local/synthetic sample completed successfully in that run;
+- 25 generated/local insight records were present in MySQL for that run;
+- one configured temperature threshold example was detected;
+- five farm IDs were represented;
+- approximately 1-2 second E2E latency was observed in that environment.
 
-**Production Validation Status (December 8, 2025):**
-- ✅ **terra-sense**: Fully implemented and validated (HTTP 200, Kafka producer working)
-- ✅ **terra-cortex**: Async Kafka consumer/producer with verified AI anomaly detection (1/1 accuracy)
-- ✅ **terra-ops**: Kafka consumer and MySQL persistence verified (15/15 messages saved)
-- ✅ **Documentation**: Comprehensive guides for all three core services
-- ✅ **Testing Suite**: Production-ready simulation tool with 5 scenarios (validated with real data)
-- ✅ **Database Integrity**: SQL queries confirmed 25 insights with correct farmId, status, message, timestamp
+These observations are **not** statistical reliability/accuracy evidence, production load evidence, real-world deployment evidence, or physical-device evidence.
 
-**Overall Assessment:** This platform provides a **production-validated MVP** for smart farm IoT solutions with **verified end-to-end functionality**. All core features—HTTP ingestion, Kafka streaming, AI anomaly detection, and MySQL persistence—have been tested and confirmed operational. The system achieved **100% success rate with zero data loss** across multiple test scenarios, demonstrating reliability for real-world deployment. The simplified data model and async processing architecture enable high scalability, while comprehensive documentation ensures maintainability and efficient team onboarding.
+### Explicit current non-claims
+TerraNeuron does **not** currently claim production MQTT client identity/auth/TLS, production PKI/provisioning/secret lifecycle, production HA/DR/load guarantees, real manufacturer/device semantics, physical actuator truth, physical safety/interlocks/emergency stop behavior, unattended autonomous control, field readiness, or certification. Synthetic/device-reported software state must not be equated with physical equipment state.
 
-**Investor-Ready Proof Points:**
-- 📊 **25 Real Insights Processed**: Actual production data stored in MySQL database
-- 🎯 **100% Pipeline Success**: No failures, no data loss, complete reliability
-- 🧠 **AI Detection Proven**: Temperature anomaly correctly flagged as CRITICAL severity
-- 🌾 **Multi-Farm Support**: 5 simultaneous farm operations validated
-- ⚡ **Real-Time Performance**: 1-2 second end-to-end latency confirmed
+**Overall Assessment:** the repository has strong bounded software Proof and buyer-demonstrable synthetic workflow evidence, but it must remain described as a software Proof/prototype unless later destinations establish additional trust with their own executable evidence. Historical small-run metrics must not be promoted into production or performance claims.
 
 ---
 
@@ -1048,13 +1035,16 @@ TerraNeuron Smart Farm Platform demonstrates a **production-validated, event-dri
 
 | Version | Date | Changes | Author |
 |---------|------|---------|--------|
-| v1.0.0 | Dec 9, 2025 | Initial project summary with E2E validation results | TerraNeuron Team |
+| v1.0.0 | Dec 9, 2025 | Initial project summary with E2E run results | TerraNeuron Team |
 | v2.0.0 | Dec 2025 | Added RAG/Hybrid AI architecture documentation | TerraNeuron Team |
-| v2.1.0 | Jan 2026 | Phase 2.A (CloudEvents, Safety) + Phase 3 (JWT Auth) complete | TerraNeuron Team |
+| v2.1.0 | Jan 2026 | Phase 2.A (CloudEvents, Safety) + Phase 3 (JWT Auth) implementation snapshot | TerraNeuron Team |
+| P0 reconciliation | Sep 2026 | Qualified historical claims against authoritative bounded-proof status | TerraNeuron progression |
 
 ---
 
-## 🆕 Phase 2.A & Phase 3 Implementation Summary (January 2026)
+## 🆕 Phase 2.A & Phase 3 Implementation Snapshot (January 2026)
+
+> Historical implementation snapshot only. Terms such as “safety” and “security” below refer to implemented software logic/configuration, not physical safety, production security certification, or field validation.
 
 ### Phase 2.A: Action Loop Foundation ✅
 
@@ -1063,28 +1053,28 @@ TerraNeuron Smart Farm Platform demonstrates a **production-validated, event-dri
 - Mandatory fields: `specversion`, `type`, `source`, `id`, `time`, `data`
 - New Python models in `cloudevents_models.py`
 
-**4-Layer Safety Validation System:**
+**4-Layer Software Safety Validation System:**
 ```
 ┌─────────────────────────────────────────────┐
 │ Layer 1: Logical Validation                 │
 │   - Parameter bounds, action compatibility  │
 ├─────────────────────────────────────────────┤
 │ Layer 2: Context Validation                 │
-│   - Current farm state, environmental check │
+│   - Software-reported farm state checks     │
 ├─────────────────────────────────────────────┤
 │ Layer 3: Permission Validation              │
 │   - Human approval status, authority level  │
 ├─────────────────────────────────────────────┤
 │ Layer 4: Device State Validation            │
-│   - Device online status, capability check  │
+│   - Software-reported device state/capability│
 └─────────────────────────────────────────────┘
 ```
 
-**Audit Logging (Event-Sourcing):**
+**Audit Logging (software event history):**
 - FarmOS Log type: activity
 - Event types: PLAN_CREATED, PLAN_VALIDATED, PLAN_APPROVED, PLAN_REJECTED, COMMAND_EXECUTED
 
-### Phase 3: Production Security ✅
+### Phase 3: Security Implementation Snapshot ✅
 
 **JWT Authentication:**
 - Access tokens: 24 hours expiry (HS256)
@@ -1103,7 +1093,9 @@ TerraNeuron Smart Farm Platform demonstrates a **production-validated, event-dri
 - `operator` / `operator123` (ROLE_OPERATOR)
 - `viewer` / `viewer123` (ROLE_VIEWER)
 
+These are local/test credentials documented for historical repository context and are not production credential/provisioning evidence.
+
 ---
 
 **End of Technical Summary**  
-*For questions or clarifications, please refer to CONTRIBUTING.md or contact the project maintainers.*
+*For current evidence scope and limitations, read `STATUS.md` first.*
