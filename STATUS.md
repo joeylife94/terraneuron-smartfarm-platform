@@ -1,10 +1,11 @@
 # TerraNeuron — Implementation Status
 
-> **Last updated:** 2026-09-03  
-> **Status:** `PROOF v1.0 FREEZE / HUMAN REVIEW PASSED — D1+D2 SOFTWARE DESTINATIONS REACHED / HUMAN REVIEW NEXT DESTINATION`  
+> **Last updated:** 2026-09-11  
+> **Status:** `PROOF v1.0 FREEZE / HUMAN REVIEW PASSED — D1+D2 SOFTWARE DESTINATIONS REACHED / P0 ACCEPTED / D3 ACTIVE`  
 > **Authority:** authoritative implementation status / execution contract for this repository  
 > **Proof v1.0 implementation baseline SHA:** `7ef9315890f1e2c06345bce94fb3334c2cff1c0e`  
-> **Accepted progression through D2:** `9ffee0a63a183304a07b5f22a7ec94d16068db4e`
+> **Accepted progression through D2:** `9ffee0a63a183304a07b5f22a7ec94d16068db4e`  
+> **Accepted P0 truthfulness reconciliation:** `b24a245e12cb02a58e68fab486413b097d6241de`
 
 When documents disagree, use:
 
@@ -51,6 +52,7 @@ The following bounded progression slices were accepted by exact-head executable 
 | #95 / #96 | `6128196409783ef3069531d3e5a35ea34469ce36` | `ef3daf50c7c10412b7fbd120bc0410b1471ec861` | stale `PROCESSING` outbox claim recovery after Terra-Ops restart, preserving command identity |
 | #97 / #98 | `1870f6cd1917df9b26e1485ac73901a4276aa9ca` | `bc04848b82e4a5d2319263a966e19cd9178d95c1` | real Kafka publication retry exhaustion → outbox `DEAD` → plan `DISPATCH_FAILED / OUTBOX_DEAD_LETTER`, with later scans preserving terminal truth |
 | #99 / #100 | `45acaddd0ff70210284db2d49a8dd5ccfe370d55` | `9ffee0a63a183304a07b5f22a7ec94d16068db4e` | coherent Synthetic Farm Operations Pilot: synthetic starting state → operator-visible decision/approval → MQTT actor → correlated `EXECUTED` → chronological audit → evidence artifact/handoff |
+| #101 / #102 | `5a2cebc59d739dd686cfbd4742f3ff92a18ab4ad` | `b24a245e12cb02a58e68fab486413b097d6241de` | buyer-facing truthfulness reconciliation: stale production/throughput/field-readiness claims qualified to bounded software-Proof semantics without adding capability claims |
 
 ## Milestone #24 reconciliation — outbox retry exhaustion terminal failure
 
@@ -116,6 +118,30 @@ D2 establishes a coherent, reusable, buyer-demonstrable **synthetic software ope
 
 D2 does not verify or claim physical actuator truth, manufacturer/controller semantics, production MQTT identity/auth/TLS, field safety/interlocks, unattended autonomous control, production HA/DR/load maturity, certification, or that synthetic/device-reported software state equals physical equipment state.
 
+## P0 reconciliation — Buyer-facing Truthfulness Reconciliation
+
+### `P0 ACCEPTED — BUYER-FACING CLAIMS RECONCILED TO BOUNDED SOFTWARE-PROOF TRUTH`
+
+### Changed
+
+- `PROJECT_SUMMARY.md` was reconciled against this authoritative status boundary;
+- stale present-tense `Production-Validated` / `production-ready` wording was replaced or qualified;
+- December 2025 run counts and latency values were retained only as historical local/synthetic observations rather than production/performance evidence;
+- old throughput/capacity language was qualified as unvalidated historical planning material;
+- explicit non-claims were preserved for physical devices/safety, manufacturer semantics, production MQTT/PKI, HA/DR/load, unattended control, certification, and public production readiness.
+
+### Actually Executed / Verified
+
+- PR #102 accepted exact head `5a2cebc59d739dd686cfbd4742f3ff92a18ab4ad` produced **24/24 PR-triggered workflow runs with `completed / success`**, including `CI/CD Pipeline`, `Synthetic Farm Operations Pilot`, `Software Proof Handoff`, and the accepted D1 regression set;
+- the PR had no unresolved review threads before merge;
+- PR #102 was squash-merged with expected-head guard as `b24a245e12cb02a58e68fab486413b097d6241de`;
+- Issue #101 closed completed;
+- P0 changed documentation truthfulness only and did not create a new product capability claim.
+
+### Not Verified by P0
+
+P0 does not establish authenticated device identity, TLS, broker authorization, production PKI/provisioning, physical-device truth, manufacturer semantics, field safety, HA/DR/load maturity, unattended control, or certification.
+
 ## Not Verified / limitations
 
 All v1.0 non-claims remain in force. The accepted baseline and progression milestones do **not** verify or claim:
@@ -134,19 +160,25 @@ The synthetic device harness, D1 progression slices, and D2 pilot establish soft
 
 ## Remaining risks / destination gates
 
-- D1 and D2 are accepted bounded software destinations; another isolated ACK/outbox/message-ordering proof is not justified absent a newly observed blocker;
+- D1 and D2 are accepted bounded software destinations; another isolated ACK/outbox/message-ordering proof is not justified absent a newly observed D3/D4 blocker;
+- P0 removed buyer-facing claim drift but did not create device-authentication evidence;
+- current Mosquitto default configuration still allows anonymous access and does not itself establish authenticated/encrypted device identity or topic authorization;
 - production security/availability boundaries remain separate from the accepted bounded software Proof;
-- production and physical-world trust boundaries remain explicitly outside the accepted software Proof;
-- the next meaningful expansion beyond this synthetic pilot would require a product decision about real hardware/manufacturer adapters, physical safety/interlocks, production messaging identity/TLS, production HA/DR/load, unattended control, or another explicitly chosen bounded destination.
+- production and physical-world trust boundaries remain explicitly outside the accepted software Proof.
 
-## Next destination gate
+## Current destination — D3
 
-### `HUMAN REVIEW — NEXT DESTINATION / PHYSICAL TRUST DECISION`
+### `D3 ACTIVE — BOUNDED AUTHENTICATED DEVICE MESSAGING PILOT`
 
-No further automatic progression milestone is selected. D1 and D2 have reached their bounded software destinations. Advancing toward real devices, manufacturer-specific adapters/semantics, physical safety/interlocks, production MQTT identity/TLS, production HA/DR/load, or unattended autonomous control requires separate evidence and an explicit human/product decision; those claims must not be inferred from D1/D2.
+D3 is human-approved as a **software-only synthetic trust destination**. The selected scope is to reuse the existing Mosquitto, Terra-Sense bridge, synthetic MQTT actor, D2 operator/approval/safety-gate path, command correlation, and audit flow while introducing a deterministic authenticated + encrypted MQTT proof boundary suitable for local/CI execution.
+
+D3 must prove, by exact-head executable evidence, authenticated synthetic device A own-topic success, unauthenticated denial, cross-device impersonation denial, payload/topic identity protection, approval + two-stage software safety gate before delivery, correlated terminal ACK/audit, and applicable D1/D2 gates GREEN.
+
+D3 does **not** authorize or imply production PKI, certificate rotation, manufacturing provisioning, TPM/HSM, real physical-device identity, field-network security, production MQTT infrastructure, physical actuator truth, field safety, or certification.
 
 ## Exact Next Action
 
-- human/product review chooses whether TerraNeuron should remain frozen at the accepted D1+D2 bounded software-Proof/pilot boundary or open a separately scoped next destination;
-- if a next destination is approved, define its explicit trust/evidence boundary before creating any new Issue/PR;
-- do not reopen command-message permutation work merely to accumulate more tests.
+- open one bounded D3 Issue using current repository assets and current Mosquitto/Terra-Sense configuration as the acceptance contract;
+- implement one coherent authenticated+encrypted synthetic messaging pilot with repository-owned test credentials/identity material that is safe for public CI and not reusable as production secrets;
+- require exact-head executable success for authenticated device-A own-topic flow, unauthenticated denial, cross-device denial, payload/topic identity protection, preserved D2 approval/safety/ACK/audit journey, and applicable regression gates before D3 acceptance;
+- after D3 acceptance, reconcile STATUS and automatically begin D4; do not cross into real hardware/manufacturer/physical trust claims.
