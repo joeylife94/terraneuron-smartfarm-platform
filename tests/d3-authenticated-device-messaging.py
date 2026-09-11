@@ -89,7 +89,7 @@ def main() -> int:
     bridge_password = os.environ["D3_BRIDGE_PASSWORD"]
     device_a_password = os.environ["D3_DEVICE_A_PASSWORD"]
     device_b_password = os.environ["D3_DEVICE_B_PASSWORD"]
-    plan_id = f"plan-d3-{uuid.uuid4().hex[:10]}"
+    plan_id = f"plan-d3{uuid.uuid4().hex[:10]}"
     trace_id = f"trace-d3-{uuid.uuid4().hex[:10]}"
     topic_a_status = f"terra/devices/{FARM_ID}/{ASSET_A}/status"
 
