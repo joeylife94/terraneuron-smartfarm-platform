@@ -13,6 +13,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 import uuid
 from pathlib import Path
 from typing import Any, Dict
@@ -39,6 +40,35 @@ def load(name: str, path: Path):
 
 cl = load("command_lifecycle", ROOT / "command-lifecycle-test.py")
 d2 = load("synthetic_pilot", ROOT / "synthetic-farm-operations-pilot.py")
+
+
+def wait_for_d4_device_state(actor: subprocess.Popen[str]) -> Dict[str, Any]:
+    """Observe this D4 fixture without changing the D1 helper's fan contract."""
+    deadline = time.monotonic() + cl.POLL_TIMEOUT_SECONDS
+    latest: Dict[str, Any] = {}
+    while time.monotonic() < deadline:
+        if actor.poll() is not None:
+            stdout, stderr = actor.communicate()
+            raise cl.CommandLifecycleFailure(
+                "D4 synthetic actor exited before conformance state was observable: "
+                f"returncode={actor.returncode} stdout={stdout!r} stderr={stderr!r}"
+            )
+
+        latest = cl.fetch_device_state(FARM_ID, ASSET_ID)
+        attributes: Dict[str, Any] = latest.get("attributes") or {}
+        if (
+            latest.get("state") == "online"
+            and latest.get("deviceType") == "heater"
+            and attributes.get("adapterId") == ADAPTER_ID
+            and attributes.get("modelId") == MODEL_ID
+        ):
+            return latest
+        time.sleep(cl.POLL_INTERVAL_SECONDS)
+
+    raise cl.CommandLifecycleFailure(
+        "timed out waiting for D4 synthetic adapter/model state: "
+        f"farm={FARM_ID} asset={ASSET_ID} latest={latest}"
+    )
 
 
 def main() -> int:
@@ -70,7 +100,7 @@ def main() -> int:
 
     try:
         print("[2/6] Observe adapter/model identity through MQTT-ingested device state")
-        starting_state = cl.wait_for_device_state(FARM_ID, ASSET_ID)
+        starting_state = wait_for_d4_device_state(actor)
         attributes: Dict[str, Any] = starting_state.get("attributes") or {}
         if attributes.get("adapterId") != ADAPTER_ID or attributes.get("modelId") != MODEL_ID:
             raise cl.CommandLifecycleFailure(
