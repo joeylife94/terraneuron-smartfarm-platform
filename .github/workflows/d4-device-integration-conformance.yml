@@ -11,9 +11,16 @@ permissions:
 
 jobs:
   d4-device-integration-conformance:
-    name: Synthetic Adapter Capability Conformance
+    name: Synthetic Adapter Integration Conformance
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 30
+    env:
+      JWT_SECRET: DEMO_ONLY_D4_CI_JWT_SECRET_32_CHARS_MIN
+      E2E_POLL_TIMEOUT_SECONDS: '90'
+      E2E_POLL_INTERVAL_SECONDS: '1'
+      D3_BRIDGE_PASSWORD: d4-ci-bridge-password
+      D3_DEVICE_A_PASSWORD: d4-ci-device-a-password
+      D3_DEVICE_B_PASSWORD: d4-ci-device-b-password
 
     steps:
       - name: Checkout exact source revision
@@ -32,42 +39,46 @@ jobs:
         with:
           gradle-version: '8.5'
 
-      - name: Execute bounded synthetic adapter contract
+      - name: Validate D4 proof syntax and compose boundary
+        run: |
+          python -m py_compile tests/command-lifecycle-test.py
+          python -m py_compile tests/synthetic-mqtt-device.py
+          python -m py_compile tests/synthetic-farm-operations-pilot.py
+          python -m py_compile tests/d3-authenticated-device-messaging.py
+          python -m py_compile tests/d4-device-integration-conformance.py
+          bash -n tests/d3-authenticated-device-messaging.sh
+          docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.d3.yml config --quiet
+
+      - name: Install proof dependency
+        run: pip install requests
+
+      - name: Execute bounded synthetic adapter capability contract
         working-directory: services/terra-sense
         run: >-
           gradle test --no-daemon --stacktrace
           --tests com.terraneuron.sense.service.SyntheticConformanceDeviceCapabilityResolverTest
 
-      - name: Emit machine-readable bounded conformance evidence
+      - name: Start accepted D3 authenticated boundary and verify regression
         shell: bash
         run: |
-          mkdir -p artifacts
-          cat > artifacts/d4-device-integration-conformance.json <<'JSON'
-          {
-            "proofBoundary": "repository-owned synthetic device adapter capability conformance",
-            "adapterId": "terraneuron-synthetic-conformance-v1",
-            "modelId": "tn-synth-climate-01",
-            "verifiedByExecutableTest": {
-              "declaredCapabilitiesOnly": true,
-              "supportedActionAdmittedByExistingSafetyPolicy": true,
-              "unsupportedActionFailsClosed": true,
-              "unknownSyntheticModelFailsClosedWithoutGenericFallback": true,
-              "declaredAdjustParameterRequired": true
-            },
-            "transportRegressionEvidence": "D3 Authenticated Device Messaging Pilot runs independently on the same exact PR head",
-            "nonClaims": [
-              "real manufacturer semantics",
-              "real hardware or physical actuator truth",
-              "physical safety/interlocks/E-stop",
-              "production provisioning/PKI/secrets lifecycle",
-              "unattended autonomous control",
-              "production HA/DR/load/public deployment",
-              "certification"
-            ]
-          }
-          JSON
+          set -o pipefail
+          TERRANEURON_D3_KEEP_STACK=1 bash tests/d3-authenticated-device-messaging.sh 2>&1 | tee d4-d3-boundary-output.log
 
-      - name: Upload bounded conformance evidence
+      - name: Execute adapter/model through authenticated MQTT integration path
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 tests/d4-device-integration-conformance.py 2>&1 | tee d4-device-integration-conformance-output.log
+
+      - name: Capture diagnostics without runtime credentials
+        if: always()
+        shell: bash
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.d3.yml ps --all > d4-compose-ps.txt 2>&1 || true
+          docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.d3.yml logs --no-color > d4-compose.log 2>&1 || true
+          rm -rf .d3-runtime
+
+      - name: Upload bounded conformance evidence and diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -76,5 +87,16 @@ jobs:
           retention-days: 14
           path: |
             artifacts/d4-device-integration-conformance.json
+            artifacts/d3-authenticated-device-messaging.json
+            d4-device-integration-conformance-output.log
+            d4-d3-boundary-output.log
+            d4-compose-ps.txt
+            d4-compose.log
             services/terra-sense/build/test-results/test/
             services/terra-sense/build/reports/tests/test/
+
+      - name: Stop Docker Compose
+        if: always()
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.d3.yml down -v || true
+          rm -rf .d3-runtime
