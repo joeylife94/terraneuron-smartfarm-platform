@@ -28,7 +28,7 @@ class SyntheticConformanceDeviceCapabilityResolverTest {
         DeviceCapabilityResolver.DeviceCapabilities capabilities = resolver.resolve(state(
                 SyntheticConformanceDeviceCapabilityResolver.MODEL_ID)).orElseThrow();
 
-        assertThat(capabilities.actionCategories()).containsExactly("climate");
+        assertThat(capabilities.actionCategories()).containsExactly("heating");
         assertThat(capabilities.actionTypes()).containsExactlyInAnyOrder("turn_on", "turn_off", "adjust");
         assertThat(capabilities.adjustParameterAnyOf()).containsExactly("target_temperature");
     }
@@ -65,15 +65,15 @@ class SyntheticConformanceDeviceCapabilityResolverTest {
                 10);
 
         registry.save(state(SyntheticConformanceDeviceCapabilityResolver.MODEL_ID));
-        DeviceSafetyDecision allowed = policy.evaluate(request("climate", "turn_on", Map.of()));
+        DeviceSafetyDecision allowed = policy.evaluate(request("heating", "turn_on", Map.of()));
         assertThat(allowed.allowed()).isTrue();
 
-        DeviceSafetyDecision unsupported = policy.evaluate(request("climate", "calibrate", Map.of()));
+        DeviceSafetyDecision unsupported = policy.evaluate(request("heating", "alert_only", Map.of()));
         assertThat(unsupported.allowed()).isFalse();
         assertThat(unsupported.reasonCode()).isEqualTo(DeviceSafetyReason.ACTION_UNSUPPORTED);
 
         registry.save(state("tn-synth-unknown"));
-        DeviceSafetyDecision unknown = policy.evaluate(request("climate", "turn_on", Map.of()));
+        DeviceSafetyDecision unknown = policy.evaluate(request("heating", "turn_on", Map.of()));
         assertThat(unknown.allowed()).isFalse();
         assertThat(unknown.reasonCode()).isEqualTo(DeviceSafetyReason.ACTION_CATEGORY_MISMATCH);
     }
@@ -91,11 +91,11 @@ class SyntheticConformanceDeviceCapabilityResolverTest {
                 600,
                 10);
 
-        DeviceSafetyDecision missing = policy.evaluate(request("climate", "adjust", Map.of("target_value", 22)));
+        DeviceSafetyDecision missing = policy.evaluate(request("heating", "adjust", Map.of("target_value", 22)));
         assertThat(missing.allowed()).isFalse();
         assertThat(missing.reasonCode()).isEqualTo(DeviceSafetyReason.ADJUST_PARAMETERS_MISSING);
 
-        assertThat(policy.evaluate(request("climate", "adjust", Map.of("target_temperature", 22))).allowed())
+        assertThat(policy.evaluate(request("heating", "adjust", Map.of("target_temperature", 22))).allowed())
                 .isTrue();
     }
 
