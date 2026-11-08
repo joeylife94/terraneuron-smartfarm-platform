@@ -1,13 +1,14 @@
 # TerraNeuron — Implementation Status
 
-> **Last updated:** 2026-09-12  
+> **Last updated:** 2026-11-08  
 > **Status:** `PROOF v1.0 FREEZE / HUMAN REVIEW PASSED — D1+D2+D3+D4 SOFTWARE DESTINATIONS REACHED / P0 ACCEPTED / HUMAN REVIEW — PHYSICAL TRUST DECISION`  
 > **Authority:** authoritative implementation status / execution contract for this repository  
 > **Proof v1.0 implementation baseline SHA:** `7ef9315890f1e2c06345bce94fb3334c2cff1c0e`  
 > **Accepted progression through D2:** `9ffee0a63a183304a07b5f22a7ec94d16068db4e`  
 > **Accepted P0 truthfulness reconciliation:** `b24a245e12cb02a58e68fab486413b097d6241de`  
 > **Accepted D3 authenticated messaging pilot:** `df63cd688d1ef1856ab8bd1a82bf95ea9e648d61`  
-> **Accepted D4 device integration conformance pilot:** `7eb6f433e9c1158002da6bf1c090a68fca1b95f1`
+> **Accepted D4 device integration conformance pilot:** `7eb6f433e9c1158002da6bf1c090a68fca1b95f1`  
+> **Security maintenance (candidate, pending Human Acceptance):** dependency-gate recovery `19064fe135538969ebd441ad498305c0e8afc6d9` (PR #107)
 
 When documents disagree, use:
 
@@ -119,6 +120,44 @@ D4 does **not** validate or claim any real Samsung/LG/other manufacturer semanti
 
 The D4 fixture is intentionally repository-owned and synthetic. Its purpose is to define the software conformance contract a future real adapter would have to satisfy; it is not evidence that any real adapter or physical device satisfies that contract.
 
+## Security maintenance — dependency gate recovery
+
+### `SECURITY MAINTENANCE CANDIDATE — PENDING HUMAN ACCEPTANCE`
+
+Human-authorized bounded security maintenance. It is **not** a D5 destination, adds no product capability, and does not change the security-scan policy or any accepted Proof boundary. It is not accepted until Human Acceptance merges it.
+
+### Trigger
+
+The scheduled `Security Scan` on `main` @ `d197cc03d9e0798390754b2d16490def0110a96e` turned red on 2026-10-05 (run `37260618503`) and stayed red through run `41383009070` (2026-11-02) with no code change: newly published advisories flagged **26 fixable HIGH/CRITICAL findings** (24 HIGH, 2 CRITICAL) against three direct pins in `services/terra-cortex/requirements.txt`: PyJWT 2.13.0 (7), pypdf 6.15.0 (18), sentence-transformers 2.2.2 (1 CRITICAL RCE, CVE-2026-68770).
+
+### Changed (candidate dependency commit `19064fe135538969ebd441ad498305c0e8afc6d9`, PR #107)
+
+- `PyJWT 2.13.0 → 2.15.1`, `pypdf 6.15.0 → 6.21.4`, `sentence-transformers 2.2.2 → 5.6.1`; `huggingface-hub==0.25.2` kept;
+- resolved graph otherwise identical on Python 3.11 (CI) and 3.10 (Docker): torch, transformers 4.48.3, tokenizers, numpy, langchain*, chromadb unchanged; torchvision, nltk, sentencepiece, pillow, defusedxml no longer installed (only sentence-transformers 2.2.2 required them; no repository code imports them);
+- offline regression tests: service-JWT HS256 fail-closed verification semantics (`tests/test_service_auth.py`), PDF extraction/malformed-PDF handling and repository embedding configuration on a deterministic local model in the all-MiniLM-L6-v2 module layout (`tests/test_knowledge_dependency_contract.py`);
+- `RAG_QUICKSTART.md` dependency checklist corrected to the actual pins.
+
+### Actually Executed / Verified
+
+- local Trivy 0.70.0 with the exact enforced gate command and same-day DB: `main` exit 1 / 26 findings (reproduces CI); candidate exit 0 / 0 findings. All-severity report: every PyJWT and pypdf finding cleared;
+- differential baseline-vs-candidate probe over the repository code paths: service JWT byte-identical, 12/12 verify/reject cases identical (`alg=none`, disallowed alg, wrong secret/audience/issuer, expiry, tampering, PEM public key as HMAC secret), embeddings bit-identical (max abs diff 0.0), PDF extraction and malformed-PDF errors identical;
+- exact-head PR CI on `19064fe…`: **26/26 workflow runs `completed / success`** on first attempt, including `CI/CD Pipeline` run `42480234885` (dependency gate: 0 findings; terra-cortex 73 passed / 0 skipped on Python 3.11; Java 17 terra-sense/terra-ops build+test; dashboard build; E2E neural-flow and command-lifecycle golden path with the terra-cortex Python 3.10 image built from the new pins), `D3 Authenticated Device Messaging Pilot` run `42480234838`, `D4 Device Integration Conformance Pilot` run `42480234913`, `Synthetic Farm Operations Pilot` run `42480234870`, `Software Proof Handoff` run `42480234947`, and all 21 D1 regression proof workflows.
+
+Only the CI/CD Python and E2E jobs build and run terra-cortex. The D1–D4, D2 pilot and handoff workflows start infrastructure, terra-sense and terra-ops only; they show those accepted invariants still hold on the candidate head, not that they exercise the changed dependencies.
+
+### Not Verified
+
+- real `sentence-transformers/all-MiniLM-L6-v2` weights were not loaded in verification evidence available to this review (Hugging Face Hub unreachable from the verification environment; CI container logs are retained only as artifacts). Equivalence was shown bit-exact on a local model with the same module pipeline;
+- local Java build was infrastructure-blocked (Maven Central HTTP 429); Java evidence is the CI run above. Java code is unchanged.
+
+### Known limitations and residual risks (pre-existing, unchanged by this candidate, outside the enforced gate)
+
+- `chromadb 0.4.22`: CRITICAL CVE-2026-45833 and HIGH CVE-2026-45830 with **no fixed version**; visible in SARIF, excluded from blocking by the documented `ignore-unfixed` policy;
+- `chromadb 0.4.22` cannot run on the resolved `numpy 2.x`, so the Chroma vector-store half of the RAG path already fails on `main` and is caught as "RAG disabled"; embedding-model loading still occurs at startup before that failure;
+- the repository gate scans direct pins only (no lockfile). The resolved transitive graph carries fixable HIGH findings in `starlette 0.35.1` (via `fastapi 0.109.0`), `transformers 4.48.3` (fixes only in 5.x) and `langchain-core 0.3.86` (fix in 1.2.22); remediation needs separate major-version decisions;
+- the embedding model revision is not pinned (bare name resolves to the latest `sentence-transformers/all-MiniLM-L6-v2`);
+- `langchain 0.3.30` MEDIUM CVE-2026-55443 (fix in 1.3.9) is below the gate threshold.
+
 ## Not Verified / limitations
 
 All v1.0 non-claims remain in force. The accepted baseline and progression milestones do **not** verify or claim:
@@ -152,3 +191,5 @@ No D5 milestone may be selected automatically. Any next destination involving re
 `HUMAN REVIEW — PHYSICAL TRUST DECISION`
 
 Do not open another bounded development Issue/PR and do not continue scheduled software progression until a human explicitly authorizes the next destination and its trust boundary.
+
+Separately, the human-authorized security-maintenance candidate (PR #107, see "Security maintenance — dependency gate recovery") awaits Human Acceptance. It restores the existing dependency gate and does not open D5 or change this destination gate.
