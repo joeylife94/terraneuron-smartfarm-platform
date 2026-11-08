@@ -26,6 +26,38 @@ dedicated pull request and must identify the exact vulnerability, affected compo
 technical rationale, owner, and expiration date. Severity-wide or package-wide exclusions are
 not acceptable substitutes for remediation.
 
+## Monitored unfixed findings
+
+These findings appear in SARIF only. They are not suppressed and they do not block the gate,
+because no fixed version exists. Each one is reassessed when a fix is published or when the
+affected component's deployment changes.
+
+### chromadb 0.4.22 (terra-cortex)
+
+Assessed 2026-11-08. Both advisories affect chromadb 0.4.17 through 1.5.9, which was the latest
+release at the time of assessment, so upgrading chromadb does not remediate either one.
+
+| Advisory | Severity | Precondition | terra-cortex exposure |
+| --- | --- | --- | --- |
+| CVE-2026-45833 / GHSA-36p7-vc44-83pf | CRITICAL 9.4 | Authenticated client with `UPDATE_COLLECTION` calls the Chroma server collection API (`/api/v2/tenants/.../collections/{id}`) with an attacker-chosen model repository and `trust_remote_code` | Not reachable |
+| CVE-2026-45830 / GHSA-2wm9-hf6c-p5cr | HIGH 8.8 | Authenticated Chroma server client uses a collection UUID to cross tenant boundaries | Not reachable |
+
+Rationale:
+
+- terra-cortex uses chromadb only as an embedded, in-process store. The
+  `langchain_community` `Chroma(persist_directory=...)` wrapper creates a local persistent
+  client (`chromadb.Client(Settings(is_persistent=True))`) in `src/rag_advisor.py`,
+  `src/ingest_knowledge.py` and `src/knowledge_collector.py`.
+- No Chroma HTTP server runs anywhere. No compose service exists for it and no code uses
+  `HttpClient` or `chroma run`. Only terra-cortex's own code calls chromadb, and its single
+  default tenant gives no tenant boundary to cross.
+- The wrapper passes `embedding_function=None` to chromadb. Embeddings are computed by
+  `HuggingFaceEmbeddings` with the hardcoded `all-MiniLM-L6-v2` model, with no
+  `trust_remote_code` and no request-controlled model name.
+
+Reassess before deploying Chroma as a network service, before exposing collection management
+over HTTP, or when the advisories publish a fixed version.
+
 ## Scope and limits
 
 - The scan is a Trivy filesystem dependency scan of the checked-out repository.
