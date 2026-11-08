@@ -160,9 +160,9 @@ docker exec -it terra-cortex pip list | grep -E "langchain|chromadb|sentence"
 ```
 Should show:
 - chromadb==0.4.22
-- langchain==0.1.0
-- langchain-community==0.0.10
-- sentence-transformers==2.2.2
+- langchain==0.3.30
+- langchain-community==0.3.27
+- sentence-transformers==5.6.1
 
 ✅ **Knowledge Base Ingested**
 ```bash
