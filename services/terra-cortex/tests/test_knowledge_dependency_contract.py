@@ -8,7 +8,6 @@ layout as the public all-MiniLM-L6-v2 repository (Transformer -> mean
 Pooling -> Normalize).
 """
 
-import inspect
 import json
 import math
 from pathlib import Path
@@ -172,18 +171,73 @@ def test_repository_embedding_configuration_returns_normalized_deterministic_vec
     assert first[0] != pytest.approx(first[1], abs=1e-3)
 
 
-def test_embedding_model_loading_keeps_remote_code_disabled():
+HUB_REPO_CACHE_DIR = "models--sentence-transformers--all-MiniLM-L6-v2"
+
+
+def _hub_cache_with(model_dir, cache_root, plant_custom_module=None):
+    """Lay out model_dir as a cached Hub snapshot of sentence-transformers/all-MiniLM-L6-v2."""
+    import shutil
+
+    revision = "0" * 40
+    snapshot = cache_root / HUB_REPO_CACHE_DIR / "snapshots" / revision
+    shutil.copytree(model_dir, snapshot)
+    (cache_root / HUB_REPO_CACHE_DIR / "refs").mkdir(parents=True)
+    (cache_root / HUB_REPO_CACHE_DIR / "refs" / "main").write_text(revision, encoding="utf-8")
+    if plant_custom_module is not None:
+        (snapshot / "modeling_planted.py").write_text(
+            "import pathlib\n"
+            f"pathlib.Path({str(plant_custom_module)!r}).write_text('executed')\n"
+            "from sentence_transformers.models import Normalize\n"
+            "class PlantedNormalize(Normalize):\n"
+            "    pass\n",
+            encoding="utf-8",
+        )
+        modules = json.loads((snapshot / "modules.json").read_text(encoding="utf-8"))
+        modules[-1]["type"] = "modeling_planted.PlantedNormalize"
+        (snapshot / "modules.json").write_text(json.dumps(modules), encoding="utf-8")
+    return cache_root
+
+
+def test_bare_embedding_model_name_resolves_to_sentence_transformers_hub_repo(
+    tiny_minilm_layout_model, tmp_path, monkeypatch
+):
     from sentence_transformers import SentenceTransformer
 
-    signature = inspect.signature(SentenceTransformer.__init__)
-    assert signature.parameters["trust_remote_code"].default is False
+    # rag_advisor/ingest_knowledge/knowledge_collector load the bare name
+    # "all-MiniLM-L6-v2"; it must resolve to the cached Hub repository
+    # sentence-transformers/all-MiniLM-L6-v2 (offline: local_files_only).
+    cache = _hub_cache_with(tiny_minilm_layout_model, tmp_path / "hf-cache")
+    monkeypatch.chdir(tmp_path)
+
+    model = SentenceTransformer(
+        "all-MiniLM-L6-v2", cache_folder=str(cache), local_files_only=True, device="cpu"
+    )
+
+    assert [type(module).__name__ for module in model] == ["Transformer", "Pooling", "Normalize"]
+    assert len(model.encode(PAGES[0])) == 32
+
+
+def test_hub_model_custom_module_is_not_executed_without_trust_remote_code(
+    tiny_minilm_layout_model, tmp_path, monkeypatch
+):
+    from sentence_transformers import SentenceTransformer
+
+    marker = tmp_path / "planted-code-executed"
+    cache = _hub_cache_with(tiny_minilm_layout_model, tmp_path / "hf-cache", plant_custom_module=marker)
+    monkeypatch.chdir(tmp_path)
+
+    try:
+        model = SentenceTransformer(
+            "all-MiniLM-L6-v2", cache_folder=str(cache), local_files_only=True, device="cpu"
+        )
+    except (ImportError, ValueError, OSError):
+        model = None
+
+    assert not marker.exists()
+    if model is not None:
+        assert "PlantedNormalize" not in [type(module).__name__ for module in model]
+
+
+def test_repository_code_never_opts_into_remote_code():
     for source in SRC_DIR.glob("*.py"):
         assert "trust_remote_code" not in source.read_text(encoding="utf-8"), source.name
-
-
-def test_bare_embedding_model_name_resolves_to_sentence_transformers_org():
-    from sentence_transformers import SentenceTransformer
-
-    # rag_advisor/ingest_knowledge/knowledge_collector use the bare name
-    # "all-MiniLM-L6-v2"; it must keep resolving to the same Hub repository.
-    assert SentenceTransformer.default_huggingface_organization == "sentence-transformers"

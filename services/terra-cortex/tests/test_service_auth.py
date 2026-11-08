@@ -1,5 +1,6 @@
 import asyncio
 import json
+import uuid
 
 import jwt
 import pytest
@@ -144,6 +145,24 @@ def test_service_token_header_is_pinned_to_hs256():
     token = ServiceTokenProvider(config()).get_token(now=1_000)
 
     assert jwt.get_unverified_header(token) == {"alg": "HS256", "typ": "JWT"}
+
+
+# Exact compact JWS for fixed inputs. Terra-Ops (jjwt) verifies these bytes, so a
+# PyJWT upgrade must not change header/claim serialization or the HS256 signature.
+GOLDEN_SERVICE_TOKEN = (
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+    "eyJpc3MiOiJ0ZXJyYW5ldXJvbi1pbnRlcm5hbCIsImF1ZCI6InRlcnJhLW9wcyIsInN1YiI6InRlcnJhLWNvcnRleCIsInR5cGUiOiJzZXJ2aWNlIiwic2NvcGUiOiJjcm9wOnJlYWQiLCJpYXQiOjEwMDAsIm5iZiI6OTk5LCJleHAiOjEwNjAsImp0aSI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMSJ9."
+    "2ZEeKTWhcDSDf2_7XYsDuepiuQWLF0kyzrPpiowfLAY"
+)
+
+
+def test_service_token_wire_format_is_stable_for_fixed_inputs(monkeypatch):
+    monkeypatch.setattr(
+        "src.service_auth.uuid.uuid4",
+        lambda: uuid.UUID("00000000-0000-4000-8000-000000000001"),
+    )
+
+    assert ServiceTokenProvider(config()).get_token(now=1_000) == GOLDEN_SERVICE_TOKEN
 
 
 @pytest.mark.parametrize(

@@ -25,7 +25,7 @@ langchain==0.3.30                # RAG orchestration; fixes CVE-2026-45134
 langchain-community==0.3.27      # Integrations; fixes known pickle, SSRF, and XML issues
 chromadb==0.4.22                 # Local vector DB for document embeddings
 pypdf==6.21.4                    # PDF parsing; latest 6.x patch, fixes 2026 malformed-PDF DoS advisories through CVE-2026-119209
-sentence-transformers==5.6.1     # Embedding model loader (MiniLM, MPNet, etc.); fixes CVE-2026-68770 RCE
+sentence-transformers==5.6.1     # Embedding model loader; >=5.6.0 clears scanner CVE-2026-68770 (local-dir code trust only deprecated until 6.0)
 huggingface-hub==0.25.2          # Pinned; keeps the resolved transformers/tokenizers graph unchanged (ST 5.6 needs >=0.23)
 cryptography>=3.4                # Required for AES-encrypted PDF parsing (pypdf decryption)
 
