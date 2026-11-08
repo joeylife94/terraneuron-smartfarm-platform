@@ -6,20 +6,25 @@ was logged, and RAG silently stayed disabled. These tests build the real
 persistent store through the production ingestion and advisor code paths,
 swapping only the HuggingFace model for a deterministic local embedding so
 no network or model download is required.
+
+They also check that every Chroma site disables telemetry and that chromadb
+0.4.22's posthog>=6 incompatibility no longer logs ERROR records.
 """
 import hashlib
 import logging
 import math
 import re
 
+import langchain_community.embeddings
 import pytest
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 
-from src import ingest_knowledge, rag_advisor
+from src import ingest_knowledge, knowledge_collector, rag_advisor
 
 EMBEDDING_DIMENSIONS = 256
 TOKEN_PATTERN = re.compile(r"[a-z]+")
+TELEMETRY_FAILURE = "Failed to send telemetry event"
 
 
 class HashingEmbeddings(Embeddings):
@@ -81,13 +86,27 @@ def offline_embeddings(monkeypatch):
 
     monkeypatch.setattr(ingest_knowledge, "HuggingFaceEmbeddings", factory)
     monkeypatch.setattr(rag_advisor, "HuggingFaceEmbeddings", factory)
+    # KnowledgeCollector imports HuggingFaceEmbeddings lazily from this module.
+    monkeypatch.setattr(langchain_community.embeddings, "HuggingFaceEmbeddings", factory)
     yield created
+    _clear_chroma_client_cache()
+
+
+def _clear_chroma_client_cache():
     # Imported lazily so a broken chromadb install fails the tests, not collection.
     try:
         from chromadb.api.client import SharedSystemClient
     except (AttributeError, ImportError):
         return  # chromadb never loaded, so there is no cached client to release.
     SharedSystemClient.clear_system_cache()
+
+
+def _telemetry_failures(caplog):
+    return [r.getMessage() for r in caplog.records if TELEMETRY_FAILURE in r.getMessage()]
+
+
+def _telemetry_enabled(vector_db):
+    return vector_db._client.get_settings().anonymized_telemetry
 
 
 def test_rag_advisor_retrieves_context_from_ingested_chroma_store(
@@ -131,3 +150,51 @@ def test_rag_advisor_stays_disabled_for_empty_chroma_store(
     assert "Failed to initialize RAG Advisor" not in caplog.text
     assert advisor.enabled is False
     assert advisor.retrieve_context("tomato heat") == []
+
+
+def test_rag_advisor_emits_no_chroma_telemetry_errors(tmp_path, offline_embeddings, caplog):
+    chroma_db_path = tmp_path / "chroma_db"
+    ingester = ingest_knowledge.KnowledgeBaseIngester(
+        knowledge_base_path=str(tmp_path / "knowledge_base"),
+        chroma_db_path=str(chroma_db_path),
+    )
+    caplog.set_level(logging.DEBUG)
+
+    ingested_db = ingester.create_vector_db(KNOWLEDGE_CHUNKS)
+    assert _telemetry_enabled(ingested_db) is False
+    # Ingestion runs in its own process in production. Drop the cached client
+    # so RAGAdvisor starts a fresh one, which emits ClientStartEvent and
+    # ClientCreateCollectionEvent. The query below emits CollectionQueryEvent.
+    _clear_chroma_client_cache()
+
+    advisor = rag_advisor.RAGAdvisor(chroma_db_path=str(chroma_db_path))
+
+    assert advisor.enabled, caplog.text
+    assert _telemetry_enabled(advisor.vector_db) is False
+    assert advisor.retrieve_context("tomato greenhouse heat stress")
+    assert _telemetry_failures(caplog) == []
+
+
+def test_rag_advisor_and_knowledge_collector_share_one_chroma_store(
+    tmp_path, offline_embeddings, monkeypatch, caplog
+):
+    # In one process, chromadb rejects a second client on the same path unless
+    # its settings match, so every Chroma site must build identical settings.
+    chroma_db_path = tmp_path / "chroma_db"
+    monkeypatch.setattr(knowledge_collector, "KNOWLEDGE_BASE_PATH", str(tmp_path / "knowledge_base"))
+    monkeypatch.setattr(knowledge_collector, "CHROMA_DB_PATH", str(chroma_db_path))
+    ingest_knowledge.KnowledgeBaseIngester(
+        knowledge_base_path=str(tmp_path / "knowledge_base"),
+        chroma_db_path=str(chroma_db_path),
+    ).create_vector_db(KNOWLEDGE_CHUNKS)
+    caplog.set_level(logging.DEBUG)
+
+    advisor = rag_advisor.RAGAdvisor(chroma_db_path=str(chroma_db_path))
+    collector = knowledge_collector.KnowledgeCollector()
+    collector._init_embeddings()
+
+    assert advisor.enabled, caplog.text
+    assert collector._vector_db is not None, caplog.text
+    assert _telemetry_enabled(collector._vector_db) is False
+    assert collector._vector_db._collection.count() == len(KNOWLEDGE_CHUNKS)
+    assert _telemetry_failures(caplog) == []

@@ -11,6 +11,8 @@ from typing import List, Optional
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 
+from src.chroma_settings import chroma_client_settings
+
 logger = logging.getLogger(__name__)
 
 
@@ -60,7 +62,8 @@ class RAGAdvisor:
             self.vector_db = Chroma(
                 persist_directory=str(self.chroma_db_path),
                 embedding_function=self.embeddings,
-                collection_name="agri_knowledge"
+                collection_name="agri_knowledge",
+                client_settings=chroma_client_settings(self.chroma_db_path),
             )
             
             # Verify DB has documents

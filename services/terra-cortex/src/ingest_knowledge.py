@@ -13,6 +13,8 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 
+from src.chroma_settings import chroma_client_settings
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -134,7 +136,8 @@ class KnowledgeBaseIngester:
             documents=chunks,
             embedding=self.embeddings,
             persist_directory=str(self.chroma_db_path),
-            collection_name="agri_knowledge"
+            collection_name="agri_knowledge",
+            client_settings=chroma_client_settings(self.chroma_db_path),
         )
         
         logger.info("✅ ChromaDB vector database created and persisted")

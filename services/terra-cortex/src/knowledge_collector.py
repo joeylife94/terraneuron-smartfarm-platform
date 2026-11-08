@@ -21,6 +21,8 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
+from src.chroma_settings import chroma_client_settings
+
 logger = logging.getLogger(__name__)
 
 # ─── Configuration ───────────────────────────────────────────────────
@@ -408,6 +410,7 @@ class KnowledgeCollector:
                 persist_directory=str(chroma_path),
                 embedding_function=self._embed_fn,
                 collection_name="agri_knowledge",
+                client_settings=chroma_client_settings(chroma_path),
             )
             logger.info("✅ Knowledge embedding engine initialized")
 
