@@ -162,7 +162,7 @@ Should show:
 - chromadb==0.4.22
 - langchain==0.3.30
 - langchain-community==0.3.27
-- sentence-transformers==5.6.1
+- sentence-transformers==6.2.0
 
 ✅ **Knowledge Base Ingested**
 ```bash

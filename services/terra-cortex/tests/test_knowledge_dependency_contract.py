@@ -6,6 +6,14 @@ HuggingFaceEmbeddings) without network access: PDFs are generated in-test and
 the embedding model is a deterministic tiny BERT saved in the same module
 layout as the public all-MiniLM-L6-v2 repository (Transformer -> mean
 Pooling -> Normalize).
+
+sentence-transformers 6.x refuses to import any module class outside the
+``sentence_transformers`` namespace unless ``trust_remote_code=True``, for local
+directories as well as Hub repositories (5.x implicitly trusted local
+directories). The repository never passes ``trust_remote_code``, so a model
+whose ``modules.json`` points at custom code must fail closed before that code
+is imported, whether it comes from the Hub cache or from a same-named directory
+in the process working directory (``/app`` in the Docker image).
 """
 
 import json
@@ -135,6 +143,10 @@ def tiny_minilm_layout_model(tmp_path_factory):
     (model_dir / "sentence_bert_config.json").write_text(
         json.dumps({"max_seq_length": 64, "do_lower_case": False}), encoding="utf-8"
     )
+    # The public repository still ships this sentence-transformers 2.0-era file.
+    (model_dir / "config_sentence_transformers.json").write_text(json.dumps({
+        "__version__": {"sentence_transformers": "2.0.0", "transformers": "4.6.1", "pytorch": "1.8.1"},
+    }), encoding="utf-8")
     (model_dir / "1_Pooling").mkdir()
     (model_dir / "1_Pooling" / "config.json").write_text(json.dumps({
         "word_embedding_dimension": 32,
@@ -171,7 +183,50 @@ def test_repository_embedding_configuration_returns_normalized_deterministic_vec
     assert first[0] != pytest.approx(first[1], abs=1e-3)
 
 
+def test_embedding_pipeline_matches_reference_mean_pooling_on_same_weights(
+    tiny_minilm_layout_model,
+):
+    import torch
+    from langchain_community.embeddings import HuggingFaceEmbeddings
+    from transformers import AutoModel, AutoTokenizer
+
+    embeddings = HuggingFaceEmbeddings(
+        model_name=str(tiny_minilm_layout_model),
+        model_kwargs={"device": "cpu"},
+        encode_kwargs={"normalize_embeddings": True},
+    )
+    vectors = embeddings.embed_documents(PAGES)
+
+    # Independent reference on the same weights: BERT forward pass, attention-masked
+    # mean pooling, L2 normalization (the all-MiniLM-L6-v2 recipe).
+    tokenizer = AutoTokenizer.from_pretrained(tiny_minilm_layout_model)
+    model = AutoModel.from_pretrained(tiny_minilm_layout_model).eval()
+    batch = tokenizer(PAGES, padding=True, truncation=True, max_length=64, return_tensors="pt")
+    with torch.no_grad():
+        hidden = model(**batch).last_hidden_state
+    mask = batch["attention_mask"].unsqueeze(-1).to(hidden.dtype)
+    reference = torch.nn.functional.normalize((hidden * mask).sum(1) / mask.sum(1), p=2, dim=1)
+
+    for vector, expected in zip(vectors, reference.tolist()):
+        assert vector == pytest.approx(expected, abs=1e-5)
+
+
 HUB_REPO_CACHE_DIR = "models--sentence-transformers--all-MiniLM-L6-v2"
+
+
+def _plant_custom_module(model_dir, marker):
+    """Point the model's last module at repository-local code that leaves a marker when imported."""
+    (model_dir / "modeling_planted.py").write_text(
+        "import pathlib\n"
+        f"pathlib.Path({str(marker)!r}).write_text('executed')\n"
+        "from sentence_transformers.models import Normalize\n"
+        "class PlantedNormalize(Normalize):\n"
+        "    pass\n",
+        encoding="utf-8",
+    )
+    modules = json.loads((model_dir / "modules.json").read_text(encoding="utf-8"))
+    modules[-1]["type"] = "modeling_planted.PlantedNormalize"
+    (model_dir / "modules.json").write_text(json.dumps(modules), encoding="utf-8")
 
 
 def _hub_cache_with(model_dir, cache_root, plant_custom_module=None):
@@ -184,17 +239,7 @@ def _hub_cache_with(model_dir, cache_root, plant_custom_module=None):
     (cache_root / HUB_REPO_CACHE_DIR / "refs").mkdir(parents=True)
     (cache_root / HUB_REPO_CACHE_DIR / "refs" / "main").write_text(revision, encoding="utf-8")
     if plant_custom_module is not None:
-        (snapshot / "modeling_planted.py").write_text(
-            "import pathlib\n"
-            f"pathlib.Path({str(plant_custom_module)!r}).write_text('executed')\n"
-            "from sentence_transformers.models import Normalize\n"
-            "class PlantedNormalize(Normalize):\n"
-            "    pass\n",
-            encoding="utf-8",
-        )
-        modules = json.loads((snapshot / "modules.json").read_text(encoding="utf-8"))
-        modules[-1]["type"] = "modeling_planted.PlantedNormalize"
-        (snapshot / "modules.json").write_text(json.dumps(modules), encoding="utf-8")
+        _plant_custom_module(snapshot, plant_custom_module)
     return cache_root
 
 
@@ -226,16 +271,40 @@ def test_hub_model_custom_module_is_not_executed_without_trust_remote_code(
     cache = _hub_cache_with(tiny_minilm_layout_model, tmp_path / "hf-cache", plant_custom_module=marker)
     monkeypatch.chdir(tmp_path)
 
-    try:
-        model = SentenceTransformer(
+    with pytest.raises(ValueError, match="trust_remote_code"):
+        SentenceTransformer(
             "all-MiniLM-L6-v2", cache_folder=str(cache), local_files_only=True, device="cpu"
         )
-    except (ImportError, ValueError, OSError):
-        model = None
 
     assert not marker.exists()
-    if model is not None:
-        assert "PlantedNormalize" not in [type(module).__name__ for module in model]
+
+
+def test_same_named_working_directory_custom_module_is_not_executed(
+    tiny_minilm_layout_model, tmp_path, monkeypatch
+):
+    import shutil
+
+    from langchain_community.embeddings import HuggingFaceEmbeddings
+
+    # A directory named like the bare model name in the process working directory
+    # shadows the Hub repository. sentence-transformers 5.x imported its custom code
+    # without trust_remote_code; 6.x must refuse before importing it.
+    workdir = tmp_path / "app"
+    shadow = workdir / "all-MiniLM-L6-v2"
+    shutil.copytree(tiny_minilm_layout_model, shadow)
+    marker = tmp_path / "planted-code-executed"
+    _plant_custom_module(shadow, marker)
+    monkeypatch.chdir(workdir)
+
+    with pytest.raises(ValueError, match="trust_remote_code"):
+        # Exact constructor arguments used by rag_advisor, ingest_knowledge and knowledge_collector.
+        HuggingFaceEmbeddings(
+            model_name="all-MiniLM-L6-v2",
+            model_kwargs={"device": "cpu"},
+            encode_kwargs={"normalize_embeddings": True},
+        )
+
+    assert not marker.exists()
 
 
 def test_repository_code_never_opts_into_remote_code():
