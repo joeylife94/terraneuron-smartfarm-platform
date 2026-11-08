@@ -8,7 +8,7 @@
 > **Accepted P0 truthfulness reconciliation:** `b24a245e12cb02a58e68fab486413b097d6241de`  
 > **Accepted D3 authenticated messaging pilot:** `df63cd688d1ef1856ab8bd1a82bf95ea9e648d61`  
 > **Accepted D4 device integration conformance pilot:** `7eb6f433e9c1158002da6bf1c090a68fca1b95f1`  
-> **Security maintenance (candidate, pending Human Acceptance):** dependency-gate recovery `16c9962085def71d8afea37cb84ed76384a5450a` (PR #107)
+> **Accepted security maintenance (bounded dependency gate):** PR #107 exact head `6660c614d137022dfab691d37e1921ab1701a1de`, squash-merged `3a630984f0bd25bdcd8c0e4ae108cea97fd6e886` on 2026-11-08; no runtime deployment
 
 When documents disagree, use:
 
@@ -122,15 +122,15 @@ The D4 fixture is intentionally repository-owned and synthetic. Its purpose is t
 
 ## Security maintenance — dependency gate recovery
 
-### `SECURITY MAINTENANCE CANDIDATE — PENDING HUMAN ACCEPTANCE`
+### `SECURITY MAINTENANCE ACCEPTED — BOUNDED DEPENDENCY GATE RECOVERY`
 
-Human-authorized bounded security maintenance. It is **not** a D5 destination, adds no product capability, and does not change the security-scan policy or any accepted Proof boundary. It is not accepted until Human Acceptance merges it.
+Human-accepted bounded security maintenance. PR #107 was squash-merged into `main` as `3a630984f0bd25bdcd8c0e4ae108cea97fd6e886` on 2026-11-08, after exact-head CI and independent code review. It is **not** a D5 destination, adds no product capability, and does not change the security-scan policy or any accepted Proof boundary. Runtime deployment and broad security assurance remain **NOT VERIFIED**.
 
 ### Trigger
 
 The scheduled `Security Scan` on `main` @ `d197cc03d9e0798390754b2d16490def0110a96e` turned red on 2026-10-05 (run `37260618503`) and stayed red through run `41383009070` (2026-11-02) with no code change: newly published advisories flagged **26 fixable HIGH/CRITICAL findings** (24 HIGH, 2 CRITICAL) against three direct pins in `services/terra-cortex/requirements.txt`: PyJWT 2.13.0 (7), pypdf 6.15.0 (18), sentence-transformers 2.2.2 (1 CRITICAL, CVE-2026-68770).
 
-### Changed (PR #107; code candidate `16c9962085def71d8afea37cb84ed76384a5450a`)
+### Changed (PR #107; accepted PR head `6660c614d137022dfab691d37e1921ab1701a1de`, squash merge `3a630984f0bd25bdcd8c0e4ae108cea97fd6e886`)
 
 - dependency commit `19064fe135538969ebd441ad498305c0e8afc6d9`: `PyJWT 2.13.0 → 2.15.1`, `pypdf 6.15.0 → 6.21.4`, `sentence-transformers 2.2.2 → 5.6.1`; `huggingface-hub==0.25.2` kept;
 - resolved graph otherwise identical on Python 3.11 (CI) and 3.10 (Docker): torch, transformers 4.48.3, tokenizers, numpy, langchain*, chromadb unchanged; torchvision, nltk, sentencepiece, pillow, defusedxml no longer installed (only sentence-transformers 2.2.2 required them; no repository code imports them);
@@ -145,7 +145,9 @@ The scheduled `Security Scan` on `main` @ `d197cc03d9e0798390754b2d16490def0110a
 - independent review (separate reviewer, read-only): no blocking findings; should-fix items (overstated CVE-2026-68770 claim and tests, real-PDF wording) addressed in `16c9962…`;
 - exact-head PR CI on `16c9962…`: **26/26 workflow runs `completed / success`** on first attempt, including `CI/CD Pipeline` run `42481811115` (dependency gate on a same-day DB: 0 findings; terra-cortex 75 passed / 0 skipped on Python 3.11; Java 17 terra-sense/terra-ops build+test; dashboard build; E2E neural-flow and command-lifecycle golden path with the terra-cortex Python 3.10 image built from the new pins), `D3 Authenticated Device Messaging Pilot` run `42481811324`, `D4 Device Integration Conformance Pilot` run `42481811183`, `Synthetic Farm Operations Pilot` run `42481811145`, `Software Proof Handoff` run `42481811231`, and all 21 D1 regression proof workflows. The dependency commit `19064fe…` also produced 26/26 successful runs (CI/CD run `42480234885`).
 
-Only the CI/CD Python and E2E jobs build and run terra-cortex. The D1–D4, D2 pilot and handoff workflows start infrastructure, terra-sense and terra-ops only; they show those accepted invariants still hold on the candidate head, not that they exercise the changed dependencies.
+- final exact PR head `6660c614d137022dfab691d37e1921ab1701a1de` produced **26/26 `completed / success`** pull-request workflow runs, including [CI/CD Pipeline run 42482657415](https://github.com/joeylife94/terraneuron-smartfarm-platform/actions/runs/42482657415), [D3 run 42482657340](https://github.com/joeylife94/terraneuron-smartfarm-platform/actions/runs/42482657340), [D4 run 42482657338](https://github.com/joeylife94/terraneuron-smartfarm-platform/actions/runs/42482657338), and [Software Proof Handoff run 42482657375](https://github.com/joeylife94/terraneuron-smartfarm-platform/actions/runs/42482657375). GitHub Codex review on that head completed with no findings; there were no unresolved review threads. The 33 check-run conclusions were 31 success, one neutral Trivy report and one expected skipped image-push job (no blocking failures).
+
+Only the CI/CD Python and E2E jobs build and run terra-cortex. The D1–D4, D2 pilot and handoff workflows start infrastructure, terra-sense and terra-ops only; they show those accepted invariants still hold on the PR head, not that they exercise the changed dependencies.
 
 ### Not Verified
 
@@ -195,4 +197,4 @@ No D5 milestone may be selected automatically. Any next destination involving re
 
 Do not open another bounded development Issue/PR and do not continue scheduled software progression until a human explicitly authorizes the next destination and its trust boundary.
 
-Separately, the human-authorized security-maintenance candidate (PR #107, see "Security maintenance — dependency gate recovery") awaits Human Acceptance. It restores the existing dependency gate and does not open D5 or change this destination gate.
+Separately, the bounded dependency-gate security maintenance (PR #107) is **ACCEPTED / MERGED**; this records a software dependency-scanning gate recovery only. It does not open D5, change the physical-trust Human Review gate, or establish deployed runtime or production security readiness.
