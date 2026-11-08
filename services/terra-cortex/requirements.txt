@@ -10,7 +10,7 @@ uvicorn[standard]==0.27.0        # ASGI server; runs FastAPI app with websockets
 aiokafka==0.10.0                 # Async Kafka consumer/producer for streaming sensor events
 pydantic==2.7.4                  # Data validation; minimum supported by LangChain 0.3.x
 pydantic-settings==2.4.0         # Structured settings; required by langchain-community 0.3.x
-PyJWT==2.13.0                    # Short-lived scoped service JWTs; includes 2026 security fixes
+PyJWT==2.15.1                    # Short-lived scoped service JWTs; 2.14/2.15 HMAC-key and JWS hardening (CVE-2026-102268 et al.)
 
 # ============================
 # 🤖 Cloud LLM Integration
@@ -25,9 +25,9 @@ langchain==0.3.30                # RAG orchestration; fixes CVE-2026-45134
 langchain-community==0.3.27      # Integrations; fixes known pickle, SSRF, and XML issues
 numpy==1.26.4                    # chromadb 0.4.22 (below) uses np.float_, removed in NumPy 2.0; keep 1.x
 chromadb==0.4.22                 # Local vector DB for document embeddings
-pypdf==6.15.0                    # PDF parsing; fixes CVE-2026-71852 and CVE-2026-71870
-sentence-transformers==2.2.2     # Embedding model loader (MiniLM, MPNet, etc.)
-huggingface-hub==0.25.2          # Pinned for compatibility; avoids cached_download removal
+pypdf==6.21.4                    # PDF parsing; latest 6.x patch, fixes 2026 malformed-PDF DoS advisories through CVE-2026-119209
+sentence-transformers==5.6.1     # Embedding model loader; >=5.6.0 clears scanner CVE-2026-68770 (local-dir code trust only deprecated until 6.0)
+huggingface-hub==0.25.2          # Pinned; keeps the resolved transformers/tokenizers graph unchanged (ST 5.6 needs >=0.23)
 cryptography>=3.4                # Required for AES-encrypted PDF parsing (pypdf decryption)
 
 # ============================
