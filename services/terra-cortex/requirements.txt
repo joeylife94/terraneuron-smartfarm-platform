@@ -23,6 +23,7 @@ httpx==0.27.2                    # Required by OpenAI client; pinned for compati
 # ============================
 langchain==0.3.30                # RAG orchestration; fixes CVE-2026-45134
 langchain-community==0.3.27      # Integrations; fixes known pickle, SSRF, and XML issues
+langsmith==0.14.17                # 0.15.1 fails to import its schemas with the pinned Pydantic 2.7.4
 numpy==1.26.4                    # chromadb 0.4.22 (below) uses np.float_, removed in NumPy 2.0; keep 1.x
 chromadb==0.4.22                 # Local vector DB for document embeddings
 pypdf==6.21.4                    # PDF parsing; latest 6.x patch, fixes 2026 malformed-PDF DoS advisories through CVE-2026-119209
